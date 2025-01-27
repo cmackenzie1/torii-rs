@@ -1,0 +1,8 @@
+[workspace]
+members = ["torii"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+repository = "https://github.com/cmackenzie1/torii"
+license = "MIT"
