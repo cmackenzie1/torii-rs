@@ -10,3 +10,4 @@ torii-core = { path = "../torii-core" }
 async-trait.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
+password-auth = { version = "1", features = ["argon2"] }

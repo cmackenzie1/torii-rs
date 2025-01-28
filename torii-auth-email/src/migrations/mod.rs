@@ -4,27 +4,22 @@ use torii_core::migration::PluginMigration;
 use torii_core::Error;
 
 // Example implementation for EmailPasswordPlugin
-pub(crate) struct CreateUsersTable;
+pub(crate) struct AddPasswordColumn;
 
 #[async_trait]
-impl PluginMigration for CreateUsersTable {
+impl PluginMigration for AddPasswordColumn {
     fn version(&self) -> i64 {
         1
     }
 
     fn name(&self) -> &str {
-        "create_users_table"
+        "add_password_column"
     }
 
     async fn up(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
         sqlx::query(
             r#"
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+            ALTER TABLE torii_users ADD COLUMN password_hash TEXT NOT NULL;
             "#,
         )
         .execute(pool)
@@ -33,7 +28,9 @@ impl PluginMigration for CreateUsersTable {
     }
 
     async fn down(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
-        sqlx::query("DROP TABLE users").execute(pool).await?;
+        sqlx::query("ALTER TABLE torii_users DROP COLUMN password_hash;")
+            .execute(pool)
+            .await?;
         Ok(())
     }
 }

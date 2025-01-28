@@ -1,10 +1,12 @@
 mod migrations;
 
 use async_trait::async_trait;
+use password_auth::{generate_hash, verify_password};
 use sqlx::pool::Pool;
 use sqlx::sqlite::Sqlite;
 use sqlx::Row;
 use torii_core::migration::PluginMigration;
+use torii_core::plugin::CreateUserParams;
 use torii_core::{AuthPlugin, Credentials, Error, User};
 
 pub struct EmailPasswordPlugin;
@@ -31,6 +33,30 @@ impl AuthPlugin for EmailPasswordPlugin {
         Ok(())
     }
 
+    async fn create_user(
+        &self,
+        pool: &Pool<Sqlite>,
+        params: &CreateUserParams,
+    ) -> Result<(), Error> {
+        let (username, password) = match params {
+            CreateUserParams::Password { username, password } => (username, password),
+            _ => return Err(Error::Auth("Unsupported create user params".into())),
+        };
+
+        let password_hash = generate_hash(password);
+
+        sqlx::query(
+            r#"
+            INSERT INTO torii_users (username, password_hash) VALUES (?, ?)
+            "#,
+        )
+        .bind(username)
+        .bind(password_hash)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     async fn authenticate(&self, pool: &Pool<Sqlite>, creds: &Credentials) -> Result<User, Error> {
         let password = creds
             .password
@@ -39,15 +65,19 @@ impl AuthPlugin for EmailPasswordPlugin {
 
         let row = sqlx::query(
             r#"
-            SELECT id, username
-            FROM users
-            WHERE username = ? AND password_hash = ?
+            SELECT id, username, password_hash
+            FROM torii_users
+            WHERE username = ?
             "#,
         )
         .bind(&creds.username)
-        .bind(password)
         .fetch_one(pool)
         .await?;
+
+        let stored_hash: String = row.get("password_hash");
+        if verify_password(password, &stored_hash).is_err() {
+            return Err(Error::Auth("Invalid credentials".into()));
+        }
 
         Ok(User {
             id: row.get(0),
@@ -56,6 +86,6 @@ impl AuthPlugin for EmailPasswordPlugin {
     }
 
     fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
-        vec![Box::new(migrations::CreateUsersTable)]
+        vec![Box::new(migrations::AddPasswordColumn)]
     }
 }

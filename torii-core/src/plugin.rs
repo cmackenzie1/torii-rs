@@ -17,11 +17,22 @@ pub struct Credentials {
     pub password: Option<String>,
 }
 
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub enum CreateUserParams {
+    Password { username: String, password: String },
+}
+
 #[async_trait]
 pub trait AuthPlugin: Send + Sync {
     fn name(&self) -> &'static str;
     async fn setup(&self, pool: &Pool<Sqlite>) -> Result<(), Error>;
     async fn authenticate(&self, pool: &Pool<Sqlite>, creds: &Credentials) -> Result<User, Error>;
+    async fn create_user(
+        &self,
+        pool: &Pool<Sqlite>,
+        params: &CreateUserParams,
+    ) -> Result<(), Error>;
     fn migrations(&self) -> Vec<Box<dyn PluginMigration>>;
 }
 
@@ -94,6 +105,23 @@ impl PluginManager {
         Ok(())
     }
 
+    async fn init_user_table(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS torii_users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(username)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     async fn get_applied_migrations(
         &self,
         pool: &Pool<Sqlite>,
@@ -113,7 +141,7 @@ impl PluginManager {
         &self,
         pool: &Pool<Sqlite>,
         plugin_name: &str,
-        migration: &Box<dyn PluginMigration>,
+        migration: &dyn PluginMigration,
     ) -> Result<(), Error> {
         // Start transaction
         let mut tx = pool.begin().await?;
@@ -136,6 +164,7 @@ impl PluginManager {
 
     pub async fn migrate(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
         self.init_migration_table(pool).await?;
+        self.init_user_table(pool).await?;
 
         for (plugin_name, plugin) in &self.plugins {
             let applied = self.get_applied_migrations(pool, plugin_name).await?;
@@ -145,7 +174,7 @@ impl PluginManager {
                 .filter(|m| !applied.contains(&m.version()));
 
             for migration in pending {
-                self.apply_migration(pool, plugin_name, &migration).await?;
+                self.apply_migration(pool, plugin_name, &*migration).await?;
             }
         }
         Ok(())
