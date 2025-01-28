@@ -1,8 +1,14 @@
 [workspace]
-members = ["torii"]
+members = ["torii", "torii-auth-email", "torii-core"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 repository = "https://github.com/cmackenzie1/torii"
 license = "MIT"
+
+[workspace.dependencies]
+thiserror = "2"
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
