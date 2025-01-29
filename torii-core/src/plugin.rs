@@ -5,22 +5,26 @@ use std::collections::HashMap;
 use crate::error::Error;
 use crate::migration::PluginMigration;
 
+/// Represents a user in the database. All plugins must return a user when
+/// authenticating a user.
 #[derive(Debug)]
 pub struct User {
     pub id: i64,
     pub username: String,
 }
 
+/// Represents the credentials used to authenticate a user.
 #[derive(Debug, Clone)]
-pub struct Credentials {
-    pub username: String,
-    pub password: Option<String>,
+pub enum Credentials {
+    /// Email and password credentials.
+    EmailPassword { email: String, password: String },
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum CreateUserParams {
-    Password { username: String, password: String },
+    /// Create a user with an email and password.
+    EmailPassword { email: String, password: String },
 }
 
 #[async_trait]

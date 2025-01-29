@@ -1,3 +1,8 @@
+//! This plugin provides email and password authentication for Torii.
+//!
+//! Username is set to the provided email address.
+//!
+//! Password is hashed using the `password_auth` crate using argon2.
 mod migrations;
 
 use async_trait::async_trait;
@@ -38,8 +43,8 @@ impl AuthPlugin for EmailPasswordPlugin {
         pool: &Pool<Sqlite>,
         params: &CreateUserParams,
     ) -> Result<(), Error> {
-        let (username, password) = match params {
-            CreateUserParams::Password { username, password } => (username, password),
+        let (email, password) = match params {
+            CreateUserParams::EmailPassword { email, password } => (email, password),
             _ => return Err(Error::Auth("Unsupported create user params".into())),
         };
 
@@ -47,10 +52,10 @@ impl AuthPlugin for EmailPasswordPlugin {
 
         sqlx::query(
             r#"
-            INSERT INTO torii_users (username, password_hash) VALUES (?, ?)
+            INSERT INTO torii_users (email, password_hash) VALUES (?, ?)
             "#,
         )
-        .bind(username)
+        .bind(email)
         .bind(password_hash)
         .execute(pool)
         .await?;
@@ -58,19 +63,19 @@ impl AuthPlugin for EmailPasswordPlugin {
     }
 
     async fn authenticate(&self, pool: &Pool<Sqlite>, creds: &Credentials) -> Result<User, Error> {
-        let password = creds
-            .password
-            .as_ref()
-            .ok_or_else(|| Error::Auth("Password required".into()))?;
+        let (email, password) = match creds {
+            Credentials::EmailPassword { email, password } => (email, password),
+            // _ => return Err(Error::Auth("Unsupported credentials".into())),
+        };
 
         let row = sqlx::query(
             r#"
-            SELECT id, username, password_hash
+            SELECT id, email, password_hash
             FROM torii_users
-            WHERE username = ?
+            WHERE email = ?
             "#,
         )
-        .bind(&creds.username)
+        .bind(email)
         .fetch_one(pool)
         .await?;
 
