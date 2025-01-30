@@ -1,6 +1,7 @@
 use sqlx::Database;
 use sqlx::Pool;
-use torii_core::{Credentials, Error, PluginManager, User};
+use torii_core::plugin::CreateUserParams;
+use torii_core::{Error, PluginManager, User};
 
 #[cfg(feature = "sqlite")]
 use sqlx::Sqlite;
@@ -32,12 +33,22 @@ impl<DB: Database> ToriiBuilder<DB> {
         self
     }
 
+    #[cfg(feature = "oidc-auth")]
+    pub fn with_oidc_auth(mut self) -> Self {
+        self.manager.register(Box::new(torii_auth_oidc::OIDCPlugin));
+        self
+    }
+
     /// Build with all default enabled authentication methods
     pub fn with_defaults(mut self) -> Self {
         #[cfg(feature = "email-auth")]
         {
             self.manager
                 .register(Box::new(torii_auth_email::EmailPasswordPlugin));
+        }
+        #[cfg(feature = "oidc-auth")]
+        {
+            self.manager.register(Box::new(torii_auth_oidc::OIDCPlugin));
         }
         self
     }
@@ -70,9 +81,37 @@ impl Torii<Sqlite> {
             .await
     }
 
-    /// Authenticate a user using the specified authentication method
-    pub async fn authenticate(&self, method: &str, creds: &Credentials) -> Result<User, Error> {
-        self.manager.authenticate(method, &self.pool, creds).await
+    pub async fn create_user(&self, params: &CreateUserParams) -> Result<User, Error> {
+        match params {
+            CreateUserParams::EmailPassword { email, password } => {
+                let plugin = self
+                    .manager
+                    .get_plugin::<torii_auth_email::EmailPasswordPlugin>(
+                        &torii_auth_email::PLUGIN_ID,
+                    )?;
+
+                let user = plugin.create_user(&self.pool, email, password).await?;
+
+                Ok(user)
+            }
+            CreateUserParams::OIDC {
+                provider: _,
+                subject: _,
+            } => {
+                todo!()
+            }
+            _ => {
+                Err(Error::UnsupportedAuthMethod(
+                    self.manager
+                        .plugins
+                        .keys()
+                        .cloned()
+                        .map(|id| id.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                ))
+            }
+        }
     }
 }
 

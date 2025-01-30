@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.1.0" }
 torii-auth-email = { path = "../torii-auth-email", version = "0.1.0", optional = true }
+torii-auth-oidc = { path = "../torii-auth-oidc", version = "0.1.0", optional = true }
 sqlx = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
@@ -19,6 +20,7 @@ tokio = { workspace = true }
 default = ["email-auth", "sqlite"]
 # Authentication methods
 email-auth = ["torii-auth-email"]
+oidc-auth = ["torii-auth-oidc"]
 # Database backends
 sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]

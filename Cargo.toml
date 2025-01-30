@@ -1,5 +1,5 @@
 [workspace]
-members = ["torii", "torii-auth-email", "torii-core"]
+members = ["torii", "torii-auth-email", "torii-auth-oidc", "torii-core"]
 resolver = "2"
 
 [workspace.package]
@@ -10,5 +10,12 @@ license = "MIT"
 [workspace.dependencies]
 thiserror = "2"
 async-trait = "0.1"
+serde = "1"
 tokio = { version = "1.0", features = ["full"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "sqlite",
+    "chrono",
+    "uuid",
+] }
+uuid = { version = "1", features = ["v4"] }

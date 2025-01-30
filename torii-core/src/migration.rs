@@ -8,6 +8,7 @@ pub struct Migration {
     pub version: i64,
     pub name: String,
     pub description: String,
+    pub sql: String,
 }
 
 #[async_trait]

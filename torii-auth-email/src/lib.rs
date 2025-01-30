@@ -5,14 +5,19 @@
 //! Password is hashed using the `password_auth` crate using argon2.
 mod migrations;
 
+use std::any::Any;
+use std::sync::LazyLock;
+
 use async_trait::async_trait;
+use migrations::AddPasswordHashColumn;
 use password_auth::{generate_hash, verify_password};
 use sqlx::pool::Pool;
 use sqlx::sqlite::Sqlite;
 use sqlx::Row;
 use torii_core::migration::PluginMigration;
-use torii_core::plugin::CreateUserParams;
-use torii_core::{AuthPlugin, Credentials, Error, User};
+use torii_core::{Error, Plugin, PluginId, User, UserId};
+
+pub static PLUGIN_ID: LazyLock<PluginId> = LazyLock::new(|| PluginId::new("email_password"));
 
 pub struct EmailPasswordPlugin;
 
@@ -29,7 +34,11 @@ impl EmailPasswordPlugin {
 }
 
 #[async_trait]
-impl AuthPlugin for EmailPasswordPlugin {
+impl Plugin for EmailPasswordPlugin {
+    fn id(&self) -> PluginId {
+        PluginId::new("email_password")
+    }
+
     fn name(&self) -> &'static str {
         "email_password"
     }
@@ -38,40 +47,67 @@ impl AuthPlugin for EmailPasswordPlugin {
         Ok(())
     }
 
-    async fn create_user(
+    fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
+        vec![Box::new(AddPasswordHashColumn)]
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl EmailPasswordPlugin {
+    pub async fn create_user(
         &self,
         pool: &Pool<Sqlite>,
-        params: &CreateUserParams,
-    ) -> Result<(), Error> {
-        let (email, password) = match params {
-            CreateUserParams::EmailPassword { email, password } => (email, password),
-            _ => return Err(Error::Auth("Unsupported create user params".into())),
-        };
-
+        email: &str,
+        password: &str,
+    ) -> Result<User, Error> {
+        let user_id = UserId::new_random();
         let password_hash = generate_hash(password);
 
         sqlx::query(
             r#"
-            INSERT INTO torii_users (email, password_hash) VALUES (?, ?)
+            INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)
             "#,
         )
+        .bind(&user_id)
         .bind(email)
         .bind(password_hash)
         .execute(pool)
         .await?;
-        Ok(())
+
+        let user = sqlx::query(
+            r#"
+            SELECT id, email, name, email_verified_at, created_at, updated_at
+            FROM users
+            WHERE id = ?
+            "#,
+        )
+        .bind(&user_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(User {
+            id: user.get("id"),
+            name: user.get("name"),
+            email: user.get("email"),
+            email_verified_at: user.get("email_verified_at"),
+            created_at: user.get("created_at"),
+            updated_at: user.get("updated_at"),
+        })
     }
 
-    async fn authenticate(&self, pool: &Pool<Sqlite>, creds: &Credentials) -> Result<User, Error> {
-        let (email, password) = match creds {
-            Credentials::EmailPassword { email, password } => (email, password),
-            // _ => return Err(Error::Auth("Unsupported credentials".into())),
-        };
-
+    pub async fn login_user(
+        &self,
+        pool: &Pool<Sqlite>,
+        email: &str,
+        password: &str,
+    ) -> Result<User, Error> {
         let row = sqlx::query(
             r#"
-            SELECT id, email, password_hash
-            FROM torii_users
+            SELECT id, name, email, email_verified_at, password_hash, created_at, updated_at
+            FROM users
             WHERE email = ?
             "#,
         )
@@ -81,16 +117,58 @@ impl AuthPlugin for EmailPasswordPlugin {
 
         let stored_hash: String = row.get("password_hash");
         if verify_password(password, &stored_hash).is_err() {
-            return Err(Error::Auth("Invalid credentials".into()));
+            return Err(Error::InvalidCredentials);
         }
 
         Ok(User {
-            id: row.get(0),
-            username: row.get(1),
+            id: row.get("id"),
+            name: row.get("name"),
+            email: row.get("email"),
+            email_verified_at: row.get("email_verified_at"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
         })
     }
+}
 
-    fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
-        vec![Box::new(migrations::AddPasswordColumn)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::SqlitePool;
+    use torii_core::PluginManager;
+
+    #[tokio::test]
+    async fn test_plugin_setup() -> Result<(), Error> {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create pool");
+
+        let mut manager = PluginManager::new();
+        manager.register(Box::new(EmailPasswordPlugin));
+
+        // Initialize and run migrations
+        manager.setup(&pool).await?;
+        manager.migrate(&pool).await?;
+
+        let count = sqlx::query("SELECT count(*) FROM users")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(count.get::<i64, _>(0), 0);
+
+        let user = manager
+            .get_plugin::<EmailPasswordPlugin>(&PLUGIN_ID)
+            .unwrap()
+            .create_user(&pool, "test@example.com", "password")
+            .await?;
+        assert_eq!(user.email, "test@example.com");
+
+        let user = manager
+            .get_plugin::<EmailPasswordPlugin>(&PLUGIN_ID)
+            .unwrap()
+            .login_user(&pool, "test@example.com", "password")
+            .await?;
+        assert_eq!(user.email, "test@example.com");
+
+        Ok(())
     }
 }
