@@ -1,8 +1,9 @@
 use async_trait::async_trait;
+use downcast_rs::{impl_downcast, DowncastSync};
 use sqlx::{Pool, Row, Sqlite};
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::sync::{Arc, RwLock};
 
 use crate::error::Error;
 use crate::migration::PluginMigration;
@@ -43,26 +44,10 @@ pub enum CreateUserParams {
     OIDC { provider: String, subject: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::Type)]
-#[sqlx(transparent)]
-pub struct PluginId(String);
-
-impl PluginId {
-    pub fn new(name: &str) -> Self {
-        Self(name.to_string())
-    }
-}
-
-impl Display for PluginId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 #[async_trait]
-pub trait Plugin: Send + Sync + Any {
+pub trait Plugin: Any + Send + Sync + DowncastSync {
     /// The ID of the plugin.
-    fn id(&self) -> PluginId;
+    fn id(&self) -> TypeId;
 
     /// The name of the plugin.
     fn name(&self) -> &'static str;
@@ -74,14 +59,12 @@ pub trait Plugin: Send + Sync + Any {
 
     /// Get the migrations for the plugin.
     fn migrations(&self) -> Vec<Box<dyn PluginMigration>>;
-
-    /// Get the plugin as a `dyn Any` to allow for downcasting to the specific plugin type.
-    fn as_any(&self) -> &dyn Any;
 }
+impl_downcast!(sync Plugin);
 
 /// Manages a collection of plugins.
 pub struct PluginManager {
-    pub plugins: HashMap<PluginId, Box<dyn Plugin>>,
+    pub plugins: RwLock<HashMap<TypeId, Arc<dyn Plugin>>>,
 }
 
 impl Default for PluginManager {
@@ -93,29 +76,28 @@ impl Default for PluginManager {
 impl PluginManager {
     pub fn new() -> Self {
         Self {
-            plugins: HashMap::new(),
+            plugins: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Get a plugin by name.
-    pub fn get_plugin<T: Plugin + 'static>(&self, id: &PluginId) -> Result<&T, Error> {
-        self.plugins
-            .get(id)
-            .ok_or(Error::PluginNotFound(id.to_string()))?
-            .as_any()
-            .downcast_ref::<T>()
-            .ok_or(Error::PluginTypeMismatch(id.to_string()))
+    /// Get a plugin by type.
+    pub fn get_plugin<T: Plugin + 'static>(&self) -> Option<Arc<T>> {
+        let plugins = self.plugins.read().unwrap();
+        let plugin = plugins.get(&TypeId::of::<T>())?;
+        plugin.clone().downcast_arc::<T>().ok()
     }
 
     /// Register a new plugin.
-    pub fn register(&mut self, plugin: Box<dyn Plugin>) {
-        self.plugins.insert(plugin.id(), plugin);
+    pub fn register<T: Plugin + 'static>(&self, plugin: T) {
+        let plugin = Arc::new(plugin);
+        let type_id = TypeId::of::<T>();
+        self.plugins.write().unwrap().insert(type_id, plugin);
     }
 
     /// Setup all registered plugins. This should be called before any authentication
     /// is attempted.
     pub async fn setup(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
-        for plugin in self.plugins.values() {
+        for plugin in self.plugins.read().unwrap().values() {
             plugin.setup(pool).await?;
         }
         Ok(())
@@ -164,12 +146,12 @@ impl PluginManager {
     async fn get_applied_migrations(
         &self,
         pool: &Pool<Sqlite>,
-        plugin_id: &PluginId,
+        plugin_name: &str,
     ) -> Result<Vec<i64>, Error> {
         let rows = sqlx::query(
             "SELECT version FROM torii_migrations WHERE plugin_name = ? ORDER BY version",
         )
-        .bind(plugin_id)
+        .bind(plugin_name)
         .fetch_all(pool)
         .await?;
 
@@ -179,7 +161,7 @@ impl PluginManager {
     async fn apply_migration(
         &self,
         pool: &Pool<Sqlite>,
-        plugin_id: &PluginId,
+        plugin_name: &str,
         migration: &dyn PluginMigration,
     ) -> Result<(), Error> {
         // Start transaction
@@ -190,7 +172,7 @@ impl PluginManager {
 
         // Record migration
         sqlx::query("INSERT INTO torii_migrations (plugin_name, version, name) VALUES (?, ?, ?)")
-            .bind(plugin_id)
+            .bind(plugin_name)
             .bind(migration.version())
             .bind(migration.name())
             .execute(&mut *tx)
@@ -205,15 +187,16 @@ impl PluginManager {
         self.init_migration_table(pool).await?;
         self.init_user_table(pool).await?;
 
-        for (plugin_id, plugin) in &self.plugins {
-            let applied = self.get_applied_migrations(pool, plugin_id).await?;
+        for plugin in self.plugins.read().unwrap().values() {
+            let applied = self.get_applied_migrations(pool, plugin.name()).await?;
             let pending = plugin
                 .migrations()
                 .into_iter()
                 .filter(|m| !applied.contains(&m.version()));
 
             for migration in pending {
-                self.apply_migration(pool, plugin_id, &*migration).await?;
+                self.apply_migration(pool, plugin.name(), &*migration)
+                    .await?;
             }
         }
         Ok(())

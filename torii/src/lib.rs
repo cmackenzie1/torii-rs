@@ -27,28 +27,26 @@ impl<DB: Database> ToriiBuilder<DB> {
     }
 
     #[cfg(feature = "email-auth")]
-    pub fn with_email_auth(mut self) -> Self {
-        self.manager
-            .register(Box::new(torii_auth_email::EmailPasswordPlugin));
+    pub fn with_email_auth(self) -> Self {
+        self.manager.register(torii_auth_email::EmailPasswordPlugin);
         self
     }
 
     #[cfg(feature = "oidc-auth")]
-    pub fn with_oidc_auth(mut self) -> Self {
-        self.manager.register(Box::new(torii_auth_oidc::OIDCPlugin));
+    pub fn with_oidc_auth(self) -> Self {
+        self.manager.register(torii_auth_oidc::OIDCPlugin);
         self
     }
 
     /// Build with all default enabled authentication methods
-    pub fn with_defaults(mut self) -> Self {
+    pub fn with_defaults(self) -> Self {
         #[cfg(feature = "email-auth")]
         {
-            self.manager
-                .register(Box::new(torii_auth_email::EmailPasswordPlugin));
+            self.manager.register(torii_auth_email::EmailPasswordPlugin);
         }
         #[cfg(feature = "oidc-auth")]
         {
-            self.manager.register(Box::new(torii_auth_oidc::OIDCPlugin));
+            self.manager.register(torii_auth_oidc::OIDCPlugin);
         }
         self
     }
@@ -86,9 +84,8 @@ impl Torii<Sqlite> {
             CreateUserParams::EmailPassword { email, password } => {
                 let plugin = self
                     .manager
-                    .get_plugin::<torii_auth_email::EmailPasswordPlugin>(
-                        &torii_auth_email::PLUGIN_ID,
-                    )?;
+                    .get_plugin::<torii_auth_email::EmailPasswordPlugin>()
+                    .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
 
                 let user = plugin.create_user(&self.pool, email, password).await?;
 
@@ -100,17 +97,7 @@ impl Torii<Sqlite> {
             } => {
                 todo!()
             }
-            _ => {
-                Err(Error::UnsupportedAuthMethod(
-                    self.manager
-                        .plugins
-                        .keys()
-                        .cloned()
-                        .map(|id| id.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                ))
-            }
+            _ => Err(Error::UnsupportedAuthMethod("".to_string())),
         }
     }
 }

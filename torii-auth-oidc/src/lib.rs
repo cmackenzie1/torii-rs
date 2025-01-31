@@ -1,15 +1,12 @@
-mod migrations;
-
-use std::{any::Any, sync::LazyLock};
+use std::any::TypeId;
 
 use async_trait::async_trait;
 use migrations::CreateOidcTables;
 use sqlx::{Pool, Sqlite};
-use torii_core::{
-    migration::PluginMigration, plugin::CreateUserParams, Error, Plugin, PluginId, User,
-};
+use torii_core::{migration::PluginMigration, plugin::CreateUserParams, Error, Plugin, User};
 
-pub static PLUGIN_ID: LazyLock<PluginId> = LazyLock::new(|| PluginId::new("oidc"));
+mod migrations;
+
 pub struct OIDCPlugin;
 
 impl Default for OIDCPlugin {
@@ -43,8 +40,8 @@ impl OIDCPlugin {
 
 #[async_trait]
 impl Plugin for OIDCPlugin {
-    fn id(&self) -> PluginId {
-        PluginId::new("oidc")
+    fn id(&self) -> TypeId {
+        TypeId::of::<OIDCPlugin>()
     }
 
     fn name(&self) -> &'static str {
@@ -57,9 +54,5 @@ impl Plugin for OIDCPlugin {
 
     fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
         vec![Box::new(CreateOidcTables)]
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

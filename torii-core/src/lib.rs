@@ -6,6 +6,6 @@ pub mod user;
 
 pub use error::Error;
 pub use migration::Migration;
-pub use plugin::{AuthMethod, AuthenticationRequest, Plugin, PluginId, PluginManager};
+pub use plugin::{AuthMethod, AuthenticationRequest, Plugin, PluginManager};
 pub use session::Session;
 pub use user::{User, UserId};

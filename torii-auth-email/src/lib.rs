@@ -5,8 +5,7 @@
 //! Password is hashed using the `password_auth` crate using argon2.
 mod migrations;
 
-use std::any::Any;
-use std::sync::LazyLock;
+use std::any::TypeId;
 
 use async_trait::async_trait;
 use migrations::AddPasswordHashColumn;
@@ -15,10 +14,7 @@ use sqlx::pool::Pool;
 use sqlx::sqlite::Sqlite;
 use sqlx::Row;
 use torii_core::migration::PluginMigration;
-use torii_core::{Error, Plugin, PluginId, User, UserId};
-
-pub static PLUGIN_ID: LazyLock<PluginId> = LazyLock::new(|| PluginId::new("email_password"));
-
+use torii_core::{Error, Plugin, User, UserId};
 pub struct EmailPasswordPlugin;
 
 impl Default for EmailPasswordPlugin {
@@ -35,8 +31,8 @@ impl EmailPasswordPlugin {
 
 #[async_trait]
 impl Plugin for EmailPasswordPlugin {
-    fn id(&self) -> PluginId {
-        PluginId::new("email_password")
+    fn id(&self) -> TypeId {
+        TypeId::of::<EmailPasswordPlugin>()
     }
 
     fn name(&self) -> &'static str {
@@ -49,10 +45,6 @@ impl Plugin for EmailPasswordPlugin {
 
     fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
         vec![Box::new(AddPasswordHashColumn)]
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -143,8 +135,8 @@ mod tests {
             .await
             .expect("Failed to create pool");
 
-        let mut manager = PluginManager::new();
-        manager.register(Box::new(EmailPasswordPlugin));
+        let manager = PluginManager::new();
+        manager.register(EmailPasswordPlugin);
 
         // Initialize and run migrations
         manager.setup(&pool).await?;
@@ -156,14 +148,14 @@ mod tests {
         assert_eq!(count.get::<i64, _>(0), 0);
 
         let user = manager
-            .get_plugin::<EmailPasswordPlugin>(&PLUGIN_ID)
+            .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
             .create_user(&pool, "test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let user = manager
-            .get_plugin::<EmailPasswordPlugin>(&PLUGIN_ID)
+            .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
             .login_user(&pool, "test@example.com", "password")
             .await?;

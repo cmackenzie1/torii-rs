@@ -11,6 +11,7 @@ sqlx.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 chrono = "0.4.39"
+downcast-rs = "2.0.1"
 
 [features]
 default = []
