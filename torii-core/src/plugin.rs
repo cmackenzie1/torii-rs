@@ -46,9 +46,6 @@ pub enum CreateUserParams {
 
 #[async_trait]
 pub trait Plugin: Any + Send + Sync + DowncastSync {
-    /// The ID of the plugin.
-    fn id(&self) -> TypeId;
-
     /// The name of the plugin.
     fn name(&self) -> &'static str;
 
@@ -92,6 +89,10 @@ impl PluginManager {
         let plugin = Arc::new(plugin);
         let type_id = TypeId::of::<T>();
         self.plugins.write().unwrap().insert(type_id, plugin);
+        tracing::info!(
+            "Registered plugin: {}",
+            self.get_plugin::<T>().unwrap().name()
+        );
     }
 
     /// Setup all registered plugins. This should be called before any authentication
@@ -99,6 +100,7 @@ impl PluginManager {
     pub async fn setup(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
         for plugin in self.plugins.read().unwrap().values() {
             plugin.setup(pool).await?;
+            tracing::info!("Setup plugin: {}", plugin.name());
         }
         Ok(())
     }
@@ -120,6 +122,7 @@ impl PluginManager {
         )
         .execute(pool)
         .await?;
+        tracing::info!("Initialized migration table");
         Ok(())
     }
 
@@ -140,6 +143,7 @@ impl PluginManager {
         )
         .execute(pool)
         .await?;
+        tracing::info!("Initialized user table");
         Ok(())
     }
 
@@ -168,6 +172,11 @@ impl PluginManager {
         let mut tx = pool.begin().await?;
 
         // Apply migration
+        tracing::info!(
+            plugin.name = plugin_name,
+            version = migration.version(),
+            "Applying migration"
+        );
         migration.up(pool).await?;
 
         // Record migration
@@ -180,10 +189,16 @@ impl PluginManager {
 
         // Commit transaction
         tx.commit().await?;
+        tracing::info!(
+            plugin.name = plugin_name,
+            version = migration.version(),
+            "Applied migration"
+        );
         Ok(())
     }
 
     pub async fn migrate(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
+        // TODO: these should be migrations themselves -- maybe  init plugin?
         self.init_migration_table(pool).await?;
         self.init_user_table(pool).await?;
 

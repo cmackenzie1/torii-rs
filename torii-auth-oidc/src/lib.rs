@@ -1,4 +1,3 @@
-use std::any::TypeId;
 
 use async_trait::async_trait;
 use migrations::CreateOidcTables;
@@ -40,10 +39,6 @@ impl OIDCPlugin {
 
 #[async_trait]
 impl Plugin for OIDCPlugin {
-    fn id(&self) -> TypeId {
-        TypeId::of::<OIDCPlugin>()
-    }
-
     fn name(&self) -> &'static str {
         "oidc"
     }

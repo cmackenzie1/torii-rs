@@ -23,11 +23,11 @@ lint:
 
 # Run tests using nextest
 test:
-	@cargo nextest run
+	@cargo nextest run --no-fail-fast 
 
 # Run tests with coverage report
 coverage:
-	@cargo llvm-cov --all-features
+	@cargo llvm-cov nextest --all-features
 
 # Clean build artifacts
 clean:

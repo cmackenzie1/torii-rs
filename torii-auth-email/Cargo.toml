@@ -8,9 +8,12 @@ license.workspace = true
 [dependencies]
 torii-core = { path = "../torii-core" }
 async-trait.workspace = true
+password-auth = { version = "1", features = ["argon2"] }
+regex.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-password-auth = { version = "1", features = ["argon2"] }
+tracing.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+tracing-subscriber.workspace = true

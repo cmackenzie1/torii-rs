@@ -7,11 +7,12 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-sqlx.workspace = true
-thiserror.workspace = true
-uuid.workspace = true
 chrono = "0.4.39"
 downcast-rs = "2.0.1"
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
 
 [features]
 default = []
