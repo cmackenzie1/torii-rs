@@ -9,6 +9,8 @@ license = "MIT"
 
 [workspace.dependencies]
 async-trait = "0.1"
+dashmap = "6.1"
+futures = "0.3"
 regex = "1"
 serde = "1"
 thiserror = "2"
@@ -19,7 +21,7 @@ uuid = { version = "1", features = ["v4"] }
 
 sqlx = { version = "0.8", features = [
     "runtime-tokio",
-    "sqlite",        # TODO: Remove sqlite feature
+    "sqlite",        # TODO: Remove sqlite dependency
     "chrono",
     "uuid",
 ] }

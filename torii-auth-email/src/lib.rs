@@ -5,7 +5,6 @@
 //! Password is hashed using the `password_auth` crate using argon2.
 mod migrations;
 
-
 use async_trait::async_trait;
 use migrations::AddPasswordHashColumn;
 use password_auth::{generate_hash, verify_password};

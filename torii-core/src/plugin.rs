@@ -1,9 +1,9 @@
 use async_trait::async_trait;
+use dashmap::DashMap;
 use downcast_rs::{impl_downcast, DowncastSync};
 use sqlx::{Pool, Row, Sqlite};
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::error::Error;
 use crate::migration::PluginMigration;
@@ -61,7 +61,7 @@ impl_downcast!(sync Plugin);
 
 /// Manages a collection of plugins.
 pub struct PluginManager {
-    pub plugins: RwLock<HashMap<TypeId, Arc<dyn Plugin>>>,
+    pub plugins: DashMap<TypeId, Arc<dyn Plugin>>,
 }
 
 impl Default for PluginManager {
@@ -73,22 +73,21 @@ impl Default for PluginManager {
 impl PluginManager {
     pub fn new() -> Self {
         Self {
-            plugins: RwLock::new(HashMap::new()),
+            plugins: DashMap::new(),
         }
     }
 
     /// Get a plugin by type.
     pub fn get_plugin<T: Plugin + 'static>(&self) -> Option<Arc<T>> {
-        let plugins = self.plugins.read().unwrap();
-        let plugin = plugins.get(&TypeId::of::<T>())?;
-        plugin.clone().downcast_arc::<T>().ok()
+        let plugin = self.plugins.get(&TypeId::of::<T>())?;
+        plugin.value().clone().downcast_arc::<T>().ok()
     }
 
     /// Register a new plugin.
     pub fn register<T: Plugin + 'static>(&self, plugin: T) {
         let plugin = Arc::new(plugin);
         let type_id = TypeId::of::<T>();
-        self.plugins.write().unwrap().insert(type_id, plugin);
+        self.plugins.insert(type_id, plugin);
         tracing::info!(
             "Registered plugin: {}",
             self.get_plugin::<T>().unwrap().name()
@@ -98,9 +97,9 @@ impl PluginManager {
     /// Setup all registered plugins. This should be called before any authentication
     /// is attempted.
     pub async fn setup(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
-        for plugin in self.plugins.read().unwrap().values() {
-            plugin.setup(pool).await?;
-            tracing::info!("Setup plugin: {}", plugin.name());
+        for plugin in self.plugins.iter() {
+            plugin.value().setup(pool).await?;
+            tracing::info!("Setup plugin: {}", plugin.value().name());
         }
         Ok(())
     }
@@ -202,9 +201,12 @@ impl PluginManager {
         self.init_migration_table(pool).await?;
         self.init_user_table(pool).await?;
 
-        for plugin in self.plugins.read().unwrap().values() {
-            let applied = self.get_applied_migrations(pool, plugin.name()).await?;
+        for plugin in self.plugins.iter() {
+            let applied = self
+                .get_applied_migrations(pool, plugin.value().name())
+                .await?;
             let pending = plugin
+                .value()
                 .migrations()
                 .into_iter()
                 .filter(|m| !applied.contains(&m.version()));

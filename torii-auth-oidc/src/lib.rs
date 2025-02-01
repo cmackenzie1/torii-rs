@@ -1,4 +1,3 @@
-
 use async_trait::async_trait;
 use migrations::CreateOidcTables;
 use sqlx::{Pool, Sqlite};
