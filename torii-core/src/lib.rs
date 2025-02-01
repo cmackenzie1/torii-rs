@@ -1,5 +1,6 @@
 pub mod error;
 pub mod migration;
+pub mod migrations;
 pub mod plugin;
 pub mod session;
 pub mod user;

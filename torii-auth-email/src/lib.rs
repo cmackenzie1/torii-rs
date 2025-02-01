@@ -171,7 +171,7 @@ mod tests {
             .await
             .expect("Failed to create pool");
 
-        let manager = PluginManager::new();
+        let mut manager = PluginManager::new();
         manager.register(EmailPasswordPlugin);
         manager.setup(&pool).await?;
         manager.migrate(&pool).await?;

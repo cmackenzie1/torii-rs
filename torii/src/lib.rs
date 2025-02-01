@@ -27,19 +27,19 @@ impl<DB: Database> ToriiBuilder<DB> {
     }
 
     #[cfg(feature = "email-auth")]
-    pub fn with_email_auth(self) -> Self {
+    pub fn with_email_auth(mut self) -> Self {
         self.manager.register(torii_auth_email::EmailPasswordPlugin);
         self
     }
 
     #[cfg(feature = "oidc-auth")]
-    pub fn with_oidc_auth(self) -> Self {
+    pub fn with_oidc_auth(mut self) -> Self {
         self.manager.register(torii_auth_oidc::OIDCPlugin);
         self
     }
 
     /// Build with all default enabled authentication methods
-    pub fn with_defaults(self) -> Self {
+    pub fn with_defaults(mut self) -> Self {
         #[cfg(feature = "email-auth")]
         {
             self.manager.register(torii_auth_email::EmailPasswordPlugin);
