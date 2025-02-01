@@ -219,3 +219,40 @@ impl PluginManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TestPlugin;
+
+    #[async_trait]
+    impl Plugin for TestPlugin {
+        fn name(&self) -> &'static str {
+            "test"
+        }
+
+        async fn setup(&self, _pool: &Pool<Sqlite>) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
+            vec![]
+        }
+    }
+
+    impl TestPlugin {
+        fn new() -> Self {
+            Self
+        }
+    }
+
+    #[tokio::test]
+    async fn test_plugin_manager() {
+        let plugin_manager = PluginManager::new();
+        plugin_manager.register(TestPlugin::new());
+        let plugin = plugin_manager.get_plugin::<TestPlugin>().unwrap();
+        assert_eq!(plugin.name(), "test");
+    }
+}
