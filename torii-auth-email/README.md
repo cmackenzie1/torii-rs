@@ -17,3 +17,8 @@ hashed password in the database.
 2. The plugin hashes the password and verifies it against the stored hash.
 3. If the password is correct, the user is authenticated and the plugin returns a `User` object with the user's id and username (email).
 4. If the password is incorrect, the user is not authenticated and the plugin returns an error.
+
+## TODO
+
+- [ ] Add trait for password validation
+- [ ] Add pre-create and pre-update hooks
