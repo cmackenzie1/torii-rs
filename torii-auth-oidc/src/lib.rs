@@ -11,24 +11,49 @@ use torii_core::{migration::PluginMigration, Error, Plugin, User};
 use uuid::Uuid;
 mod migrations;
 
+/// The core OIDC plugin struct, responsible for handling OIDC authentication flow.
+///
+/// See the [`OIDCPlugin`] struct for the core plugin struct.
+///
+/// See the [`AuthFlowBegin`] and [`AuthFlowCallback`] structs for the core authentication flow.
 pub struct OIDCPlugin {
+    /// The provider name. i.e. "google" or "github"
     provider: String,
+
+    /// The client id.
     client_id: String,
+
+    /// The client secret.
     client_secret: String,
+
+    /// The redirect uri.
     redirect_uri: String,
 }
 
+/// The start of the OIDC authentication flow for authorization code grant. This is the first step in the flow and is used to start the flow by redirecting the user to the provider's authorization URL.
+///
+/// See the [`OIDCPlugin::begin_auth`] method for the core authentication flow.
 #[derive(Debug)]
 pub struct AuthFlowBegin {
+    /// The CSRF state. This value is used to prevent CSRF attacks and may be stored in a cookie.
     pub csrf_state: String,
+
+    /// The nonce key. This value is used to prevent replay attacks and may be stored in a cookie.
     pub nonce_key: String,
-    pub redirect_uri: String,
+
+    /// The authorization uri. This is the uri that the user will be redirected to begin the authorization flow with the external provider.
+    pub authorization_uri: String,
 }
 
 #[derive(Debug)]
 pub struct AuthFlowCallback {
+    /// The CSRF state. This value is used to prevent CSRF attacks and must match the CSRF state in the [`AuthFlowBegin`] struct.
     pub csrf_state: String,
+
+    /// The nonce key. This value is used to prevent replay attacks and must match the nonce key in the [`AuthFlowBegin`] struct.
     pub nonce_key: String,
+
+    /// The authorization code. This value is used to exchange for an access token and user information.
     pub code: String,
 }
 
@@ -48,6 +73,27 @@ impl OIDCPlugin {
     }
 
     /// Begin the authentication process by generating a new CSRF state and redirecting the user to the provider's authorization URL.
+    ///
+    /// This method is the first step in the OIDC authorization code flow. It will:
+    /// 1. Generate a CSRF token and nonce for security
+    /// 2. Store the nonce in the database for later verification
+    /// 3. Generate the authorization URL to redirect the user to
+    ///
+    /// # Arguments
+    /// * `pool` - The database connection pool for storing the nonce
+    /// * `redirect_uri` - The URI where the provider should redirect back to after authentication
+    ///
+    /// # Returns
+    /// Returns an `AuthFlowBegin` containing:
+    /// * The CSRF state to prevent cross-site request forgery
+    /// * A nonce key for preventing replay attacks
+    /// * The authorization URI to redirect the user to
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The provider metadata discovery fails
+    /// * The nonce cannot be stored in the database
+    /// * The HTTP client cannot be created
     pub async fn begin_auth(
         &self,
         pool: &Pool<Sqlite>,
@@ -102,11 +148,25 @@ impl OIDCPlugin {
         Ok(AuthFlowBegin {
             csrf_state: csrf_token.secret().to_string(),
             nonce_key: nonce_key.to_string(),
-            redirect_uri: auth_url.to_string(),
+            authorization_uri: auth_url.to_string(),
         })
     }
 
     /// Complete the authentication process by exchanging the authorization code for an access token and user information.
+    ///
+    /// This method is the second step in the OIDC authorization code flow. It will:
+    /// 1. Exchange the authorization code for an access token and user information
+    /// 2. Verify the nonce
+    /// 3. Verify the id token
+    /// 4. Create a new user if they don't exist
+    /// 5. Create a link between the user and the provider
+    ///
+    /// # Arguments
+    /// * `pool` - The database connection pool for storing the nonce
+    /// * `auth_flow` - The callback data containing the CSRF state, nonce key, and authorization code
+    ///
+    /// # Returns
+    /// Returns a [`User`] struct containing the user's information.
     pub async fn callback(
         &self,
         pool: &Pool<Sqlite>,

@@ -1,3 +1,10 @@
+//! Plugin system
+//!
+//! This module contains the core plugin system including migrations.
+//!
+//! See [`Plugin`] trait for the required methods for a plugin.
+//!
+//! See [`PluginManager`] for the plugin manager which is responsible for managing the plugins.
 use async_trait::async_trait;
 use dashmap::DashMap;
 use downcast_rs::{impl_downcast, DowncastSync};

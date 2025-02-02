@@ -59,10 +59,11 @@ impl PluginMigration for CreateSessionsTable {
             "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 user_id TEXT,
-                token TEXT,
-                expires_at TIMESTAMP,
+                user_agent TEXT,
+                ip_address TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP,
                 UNIQUE(id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )",

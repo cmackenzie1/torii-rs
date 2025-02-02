@@ -34,7 +34,12 @@ impl<DB: Database> ToriiBuilder<DB> {
 
     #[cfg(feature = "oidc-auth")]
     pub fn with_oidc_auth(mut self) -> Self {
-        self.manager.register(torii_auth_oidc::OIDCPlugin);
+        self.manager.register(torii_auth_oidc::OIDCPlugin::new(
+            "google".to_string(),
+            std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
+            std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
+            "http://localhost:4000/auth/oidc/callback".to_string(),
+        ));
         self
     }
 
@@ -46,7 +51,12 @@ impl<DB: Database> ToriiBuilder<DB> {
         }
         #[cfg(feature = "oidc-auth")]
         {
-            self.manager.register(torii_auth_oidc::OIDCPlugin);
+            self.manager.register(torii_auth_oidc::OIDCPlugin::new(
+                "google".to_string(),
+                std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
+                std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
+                "http://localhost:4000/auth/oidc/callback".to_string(),
+            ));
         }
         self
     }

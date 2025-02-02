@@ -46,7 +46,7 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (Cookie
             .http_only(true),
     );
 
-    (jar, Redirect::to(&auth_flow.redirect_uri))
+    (jar, Redirect::to(&auth_flow.authorization_uri))
 }
 
 #[axum::debug_handler]

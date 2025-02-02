@@ -1,3 +1,12 @@
+//! Migration system
+//!
+//! This module contains the core migration system. All migrations are defined as a struct that implements
+//! the [`PluginMigration`] trait and must contain a version and name.
+//!
+//! See [`Migration`] for the core migration struct.
+//!
+//! See [`PluginMigration`] for the core plugin migration trait.
+//!
 use crate::error::Error;
 use async_trait::async_trait;
 use sqlx::pool::Pool;

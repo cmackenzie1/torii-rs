@@ -1,3 +1,17 @@
+//! User management and authentication
+//!
+//! This module contains the core user struct and related functionality.
+//!
+//! Users are the core of the authentication system. They are responsible for storing user information and are used to identify users in the system. The core user struct is defined as follows:
+//!
+//! | Field               | Type               | Description                                       |
+//! | ------------------- | ------------------ | ------------------------------------------------- |
+//! | `id`                | `String`           | The unique identifier for the user.               |
+//! | `name`              | `String`           | The name of the user.                             |
+//! | `email`             | `String`           | The email of the user.                            |
+//! | `email_verified_at` | `Option<DateTime>` | The timestamp when the user's email was verified. |
+//! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
+//! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
