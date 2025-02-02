@@ -157,3 +157,9 @@ Cargo.lock
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,visualstudiocode,intellij+all,macos
+
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
