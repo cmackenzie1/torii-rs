@@ -8,13 +8,11 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use downcast_rs::{impl_downcast, DowncastSync};
-use sqlx::{Pool, Row, Sqlite};
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 
 use crate::error::Error;
-use crate::migration::PluginMigration;
-use crate::migrations::{CreateSessionsTable, CreateUsersTable};
+use crate::storage::{SessionStorage, UserStorage};
 
 /// Represents the authentication method used to authenticate a user.
 /// This is used for plugins to advertise which authentication methods they support.
@@ -53,40 +51,34 @@ pub enum CreateUserParams {
 }
 
 #[async_trait]
-pub trait Plugin: Any + Send + Sync + DowncastSync {
+pub trait Plugin<U: UserStorage, S: SessionStorage>: Any + Send + Sync + DowncastSync {
     /// The name of the plugin.
     fn name(&self) -> &'static str;
 
     /// Get the dependencies of this plugin.
     /// Returns a list of plugin names that must be initialized before this one.
     fn dependencies(&self) -> Vec<&'static str> {
-        Vec::new() // Default to no dependencies
+        Vec::new()
     }
 
     /// Setup the plugin. This is called when the plugin is registered and may be used to
-    /// perform any necessary initialization. This method should not perform any migrations
-    /// as the plugin manager will handle running migrations provided by the plugin.
-    async fn setup(&self, _pool: &Pool<Sqlite>) -> Result<(), Error> {
+    /// perform any necessary initialization of the user and session storage. Migrations
+    /// should be handled outside of the runtime (i.e, using sqlx::migrate with whatever storage
+    /// backend you are using).
+    async fn setup(&self, _user_storage: &U, _session_storage: &S) -> Result<(), Error> {
         Ok(())
     }
-
-    /// Get the migrations for the plugin.
-    fn migrations(&self) -> Vec<Box<dyn PluginMigration>>;
 }
-impl_downcast!(sync Plugin);
+impl_downcast!(sync Plugin<U, S> where U: UserStorage, S: SessionStorage);
 
 /// Manages a collection of plugins.
-pub struct PluginManager {
-    plugins: DashMap<TypeId, Arc<dyn Plugin>>,
+pub struct PluginManager<U: UserStorage + ?Sized, S: SessionStorage + ?Sized> {
+    plugins: DashMap<TypeId, Arc<dyn Plugin<U, S>>>,
+    user_storage: Arc<U>,
+    session_storage: Arc<S>,
 }
 
-impl Default for PluginManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PluginManager {
+impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// Creates a new empty plugin manager.
     ///
     /// # Example
@@ -95,9 +87,11 @@ impl PluginManager {
     ///
     /// let plugin_manager = PluginManager::new();
     /// ```
-    pub fn new() -> Self {
+    pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
             plugins: DashMap::new(),
+            user_storage,
+            session_storage,
         }
     }
 
@@ -115,7 +109,7 @@ impl PluginManager {
     ///
     /// let plugin = plugin_manager.get_plugin::<MyPlugin>();
     /// ```
-    pub fn get_plugin<T: Plugin + 'static>(&self) -> Option<Arc<T>> {
+    pub fn get_plugin<T: Plugin<U, S> + 'static>(&self) -> Option<Arc<T>> {
         let plugin = self.plugins.get(&TypeId::of::<T>())?;
         plugin.value().clone().downcast_arc::<T>().ok()
     }
@@ -132,7 +126,7 @@ impl PluginManager {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     /// ```
-    pub fn register<T: Plugin + 'static>(&mut self, plugin: T) {
+    pub fn register<T: Plugin<U, S> + 'static>(&mut self, plugin: T) {
         let plugin = Arc::new(plugin);
         let type_id = TypeId::of::<T>();
         self.plugins.insert(type_id, plugin.clone());
@@ -151,114 +145,25 @@ impl PluginManager {
     ///     plugin_manager.setup(pool).await.expect("Failed to setup plugins");
     /// }
     /// ```
-    pub async fn setup(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
+    pub async fn setup(&self) -> Result<(), Error> {
         let ordered = self.get_ordered_plugins()?;
         for plugin_id in ordered {
             let plugin = self.plugins.get(&plugin_id).expect("Plugin not found");
-            plugin.value().setup(pool).await?;
+            plugin
+                .value()
+                .setup(&self.user_storage, &self.session_storage)
+                .await?;
             tracing::info!("Setup plugin: {}", plugin.value().name());
         }
         Ok(())
     }
 
-    /// Initializes the migrations table if it doesn't exist.
-    async fn init_migration_table(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS torii_migrations (
-                id INTEGER PRIMARY KEY,
-                plugin_name TEXT NOT NULL,
-                version INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(plugin_name, version)
-            )
-            "#,
-        )
-        .execute(pool)
-        .await?;
-        tracing::info!("Initialized migration table");
-        Ok(())
+    pub fn user_storage(&self) -> Arc<U> {
+        self.user_storage.clone()
     }
 
-    /// Gets a list of already applied migration versions for a plugin.
-    async fn get_applied_migrations(
-        &self,
-        pool: &Pool<Sqlite>,
-        plugin_name: &str,
-    ) -> Result<Vec<i64>, Error> {
-        let rows = sqlx::query(
-            "SELECT version FROM torii_migrations WHERE plugin_name = ? ORDER BY version",
-        )
-        .bind(plugin_name)
-        .fetch_all(pool)
-        .await?;
-
-        Ok(rows.iter().map(|row| row.get(0)).collect())
-    }
-
-    /// Applies a single migration for a plugin.
-    async fn apply_migration(
-        &self,
-        pool: &Pool<Sqlite>,
-        plugin_name: &str,
-        migration: &dyn PluginMigration,
-    ) -> Result<(), Error> {
-        let mut tx = pool.begin().await?;
-
-        tracing::info!(
-            plugin.name = plugin_name,
-            version = migration.version(),
-            "Applying migration"
-        );
-
-        migration.up(pool).await?;
-
-        sqlx::query("INSERT INTO torii_migrations (plugin_name, version, name) VALUES (?, ?, ?)")
-            .bind(plugin_name)
-            .bind(migration.version())
-            .bind(migration.name())
-            .execute(&mut *tx)
-            .await?;
-
-        tx.commit().await?;
-
-        tracing::info!(
-            plugin.name = plugin_name,
-            version = migration.version(),
-            "Applied migration"
-        );
-
-        Ok(())
-    }
-
-    /// Applies all migrations for a specific plugin that haven't been applied yet.
-    async fn apply_migrations_for_plugin(
-        &self,
-        pool: &Pool<Sqlite>,
-        plugin_name: &str,
-        migrations: Vec<Box<dyn PluginMigration>>,
-    ) -> Result<(), Error> {
-        let applied = self.get_applied_migrations(pool, plugin_name).await?;
-
-        for migration in migrations {
-            if !applied.contains(&migration.version()) {
-                self.apply_migration(pool, plugin_name, &*migration).await?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Applies core migrations that are required for the system to function.
-    async fn apply_core_migrations(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
-        let core_migrations: Vec<Box<dyn PluginMigration>> = vec![
-            Box::new(CreateUsersTable),
-            Box::new(CreateSessionsTable),
-            // Add other core migrations here
-        ];
-
-        self.apply_migrations_for_plugin(pool, "core", core_migrations)
-            .await
+    pub fn session_storage(&self) -> Arc<S> {
+        self.session_storage.clone()
     }
 
     /// Gets a list of plugin TypeIds in dependency order.
@@ -310,53 +215,30 @@ impl PluginManager {
 
         Ok(())
     }
-
-    /// Runs all pending migrations for all plugins in dependency order.
-    ///
-    /// # Example
-    /// ```
-    /// use torii_core::PluginManager;
-    /// use sqlx::{Pool, Sqlite};
-    ///
-    /// async fn migrate(pool: &Pool<Sqlite>) {
-    ///     let plugin_manager = PluginManager::new();
-    ///     plugin_manager.migrate(pool).await.expect("Failed to run migrations");
-    /// }
-    /// ```
-    pub async fn migrate(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
-        self.init_migration_table(pool).await?;
-        self.apply_core_migrations(pool).await?;
-
-        let ordered_plugins = self.get_ordered_plugins()?;
-        for plugin_id in ordered_plugins {
-            let plugin = self.plugins.get(&plugin_id).expect("Plugin not found");
-            let migrations = plugin.value().migrations();
-            self.apply_migrations_for_plugin(pool, plugin.value().name(), migrations)
-                .await?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use crate::{session::SessionId, NewUser, Session, User, UserId};
+
     use super::*;
 
     #[derive(Debug, Clone)]
     struct TestPlugin;
 
     #[async_trait]
-    impl Plugin for TestPlugin {
+    impl Plugin<TestStorage, TestStorage> for TestPlugin {
         fn name(&self) -> &'static str {
             "test"
         }
 
-        async fn setup(&self, _pool: &Pool<Sqlite>) -> Result<(), Error> {
+        async fn setup(
+            &self,
+            _user_storage: &TestStorage,
+            _session_storage: &TestStorage,
+        ) -> Result<(), Error> {
             Ok(())
-        }
-
-        fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
-            vec![]
         }
     }
 
@@ -366,29 +248,108 @@ mod tests {
         }
     }
 
+    struct TestStorage {
+        users: DashMap<UserId, User>,
+        sessions: DashMap<SessionId, Session>,
+    }
+
+    impl TestStorage {
+        fn new() -> Self {
+            Self {
+                users: DashMap::new(),
+                sessions: DashMap::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl UserStorage for TestStorage {
+        type Error = Error;
+
+        async fn get_user(&self, id: &str) -> Result<User, Self::Error> {
+            self.users
+                .get(&UserId::new(id))
+                .map(|u| u.clone())
+                .ok_or_else(|| Error::UserNotFound)
+        }
+
+        async fn get_user_by_email(&self, email: &str) -> Result<User, Self::Error> {
+            self.users
+                .iter()
+                .find(|u| u.email == email)
+                .map(|u| u.clone())
+                .ok_or_else(|| Error::UserNotFound)
+        }
+
+        async fn create_user(&self, new_user: &NewUser) -> Result<User, Self::Error> {
+            let id = UserId::new_random();
+            let user = User {
+                id: id.clone(),
+                email: new_user.email.clone(),
+                created_at: chrono::Utc::now(),
+                email_verified_at: None,
+                name: "test".to_string(),
+                updated_at: chrono::Utc::now(),
+            };
+            self.users.insert(id, user.clone());
+            Ok(user)
+        }
+
+        async fn update_user(&self, user: &User) -> Result<User, Self::Error> {
+            self.users.insert(user.id.clone(), user.clone());
+            Ok(user.clone())
+        }
+
+        async fn delete_user(&self, id: &str) -> Result<(), Self::Error> {
+            self.users.remove(&UserId::new(id));
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl SessionStorage for TestStorage {
+        type Error = Error;
+
+        async fn get_session(&self, id: &str) -> Result<Session, Self::Error> {
+            self.sessions
+                .get(&SessionId::new(id))
+                .map(|s| s.clone())
+                .ok_or_else(|| Error::SessionNotFound)
+        }
+
+        async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
+            self.sessions.insert(session.id.clone(), session.clone());
+            Ok(session.clone())
+        }
+
+        async fn delete_session(&self, id: &str) -> Result<(), Self::Error> {
+            self.sessions.remove(&SessionId::new(id));
+            Ok(())
+        }
+    }
+
+    // Setup test storage for testing
+    fn setup_test_storage() -> (TestStorage, TestStorage) {
+        let user_storage = TestStorage::new();
+        let session_storage = TestStorage::new();
+        (user_storage, session_storage)
+    }
+
     #[tokio::test]
     async fn test_plugin_manager() {
-        let mut plugin_manager = PluginManager::new();
+        let (user_storage, session_storage) = setup_test_storage();
+        let mut plugin_manager = PluginManager::new(user_storage, session_storage);
         plugin_manager.register(TestPlugin::new());
         let plugin = plugin_manager.get_plugin::<TestPlugin>().unwrap();
         assert_eq!(plugin.name(), "test");
     }
 
-    async fn setup_test_db() -> Pool<Sqlite> {
-        // Create an in-memory database for testing
-        let pool = Pool::connect("sqlite::memory:").await.unwrap();
-        pool
-    }
-
     #[tokio::test]
     async fn test_basic_setup() {
-        let pool = setup_test_db().await;
-        let plugin_manager = PluginManager::new();
+        let (user_storage, session_storage) = setup_test_storage();
+        let plugin_manager = PluginManager::new(user_storage, session_storage);
 
         // This should now work without duplicate migration errors
-        plugin_manager
-            .migrate(&pool)
-            .await
-            .expect("Migration failed");
+        plugin_manager.setup().await.expect("Setup failed");
     }
 }

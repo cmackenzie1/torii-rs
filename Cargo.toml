@@ -1,5 +1,11 @@
 [workspace]
-members = ["torii", "torii-auth-email", "torii-auth-oidc", "torii-core"]
+members = [
+    "torii",
+    "torii-auth-email",
+    "torii-auth-oidc",
+    "torii-core",
+    "torii-storage-sqlite",
+]
 resolver = "2"
 
 [workspace.package]
@@ -9,7 +15,7 @@ license = "MIT"
 
 [workspace.dependencies]
 async-trait = "0.1"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 dashmap = "6.1"
 futures = "0.3"
 regex = "1"
@@ -22,7 +28,8 @@ uuid = { version = "1", features = ["v4"] }
 
 sqlx = { version = "0.8", features = [
     "runtime-tokio",
-    "sqlite",        # TODO: Remove sqlite dependency
+    "sqlite",
+    "postgres",
     "chrono",
     "uuid",
 ] }

@@ -23,6 +23,10 @@ use uuid::Uuid;
 pub struct SessionId(String);
 
 impl SessionId {
+    pub fn new(id: &str) -> Self {
+        Self(id.to_string())
+    }
+
     pub fn new_random() -> Self {
         Self(Uuid::new_v4().to_string())
     }
@@ -40,7 +44,7 @@ impl std::fmt::Display for SessionId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Session {
     /// The unique identifier for the session.
     pub id: SessionId,

@@ -1,5 +1,5 @@
 [package]
-name = "torii-auth-email"
+name = "torii-storage-sqlite"
 version = "0.1.0"
 edition.workspace = true
 repository.workspace = true
@@ -7,11 +7,12 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core" }
-torii-storage-sqlite = { path = "../torii-storage-sqlite" }
 async-trait.workspace = true
-password-auth = { version = "1", features = ["argon2"] }
-regex.workspace = true
-sqlx.workspace = true
+sqlx = { workspace = true, default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+] }
+thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

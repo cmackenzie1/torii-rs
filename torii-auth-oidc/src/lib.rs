@@ -1,15 +1,13 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use migrations::CreateOidcTables;
 use openidconnect::{
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
 use sqlx::{Pool, Row, Sqlite};
-use torii_core::{migration::PluginMigration, Error, Plugin, User};
+use torii_core::{Error, Plugin, SessionStorage, User, UserStorage};
 use uuid::Uuid;
-mod migrations;
 
 /// The core OIDC plugin struct, responsible for handling OIDC authentication flow.
 ///
@@ -363,16 +361,12 @@ impl OIDCPlugin {
 }
 
 #[async_trait]
-impl Plugin for OIDCPlugin {
+impl<U: UserStorage, S: SessionStorage> Plugin<U, S> for OIDCPlugin {
     fn name(&self) -> &'static str {
         "oidc"
     }
 
-    async fn setup(&self, _pool: &Pool<Sqlite>) -> Result<(), Error> {
+    async fn setup(&self, _user_storage: &U, _session_storage: &S) -> Result<(), Error> {
         Ok(())
-    }
-
-    fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
-        vec![Box::new(CreateOidcTables)]
     }
 }

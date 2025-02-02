@@ -11,14 +11,13 @@
 //! If your plugin requires migrations to the database, you can use the [`Migration`] struct to define the migrations.
 //!
 pub mod error;
-pub mod migration;
-pub mod migrations;
 pub mod plugin;
 pub mod session;
+pub mod storage;
 pub mod user;
 
 pub use error::Error;
-pub use migration::Migration;
 pub use plugin::{AuthMethod, AuthenticationRequest, Plugin, PluginManager};
 pub use session::Session;
+pub use storage::{NewUser, SessionStorage, UserStorage};
 pub use user::{User, UserId};

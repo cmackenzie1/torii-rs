@@ -1,0 +1,7 @@
+---
+description: When writing rust sqlx queries
+globs: *.rs
+---
+- Never use the sqlx query macros `query!` or `query_as!` when writing sqlx queries
+- Always use the non-macro version when writing sqlx queries
+- Prefer passing borrowed values when using bind

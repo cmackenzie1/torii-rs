@@ -1,0 +1,11 @@
+-- Add up migration script here
+-- dialect: sqlite
+CREATE TABLE IF NOT EXISTS oidc_accounts (
+    id INTEGER PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);

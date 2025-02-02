@@ -30,9 +30,17 @@ pub enum Error {
     #[error("Weak password")]
     WeakPassword,
 
+    // Session errors
+    #[error("Session not found")]
+    SessionNotFound,
+
     // Internal server errors
     #[error("Internal server error")]
     InternalServerError,
+
+    // Storage errors
+    #[error("Storage error: {0}")]
+    Storage(String),
 }
 
 impl Error {

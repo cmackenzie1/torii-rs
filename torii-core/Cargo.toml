@@ -10,6 +10,7 @@ async-trait.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
 downcast-rs = "2.0.1"
+futures.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true

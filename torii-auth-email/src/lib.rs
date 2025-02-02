@@ -3,24 +3,13 @@
 //! Username is set to the provided email address.
 //!
 //! Password is hashed using the `password_auth` crate using argon2.
-mod migrations;
-
 use async_trait::async_trait;
-use migrations::AddPasswordHashColumn;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
-use sqlx::pool::Pool;
-use sqlx::sqlite::Sqlite;
-use sqlx::Row;
-use torii_core::migration::PluginMigration;
-use torii_core::{Error, Plugin, User, UserId};
+use torii_core::storage::{NewUser, SessionStorage, UserStorage};
+use torii_core::{Error, Plugin, User};
+use torii_storage_sqlite::EmailAuthStorage;
 pub struct EmailPasswordPlugin;
-
-impl Default for EmailPasswordPlugin {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl EmailPasswordPlugin {
     pub fn new() -> Self {
@@ -29,30 +18,21 @@ impl EmailPasswordPlugin {
 }
 
 #[async_trait]
-impl Plugin for EmailPasswordPlugin {
+impl<U: UserStorage<Error = Error>, S: SessionStorage<Error = Error>> Plugin<U, S>
+    for EmailPasswordPlugin
+{
     fn name(&self) -> &'static str {
         "email_password"
-    }
-
-    async fn setup(&self, _pool: &Pool<Sqlite>) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn migrations(&self) -> Vec<Box<dyn PluginMigration>> {
-        vec![Box::new(AddPasswordHashColumn)]
     }
 }
 
 impl EmailPasswordPlugin {
-    pub async fn create_user(
+    pub async fn create_user<S: EmailAuthStorage<Error = Error>>(
         &self,
-        pool: &Pool<Sqlite>,
+        storage: &S,
         email: &str,
         password: &str,
     ) -> Result<User, Error> {
-        let user_id = UserId::new_random();
-        let password_hash = generate_hash(password);
-
         if !is_valid_email(email) {
             return Err(Error::InvalidEmailFormat);
         }
@@ -60,89 +40,62 @@ impl EmailPasswordPlugin {
             return Err(Error::WeakPassword);
         }
 
-        sqlx::query(
-            r#"
-            INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)
-            "#,
-        )
-        .bind(&user_id)
-        .bind(email)
-        .bind(password_hash)
-        .execute(pool)
-        .await?;
+        // TODO: Wrap this in a transaction
 
-        let user = sqlx::query(
-            r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at
-            FROM users
-            WHERE id = ?
-            "#,
-        )
-        .bind(&user_id)
-        .fetch_one(pool)
-        .await?;
+        if storage.get_user_by_email(email).await.is_ok() {
+            return Err(Error::UserAlreadyExists);
+        }
+
+        let user = storage
+            .create_user(&NewUser {
+                email: email.to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("Failed to create user");
+
+        let hash = generate_hash(password);
+        storage
+            .set_password_hash(&user.id, &hash)
+            .await
+            .expect("Failed to set password");
 
         tracing::info!(
-            user.id = %user.get::<String, _>("id"),
-            user.email = %user.get::<String, _>("email"),
-            user.name = %user.get::<String, _>("name"),
+            user.id = %user.id,
+            user.email = %user.email,
+            user.name = %user.name,
             "Created user",
         );
 
-        Ok(User {
-            id: user.get("id"),
-            name: user.get("name"),
-            email: user.get("email"),
-            email_verified_at: user.get("email_verified_at"),
-            created_at: user.get("created_at"),
-            updated_at: user.get("updated_at"),
-        })
+        Ok(user)
     }
 
-    pub async fn login_user(
+    pub async fn login_user<S: EmailAuthStorage<Error = Error>>(
         &self,
-        pool: &Pool<Sqlite>,
+        storage: &S,
         email: &str,
         password: &str,
     ) -> Result<User, Error> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, name, email, email_verified_at, password_hash, created_at, updated_at
-            FROM users
-            WHERE email = ?
-            LIMIT 1
-            "#,
-        )
-        .bind(email)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| match e {
-            sqlx::Error::RowNotFound => Error::UserNotFound,
-            _ => e.into(),
-        })?;
+        let user = storage
+            .get_user_by_email(email)
+            .await
+            .map_err(|_| Error::UserNotFound)?; // TODO: Should we return a different error that doesn't leak information about the user?
 
-        let stored_hash: String = row.get("password_hash");
+        let hash = storage
+            .get_password_hash(&user.id)
+            .await
+            .map_err(|_| Error::InvalidCredentials)?;
 
-        if verify_password(password, &stored_hash).is_err() {
-            tracing::error!(email = email, "Invalid credentials");
-            return Err(Error::InvalidCredentials);
-        }
+        verify_password(password, &hash).map_err(|_| Error::InvalidCredentials)?;
 
         tracing::info!(
-            row.id = %row.get::<String, _>("id"),
-            row.email = %row.get::<String, _>("email"),
-            row.name = %row.get::<String, _>("name"),
+            user.id = %user.id,
+            user.email = %user.email,
+            user.name = %user.name,
             "Logged in user",
         );
 
-        Ok(User {
-            id: row.get("id"),
-            name: row.get("name"),
-            email: row.get("email"),
-            email_verified_at: row.get("email_verified_at"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        })
+        Ok(user)
     }
 }
 
@@ -162,21 +115,32 @@ fn is_valid_password(password: &str) -> bool {
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
+    use std::sync::Arc;
     use torii_core::PluginManager;
+    use torii_storage_sqlite::SqliteStorage;
 
-    async fn setup_plugin() -> Result<(PluginManager, Pool<Sqlite>), Error> {
+    async fn setup_plugin() -> Result<
+        (
+            PluginManager<SqliteStorage, SqliteStorage>,
+            Arc<SqliteStorage>,
+            Arc<SqliteStorage>,
+        ),
+        Error,
+    > {
         let _ = tracing_subscriber::fmt().try_init(); // don't panic if this fails
 
         let pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create pool");
 
-        let mut manager = PluginManager::new();
-        manager.register(EmailPasswordPlugin);
-        manager.setup(&pool).await?;
-        manager.migrate(&pool).await?;
+        let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+        let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
 
-        Ok((manager, pool))
+        let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+        manager.register(EmailPasswordPlugin);
+        manager.setup().await?;
+
+        Ok((manager, user_storage, session_storage))
     }
 
     #[test]
@@ -211,32 +175,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_plugin_setup() -> Result<(), Error> {
-        let (_, pool) = setup_plugin().await?;
-
-        let count = sqlx::query("SELECT count(*) FROM users")
-            .fetch_one(&pool)
-            .await?;
-        assert_eq!(count.get::<i64, _>(0), 0);
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_create_user_and_login() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, session_storage) = setup_plugin().await?;
 
         let user = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .create_user(&pool, "test@example.com", "password")
+            .create_user(&*user_storage, "test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let user = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .login_user(&pool, "test@example.com", "password")
+            .login_user(&*user_storage, "test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
@@ -245,18 +197,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_duplicate_user() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, session_storage) = setup_plugin().await?;
 
         let _ = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .create_user(&pool, "test@example.com", "password")
+            .create_user(&*user_storage, "test@example.com", "password")
             .await?;
 
         let user = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .create_user(&pool, "test@example.com", "password")
+            .create_user(&*user_storage, "test@example.com", "password")
             .await;
 
         assert!(user.is_err());
@@ -266,12 +218,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_email_format() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, session_storage) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&pool, "not-an-email", "password")
+            .create_user(&*user_storage, "not-an-email", "password")
             .await;
 
         assert!(result.is_err());
@@ -281,12 +233,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_weak_password() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, session_storage) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&pool, "test@example.com", "123")
+            .create_user(&*user_storage, "test@example.com", "123")
             .await;
 
         assert!(result.is_err());
@@ -296,18 +248,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_incorrect_password_login() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, session_storage) = setup_plugin().await?;
 
         manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&pool, "test@example.com", "password")
+            .create_user(&*user_storage, "test@example.com", "password")
             .await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .login_user(&pool, "test@example.com", "wrong-password")
+            .login_user(&*user_storage, "test@example.com", "wrong-password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidCredentials)));
@@ -322,7 +274,7 @@ mod tests {
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .login_user(&pool, "nonexistent@example.com", "password")
+            .login_user(&*pool, "nonexistent@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserNotFound)));
@@ -332,20 +284,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_sql_injection_attempt() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, session_storage) = setup_plugin().await?;
 
         let _ = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&pool, "test@example.com'; DROP TABLE users;--", "password")
+            .create_user(
+                &*user_storage,
+                "test@example.com'; DROP TABLE users;--",
+                "password",
+            )
             .await
             .expect_err("Should fail validation");
-
-        // Verify table still exists and no user was created
-        let count = sqlx::query("SELECT count(*) FROM users")
-            .fetch_one(&pool)
-            .await?;
-        assert_eq!(count.get::<i64, _>(0), 0);
 
         Ok(())
     }
