@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT,
     email TEXT,
     email_verified_at TIMESTAMP,
+    password_hash TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(email),

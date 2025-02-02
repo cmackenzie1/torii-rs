@@ -52,3 +52,16 @@ pub struct NewUser {
     pub id: UserId,
     pub email: String,
 }
+
+impl NewUser {
+    pub fn new(id: UserId, email: String) -> Self {
+        Self { id, email }
+    }
+
+    pub fn new_with_default_id(email: String) -> Self {
+        Self {
+            id: UserId::new_random(),
+            email,
+        }
+    }
+}

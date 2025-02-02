@@ -17,6 +17,12 @@ impl EmailPasswordPlugin {
     }
 }
 
+impl Default for EmailPasswordPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl<U: UserStorage<Error = Error>, S: SessionStorage<Error = Error>> Plugin<U, S>
     for EmailPasswordPlugin
@@ -43,14 +49,12 @@ impl EmailPasswordPlugin {
         // TODO: Wrap this in a transaction
 
         if storage.get_user_by_email(email).await.is_ok() {
+            tracing::debug!(email = %email, "User already exists");
             return Err(Error::UserAlreadyExists);
         }
 
         let user = storage
-            .create_user(&NewUser {
-                email: email.to_string(),
-                ..Default::default()
-            })
+            .create_user(&NewUser::new_with_default_id(email.to_string()))
             .await
             .expect("Failed to create user");
 
@@ -140,6 +144,9 @@ mod tests {
         manager.register(EmailPasswordPlugin);
         manager.setup().await?;
 
+        user_storage.migrate().await?;
+        session_storage.migrate().await?;
+
         Ok((manager, user_storage, session_storage))
     }
 
@@ -176,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_user_and_login() -> Result<(), Error> {
-        let (manager, user_storage, session_storage) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         let user = manager
             .get_plugin::<EmailPasswordPlugin>()
@@ -197,7 +204,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_duplicate_user() -> Result<(), Error> {
-        let (manager, user_storage, session_storage) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         let _ = manager
             .get_plugin::<EmailPasswordPlugin>()
@@ -211,14 +218,14 @@ mod tests {
             .create_user(&*user_storage, "test@example.com", "password")
             .await;
 
-        assert!(user.is_err());
+        assert!(matches!(user, Err(Error::UserAlreadyExists)));
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_invalid_email_format() -> Result<(), Error> {
-        let (manager, user_storage, session_storage) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
@@ -233,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_weak_password() -> Result<(), Error> {
-        let (manager, user_storage, session_storage) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
@@ -248,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_incorrect_password_login() -> Result<(), Error> {
-        let (manager, user_storage, session_storage) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         manager
             .get_plugin::<EmailPasswordPlugin>()
@@ -269,12 +276,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_nonexistent_user_login() -> Result<(), Error> {
-        let (manager, pool) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .login_user(&*pool, "nonexistent@example.com", "password")
+            .login_user(&*user_storage, "nonexistent@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserNotFound)));
@@ -284,7 +291,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sql_injection_attempt() -> Result<(), Error> {
-        let (manager, user_storage, session_storage) = setup_plugin().await?;
+        let (manager, user_storage, _session_storage) = setup_plugin().await?;
 
         let _ = manager
             .get_plugin::<EmailPasswordPlugin>()

@@ -8,10 +8,8 @@ license.workspace = true
 [dependencies]
 torii-core = { path = "../torii-core" }
 async-trait.workspace = true
-sqlx = { workspace = true, default-features = false, features = [
-    "runtime-tokio",
-    "sqlite",
-] }
+chrono.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
 thiserror.workspace = true
 tracing.workspace = true
 

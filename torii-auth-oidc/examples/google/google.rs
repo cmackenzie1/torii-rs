@@ -11,6 +11,7 @@ use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 use torii_auth_oidc::{AuthFlowCallback, OIDCPlugin};
 use torii_core::plugin::PluginManager;
+use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Debug, Deserialize)]
 struct QueryParams {
@@ -21,7 +22,7 @@ struct QueryParams {
 #[derive(Clone)]
 struct AppState {
     pool: Pool<Sqlite>,
-    plugin_manager: Arc<PluginManager>,
+    plugin_manager: Arc<PluginManager<SqliteStorage, SqliteStorage>>,
 }
 
 #[axum::debug_handler]
@@ -80,15 +81,20 @@ async fn main() {
         .await
         .unwrap();
 
-    let mut plugin_manager = PluginManager::new();
+    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+
+    user_storage.migrate().await.unwrap();
+    session_storage.migrate().await.unwrap();
+
+    let mut plugin_manager = PluginManager::new(user_storage, session_storage);
     plugin_manager.register(OIDCPlugin::new(
         "google".to_string(),
         std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
         std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback".to_string(),
     ));
-    plugin_manager.setup(&pool).await.unwrap();
-    plugin_manager.migrate(&pool).await.unwrap();
+    plugin_manager.setup().await.unwrap();
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))

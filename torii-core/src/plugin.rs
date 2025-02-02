@@ -329,9 +329,9 @@ mod tests {
     }
 
     // Setup test storage for testing
-    fn setup_test_storage() -> (TestStorage, TestStorage) {
-        let user_storage = TestStorage::new();
-        let session_storage = TestStorage::new();
+    fn setup_test_storage() -> (Arc<TestStorage>, Arc<TestStorage>) {
+        let user_storage = Arc::new(TestStorage::new());
+        let session_storage = Arc::new(TestStorage::new());
         (user_storage, session_storage)
     }
 
@@ -347,7 +347,8 @@ mod tests {
     #[tokio::test]
     async fn test_basic_setup() {
         let (user_storage, session_storage) = setup_test_storage();
-        let plugin_manager = PluginManager::new(user_storage, session_storage);
+        let mut plugin_manager = PluginManager::new(user_storage, session_storage);
+        plugin_manager.register(TestPlugin::new());
 
         // This should now work without duplicate migration errors
         plugin_manager.setup().await.expect("Setup failed");

@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use chrono::DateTime;
+use chrono::Utc;
 use sqlx::Row;
 use sqlx::SqlitePool;
 use torii_core::{
@@ -14,6 +16,14 @@ impl SqliteStorage {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
+
+    pub async fn migrate(&self) -> Result<(), sqlx::Error> {
+        let migrations = sqlx::migrate!("./migrations");
+        tracing::debug!("Applying migrations: {:?}", migrations);
+        migrations.run(&self.pool).await?;
+        tracing::debug!("Applied latest migrations");
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -26,9 +36,12 @@ impl UserStorage for SqliteStorage {
             .bind(&user.email)
             .execute(&self.pool)
             .await
-            .map_err(|_| Self::Error::Storage("Failed to create user".to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to create user");
+                Self::Error::Storage("Failed to create user".to_string())
+            })?;
 
-        Ok(self.get_user(&user.id.as_ref()).await?)
+        Ok(self.get_user(user.id.as_ref()).await?)
     }
 
     async fn get_user(&self, id: &str) -> Result<User, Self::Error> {
@@ -42,7 +55,10 @@ impl UserStorage for SqliteStorage {
         .bind(id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|_| Self::Error::Storage("Failed to get user".to_string()))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get user");
+            Self::Error::Storage("Failed to get user".to_string())
+        })?;
 
         Ok(user)
     }
@@ -57,7 +73,11 @@ impl UserStorage for SqliteStorage {
         )
         .bind(email)
         .fetch_one(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get user by email");
+            Self::Error::Storage("Failed to get user by email".to_string())
+        })?;
 
         Ok(user)
     }
@@ -73,20 +93,28 @@ impl UserStorage for SqliteStorage {
         )
         .bind(&user.email)
         .bind(&user.name)
-        .bind(&user.email_verified_at)
-        .bind(&user.updated_at)
+        .bind(user.email_verified_at)
+        .bind(user.updated_at)
         .bind(&user.id)
         .fetch_one(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to update user");
+            Self::Error::Storage("Failed to update user".to_string())
+        })?;
 
-        Ok(self.get_user(&user.id.as_ref()).await?)
+        Ok(self.get_user(user.id.as_ref()).await?)
     }
 
     async fn delete_user(&self, id: &str) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM users WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to delete user");
+                Self::Error::Storage("Failed to delete user".to_string())
+            })?;
 
         Ok(())
     }
@@ -120,7 +148,13 @@ impl EmailAuthStorage for SqliteStorage {
             .bind(hash)
             .bind(user_id)
             .execute(&self.pool)
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to set password hash");
+                <Self as EmailAuthStorage>::Error::Storage(
+                    "Failed to set password hash".to_string(),
+                )
+            })?;
 
         Ok(())
     }
@@ -132,7 +166,13 @@ impl EmailAuthStorage for SqliteStorage {
         let hash = sqlx::query("SELECT password_hash FROM users WHERE id = ?")
             .bind(user_id)
             .fetch_one(&self.pool)
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to get password hash");
+                <Self as EmailAuthStorage>::Error::Storage(
+                    "Failed to get password hash".to_string(),
+                )
+            })?;
 
         Ok(hash.get("password_hash"))
     }
@@ -148,14 +188,14 @@ impl SessionStorage for SqliteStorage {
             .bind(&session.user_id)
             .bind(&session.user_agent)
             .bind(&session.ip_address)
-            .bind(&session.created_at)
-            .bind(&session.updated_at)
-            .bind(&session.expires_at)
+            .bind(session.created_at)
+            .bind(session.updated_at)
+            .bind(session.expires_at)
             .execute(&self.pool)
             .await
             .map_err(|_| Self::Error::Storage("Failed to create session".to_string()))?;
 
-        Ok(self.get_session(&session.id.as_ref()).await?)
+        Ok(self.get_session(session.id.as_ref()).await?)
     }
 
     async fn get_session(&self, id: &str) -> Result<Session, Self::Error> {
@@ -169,7 +209,10 @@ impl SessionStorage for SqliteStorage {
         .bind(id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|_| Self::Error::Storage("Failed to get session".to_string()))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get session");
+            Self::Error::Storage("Failed to get session".to_string())
+        })?;
 
         Ok(session)
     }
@@ -179,9 +222,73 @@ impl SessionStorage for SqliteStorage {
             .bind(id)
             .execute(&self.pool)
             .await
-            .map_err(|_| Self::Error::Storage("Failed to delete session".to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to delete session");
+                Self::Error::Storage("Failed to delete session".to_string())
+            })?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct OIDCAccount {
+    pub user_id: String,
+    pub provider: String,
+    pub subject: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[async_trait]
+pub trait OIDCStorage: UserStorage + SessionStorage {
+    type Error: std::error::Error + Send + Sync;
+
+    async fn create_oidc_account(
+        &self,
+        oidc_account: &OIDCAccount,
+    ) -> Result<OIDCAccount, <Self as OIDCStorage>::Error>;
+}
+
+#[async_trait]
+impl OIDCStorage for SqliteStorage {
+    type Error = torii_core::Error;
+
+    async fn create_oidc_account(
+        &self,
+        oidc_account: &OIDCAccount,
+    ) -> Result<OIDCAccount, <Self as OIDCStorage>::Error> {
+        sqlx::query("INSERT INTO oidc_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(&oidc_account.user_id)
+            .bind(&oidc_account.provider)
+            .bind(&oidc_account.subject)
+            .bind(oidc_account.created_at)
+            .bind(oidc_account.updated_at)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to create oidc account");
+                <Self as OIDCStorage>::Error::Storage(
+                    "Failed to create oidc account".to_string(),
+                )
+            })?;
+
+        let oidc_account = sqlx::query_as::<_, OIDCAccount>(
+            r#"
+            SELECT user_id, provider, subject, created_at, updated_at
+            FROM oidc_accounts
+            WHERE user_id = ?
+            "#,
+        )
+        .bind(&oidc_account.user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get oidc account");
+            <Self as OIDCStorage>::Error::Storage("Failed to get oidc account".to_string())
+        })?;
+
+        Ok(oidc_account)
     }
 }
 

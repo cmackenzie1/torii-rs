@@ -9,3 +9,9 @@ CREATE TABLE IF NOT EXISTS oidc_accounts (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS nonces (
+    id TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    expires_at DATETIME NOT NULL
+);
