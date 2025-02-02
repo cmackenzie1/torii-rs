@@ -8,8 +8,20 @@ license.workspace = true
 [dependencies]
 torii-core = { path = "../torii-core" }
 
-jsonwebtoken = "9"
-
+openidconnect = "4.0.0"
+chrono.workspace = true
 async-trait.workspace = true
 serde.workspace = true
 sqlx.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+axum = { version = "0.8", features = ["macros"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+tracing-subscriber.workspace = true
+
+[[example]]
+name = "google"
+path = "examples/google/google.rs"

@@ -1,10 +1,11 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A unique, stable identifier for a specific user
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize)]
 #[sqlx(transparent)]
 pub struct UserId(String);
 
@@ -41,7 +42,7 @@ impl std::fmt::Display for UserId {
 ///
 /// Many of these fields are optional, as they may not be available from the authentication provider,
 /// or may not be known at the time of authentication.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     // The unique identifier for the user.
     pub id: UserId,

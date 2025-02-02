@@ -19,7 +19,7 @@ impl PluginMigration for CreateOidcTables {
         sqlx::query(
             r#"CREATE TABLE IF NOT EXISTS oidc_accounts (
                 id INTEGER PRIMARY KEY,
-                user_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
                 provider TEXT NOT NULL,
                 subject TEXT NOT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -31,11 +31,28 @@ impl PluginMigration for CreateOidcTables {
         .execute(pool)
         .await?;
 
+        // create nonces table
+        // TODO Should this be user-aware?
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS nonces (
+                id TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )"#,
+        )
+        .execute(pool)
+        .await?;
+
         Ok(())
     }
 
     async fn down(&self, pool: &Pool<Sqlite>) -> Result<(), Error> {
         sqlx::query(r#"DROP TABLE IF EXISTS oidc_accounts"#)
+            .execute(pool)
+            .await?;
+
+        sqlx::query(r#"DROP TABLE IF EXISTS nonces"#)
             .execute(pool)
             .await?;
 

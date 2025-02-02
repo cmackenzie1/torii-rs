@@ -29,6 +29,10 @@ pub enum Error {
     InvalidEmailFormat,
     #[error("Weak password")]
     WeakPassword,
+
+    // Internal server errors
+    #[error("Internal server error")]
+    InternalServerError,
 }
 
 impl Error {
