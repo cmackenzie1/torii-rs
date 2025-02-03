@@ -15,6 +15,7 @@
 //! | `expires_at` | `DateTime`       | The timestamp when the session will expire.            |
 use crate::user::UserId;
 use chrono::{DateTime, Utc};
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -30,6 +31,28 @@ impl SessionId {
     pub fn new_random() -> Self {
         Self(Uuid::new_v4().to_string())
     }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl Default for SessionId {
+    fn default() -> Self {
+        Self::new_random()
+    }
+}
+
+impl From<String> for SessionId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for SessionId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
 }
 
 impl AsRef<str> for SessionId {
@@ -44,28 +67,40 @@ impl std::fmt::Display for SessionId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Builder)]
 pub struct Session {
     /// The unique identifier for the session.
+    #[builder(default = "SessionId::new_random()")]
     pub id: SessionId,
 
     /// The unique identifier for the user.
     pub user_id: UserId,
 
     /// The user agent of the client that created the session.
+    #[builder(default = "None")]
     pub user_agent: Option<String>,
 
     /// The IP address of the client that created the session.
+    #[builder(default = "None")]
     pub ip_address: Option<String>,
 
     /// The timestamp when the session was created.
+    #[builder(default = "chrono::Utc::now()")]
     pub created_at: DateTime<Utc>,
 
     /// The timestamp when the session was last updated.
+    #[builder(default = "chrono::Utc::now()")]
     pub updated_at: DateTime<Utc>,
 
     /// The timestamp when the session will expire.
+    #[builder(default = "chrono::Utc::now() + chrono::Duration::days(30)")]
     pub expires_at: DateTime<Utc>,
+}
+
+impl Session {
+    pub fn builder() -> SessionBuilder {
+        SessionBuilder::default()
+    }
 }
 
 #[cfg(test)]

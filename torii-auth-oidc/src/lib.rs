@@ -5,9 +5,7 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use torii_core::{
-    session::SessionId, Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage,
-};
+use torii_core::{Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage};
 use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
 use uuid::Uuid;
 
@@ -281,15 +279,7 @@ impl OIDCPlugin {
             return Ok((
                 user.clone(),
                 session_storage
-                    .create_session(&Session {
-                        id: SessionId::new_random(),
-                        user_id: user.id.clone(),
-                        user_agent: None,
-                        ip_address: None,
-                        created_at: Utc::now(),
-                        updated_at: Utc::now(),
-                        expires_at: Utc::now() + Duration::days(30),
-                    })
+                    .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
                     .await
                     .map_err(|_| Error::InternalServerError)?,
             ));
@@ -324,15 +314,7 @@ impl OIDCPlugin {
         );
 
         // Create a new session
-        let session = Session {
-            id: SessionId::new_random(),
-            user_id: user.id.clone(),
-            user_agent: None,
-            ip_address: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            expires_at: Utc::now() + Duration::days(30),
-        };
+        let session = Session::builder().user_id(user.id.clone()).build().unwrap();
 
         let session = user_storage
             .create_session(&session)

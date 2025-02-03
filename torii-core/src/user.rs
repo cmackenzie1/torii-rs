@@ -12,9 +12,8 @@
 //! | `email_verified_at` | `Option<DateTime>` | The timestamp when the user's email was verified. |
 //! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
 //! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
-use std::str::FromStr;
-
 use chrono::{DateTime, Utc};
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,6 +30,10 @@ impl UserId {
     pub fn new_random() -> Self {
         UserId(Uuid::new_v4().to_string())
     }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
 }
 
 impl Default for UserId {
@@ -39,10 +42,15 @@ impl Default for UserId {
     }
 }
 
-impl FromStr for UserId {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(UserId(s.to_string()))
+impl From<String> for UserId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for UserId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
     }
 }
 
@@ -62,9 +70,10 @@ impl std::fmt::Display for UserId {
 ///
 /// Many of these fields are optional, as they may not be available from the authentication provider,
 /// or may not be known at the time of authentication.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Builder)]
 pub struct User {
     // The unique identifier for the user.
+    #[builder(default = "UserId::new_random()")]
     pub id: UserId,
 
     // The name of the user.
@@ -74,12 +83,15 @@ pub struct User {
     pub email: String,
 
     // The email verified at timestamp. If the user has not verified their email, this will be None.
+    #[builder(default = "None")]
     pub email_verified_at: Option<DateTime<Utc>>,
 
     // The created at timestamp.
+    #[builder(default = "chrono::Utc::now()")]
     pub created_at: DateTime<Utc>,
 
     // The updated at timestamp.
+    #[builder(default = "chrono::Utc::now()")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -92,7 +104,7 @@ mod tests {
         let user_id = UserId::new("test");
         assert_eq!(user_id.as_ref(), "test");
 
-        let user_id_from_str = UserId::from_str(user_id.as_ref()).unwrap();
+        let user_id_from_str = UserId::from(user_id.as_ref());
         assert_eq!(user_id_from_str, user_id);
 
         let user_id_random = UserId::new_random();
