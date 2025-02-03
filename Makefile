@@ -48,6 +48,10 @@ check: fmt lint test
 update:
 	@cargo update
 
+# Generate documentation
+docs:
+	@cargo doc --all-features --no-deps --open
+
 # Help command to list all available commands
 help:
 	@echo "Available commands:"
@@ -61,4 +65,4 @@ help:
 	@echo "${BLUE}make release${RESET}      - Build for release"
 	@echo "${BLUE}make check${RESET}        - Run all checks (format, lint, test)"
 	@echo "${BLUE}make update${RESET}       - Update dependencies"
-
+	@echo "${BLUE}make docs${RESET}         - Generate documentation"

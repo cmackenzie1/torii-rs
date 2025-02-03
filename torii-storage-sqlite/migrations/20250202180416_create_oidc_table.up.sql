@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS oidc_accounts (
     subject TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    UNIQUE(user_id, provider, subject)
 );
 
 CREATE TABLE IF NOT EXISTS nonces (

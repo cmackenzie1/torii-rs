@@ -15,13 +15,13 @@ serde.workspace = true
 sqlx.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
 
 [dev-dependencies]
 tokio.workspace = true
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 tracing-subscriber.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
 
 [[example]]
 name = "google"

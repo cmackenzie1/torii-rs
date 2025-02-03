@@ -21,7 +21,8 @@ struct QueryParams {
 
 #[derive(Clone)]
 struct AppState {
-    pool: Pool<Sqlite>,
+    user_storage: Arc<SqliteStorage>,
+    session_storage: Arc<SqliteStorage>,
     plugin_manager: Arc<PluginManager<SqliteStorage, SqliteStorage>>,
 }
 
@@ -30,7 +31,8 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (Cookie
     let plugin = state.plugin_manager.get_plugin::<OIDCPlugin>().unwrap();
     let auth_flow = plugin
         .begin_auth(
-            &state.pool,
+            &*state.user_storage,
+            &*state.session_storage,
             "http://localhost:4000/auth/google/callback".to_string(),
         )
         .await
@@ -61,7 +63,8 @@ async fn callback_handler(
     let plugin = state.plugin_manager.get_plugin::<OIDCPlugin>().unwrap();
     let user = plugin
         .callback(
-            &state.pool,
+            &*state.user_storage,
+            &*state.session_storage,
             &AuthFlowCallback {
                 csrf_state: params.state,
                 nonce_key: nonce_key.to_string(),
@@ -87,7 +90,7 @@ async fn main() {
     user_storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
-    let mut plugin_manager = PluginManager::new(user_storage, session_storage);
+    let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
     plugin_manager.register(OIDCPlugin::new(
         "google".to_string(),
         std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
@@ -101,7 +104,8 @@ async fn main() {
         .route("/auth/google/login", get(login_handler))
         .route("/auth/google/callback", get(callback_handler))
         .with_state(AppState {
-            pool,
+            user_storage: user_storage.clone(),
+            session_storage: session_storage.clone(),
             plugin_manager: Arc::new(plugin_manager),
         });
 

@@ -41,10 +41,15 @@ impl UserStorage for SqliteStorage {
                 Self::Error::Storage("Failed to create user".to_string())
             })?;
 
-        Ok(self.get_user(user.id.as_ref()).await?)
+        let user = self.get_user(user.id.as_ref()).await?;
+        if let Some(user) = user {
+            Ok(user)
+        } else {
+            Err(Self::Error::Storage("Failed to create user".to_string()))
+        }
     }
 
-    async fn get_user(&self, id: &str) -> Result<User, Self::Error> {
+    async fn get_user(&self, id: &str) -> Result<Option<User>, Self::Error> {
         let user = sqlx::query_as::<_, User>(
             r#"
             SELECT id, email, name, email_verified_at, created_at, updated_at 
@@ -53,17 +58,21 @@ impl UserStorage for SqliteStorage {
             "#,
         )
         .bind(id)
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user");
             Self::Error::Storage("Failed to get user".to_string())
         })?;
 
-        Ok(user)
+        if let Some(user) = user {
+            Ok(Some(user))
+        } else {
+            Ok(None)
+        }
     }
 
-    async fn get_user_by_email(&self, email: &str) -> Result<User, Self::Error> {
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
         let user = sqlx::query_as::<_, User>(
             r#"
             SELECT id, email, name, email_verified_at, created_at, updated_at 
@@ -72,12 +81,36 @@ impl UserStorage for SqliteStorage {
             "#,
         )
         .bind(email)
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user by email");
             Self::Error::Storage("Failed to get user by email".to_string())
         })?;
+
+        if let Some(user) = user {
+            Ok(Some(user))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error> {
+        let user = self.get_user_by_email(email).await?;
+        if let Some(user) = user {
+            return Ok(user);
+        }
+
+        let user = self
+            .create_user(&NewUser {
+                id: UserId::new_random(),
+                email: email.to_string(),
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to get or create user by email");
+                Self::Error::Storage("Failed to get or create user by email".to_string())
+            })?;
 
         Ok(user)
     }
@@ -103,7 +136,12 @@ impl UserStorage for SqliteStorage {
             Self::Error::Storage("Failed to update user".to_string())
         })?;
 
-        Ok(self.get_user(user.id.as_ref()).await?)
+        let user = self.get_user(user.id.as_ref()).await?;
+        if let Some(user) = user {
+            Ok(user)
+        } else {
+            Err(Self::Error::Storage("Failed to update user".to_string()))
+        }
     }
 
     async fn delete_user(&self, id: &str) -> Result<(), Self::Error> {
@@ -248,6 +286,20 @@ pub trait OIDCStorage: UserStorage + SessionStorage {
         &self,
         oidc_account: &OIDCAccount,
     ) -> Result<OIDCAccount, <Self as OIDCStorage>::Error>;
+
+    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OIDCStorage>::Error>;
+    async fn save_nonce(
+        &self,
+        id: &str,
+        value: &str,
+        expires_at: &DateTime<Utc>,
+    ) -> Result<(), <Self as OIDCStorage>::Error>;
+
+    async fn get_oidc_account_by_provider_and_subject(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<OIDCAccount>, <Self as OIDCStorage>::Error>;
 }
 
 #[async_trait]
@@ -290,6 +342,71 @@ impl OIDCStorage for SqliteStorage {
 
         Ok(oidc_account)
     }
+
+    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OIDCStorage>::Error> {
+        let nonce = sqlx::query("SELECT value FROM nonces WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to get nonce");
+                <Self as OIDCStorage>::Error::Storage("Failed to get nonce".to_string())
+            })?;
+
+        if let Some(nonce) = nonce {
+            Ok(Some(nonce.get("value")))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn save_nonce(
+        &self,
+        id: &str,
+        value: &str,
+        expires_at: &DateTime<Utc>,
+    ) -> Result<(), <Self as OIDCStorage>::Error> {
+        sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(value)
+            .bind(expires_at)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to save nonce");
+                <Self as OIDCStorage>::Error::Storage("Failed to save nonce".to_string())
+            })?;
+
+        Ok(())
+    }
+
+    async fn get_oidc_account_by_provider_and_subject(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<OIDCAccount>, <Self as OIDCStorage>::Error> {
+        let oidc_account = sqlx::query_as::<_, OIDCAccount>(
+            r#"
+            SELECT user_id, provider, subject, created_at, updated_at
+            FROM oidc_accounts
+            WHERE provider = ? AND subject = ?
+            "#,
+        )
+        .bind(provider)
+        .bind(subject)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get oidc account");
+            <Self as OIDCStorage>::Error::Storage("Failed to get oidc account".to_string())
+        })?;
+
+        if let Some(oidc_account) = oidc_account {
+            Ok(Some(oidc_account))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -318,12 +435,12 @@ mod tests {
             .await
             .unwrap();
 
-        let user = storage.get_user(&"1").await.unwrap();
+        let user = storage.get_user(&"1").await.unwrap().unwrap();
         assert_eq!(user.email, "test@example.com");
 
         storage.delete_user(&"1").await.unwrap();
-        let user = storage.get_user(&"1").await;
-        assert!(user.is_err());
+        let user = storage.get_user(&"1").await.unwrap();
+        assert!(user.is_none());
     }
 
     #[tokio::test]

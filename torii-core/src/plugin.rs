@@ -266,19 +266,30 @@ mod tests {
     impl UserStorage for TestStorage {
         type Error = Error;
 
-        async fn get_user(&self, id: &str) -> Result<User, Self::Error> {
-            self.users
-                .get(&UserId::new(id))
-                .map(|u| u.clone())
-                .ok_or_else(|| Error::UserNotFound)
+        async fn get_user(&self, id: &str) -> Result<Option<User>, Self::Error> {
+            Ok(self.users.get(&UserId::new(id)).map(|u| u.clone()))
         }
 
-        async fn get_user_by_email(&self, email: &str) -> Result<User, Self::Error> {
-            self.users
+        async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
+            Ok(self
+                .users
                 .iter()
                 .find(|u| u.email == email)
-                .map(|u| u.clone())
-                .ok_or_else(|| Error::UserNotFound)
+                .map(|u| u.clone()))
+        }
+
+        async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error> {
+            match self.get_user_by_email(email).await {
+                Ok(Some(user)) => Ok(user),
+                Ok(None) => {
+                    self.create_user(&NewUser {
+                        id: UserId::new_random(),
+                        email: email.to_string(),
+                    })
+                    .await
+                }
+                Err(e) => Err(e),
+            }
         }
 
         async fn create_user(&self, new_user: &NewUser) -> Result<User, Self::Error> {

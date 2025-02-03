@@ -2,7 +2,7 @@
 
 Core functionality for the torii project. All plugins are built on top of this library and are responsible for handling the specific details of each authentication method.
 
-Plugins may use the core functionality to handle common tasks such as database migrations, user management, and session management, but are otherwise free to implement the logic in any way they want.
+Plugins may use the core functionality for user management, and session management, but are otherwise free to implement the logic or storage in any way they want.
 
 ## Users
 

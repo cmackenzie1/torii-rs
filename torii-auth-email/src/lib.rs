@@ -48,7 +48,11 @@ impl EmailPasswordPlugin {
 
         // TODO: Wrap this in a transaction
 
-        if storage.get_user_by_email(email).await.is_ok() {
+        if let Some(_user) = storage
+            .get_user_by_email(email)
+            .await
+            .map_err(|_| Error::InternalServerError)?
+        {
             tracing::debug!(email = %email, "User already exists");
             return Err(Error::UserAlreadyExists);
         }
@@ -83,7 +87,8 @@ impl EmailPasswordPlugin {
         let user = storage
             .get_user_by_email(email)
             .await
-            .map_err(|_| Error::UserNotFound)?; // TODO: Should we return a different error that doesn't leak information about the user?
+            .map_err(|_| Error::UserNotFound)?
+            .ok_or_else(|| Error::UserNotFound)?;
 
         let hash = storage
             .get_password_hash(&user.id)
@@ -233,7 +238,7 @@ mod tests {
             .create_user(&*user_storage, "not-an-email", "password")
             .await;
 
-        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::InvalidEmailFormat)));
 
         Ok(())
     }
@@ -248,7 +253,7 @@ mod tests {
             .create_user(&*user_storage, "test@example.com", "123")
             .await;
 
-        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::WeakPassword)));
 
         Ok(())
     }

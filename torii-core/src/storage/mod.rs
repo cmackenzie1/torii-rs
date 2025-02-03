@@ -10,8 +10,9 @@ pub trait UserStorage: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error>;
-    async fn get_user(&self, id: &str) -> Result<User, Self::Error>;
-    async fn get_user_by_email(&self, email: &str) -> Result<User, Self::Error>;
+    async fn get_user(&self, id: &str) -> Result<Option<User>, Self::Error>;
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error>;
+    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error>;
     async fn update_user(&self, user: &User) -> Result<User, Self::Error>;
     async fn delete_user(&self, id: &str) -> Result<(), Self::Error>;
 }

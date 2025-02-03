@@ -5,8 +5,8 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use sqlx::{Pool, Row, Sqlite};
-use torii_core::{Error, Plugin, SessionStorage, User, UserStorage};
+use torii_core::{Error, NewUser, Plugin, SessionStorage, User, UserId, UserStorage};
+use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
 use uuid::Uuid;
 
 /// The core OIDC plugin struct, responsible for handling OIDC authentication flow.
@@ -69,7 +69,9 @@ impl OIDCPlugin {
             redirect_uri,
         }
     }
+}
 
+impl OIDCPlugin {
     /// Begin the authentication process by generating a new CSRF state and redirecting the user to the provider's authorization URL.
     ///
     /// This method is the first step in the OIDC authorization code flow. It will:
@@ -92,9 +94,10 @@ impl OIDCPlugin {
     /// * The provider metadata discovery fails
     /// * The nonce cannot be stored in the database
     /// * The HTTP client cannot be created
-    pub async fn begin_auth(
+    pub async fn begin_auth<U: OIDCStorage, S: SessionStorage>(
         &self,
-        pool: &Pool<Sqlite>,
+        user_storage: &U,
+        _session_storage: &S,
         redirect_uri: String,
     ) -> Result<AuthFlowBegin, Error> {
         let http_client = openidconnect::reqwest::ClientBuilder::new()
@@ -133,11 +136,9 @@ impl OIDCPlugin {
 
         // Store nonce in database
         let nonce_key = Uuid::new_v4().to_string();
-        sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
-            .bind(nonce_key.clone())
-            .bind(nonce.secret().to_string())
-            .bind(Utc::now() + Duration::hours(1))
-            .execute(pool)
+        let expires_at = Utc::now() + Duration::hours(1);
+        user_storage
+            .save_nonce(&nonce_key, &nonce.secret().to_string(), &expires_at)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
@@ -165,13 +166,12 @@ impl OIDCPlugin {
     ///
     /// # Returns
     /// Returns a [`User`] struct containing the user's information.
-    pub async fn callback(
+    pub async fn callback<U: OIDCStorage, S: SessionStorage>(
         &self,
-        pool: &Pool<Sqlite>,
+        user_storage: &U,
+        _session_storage: &S,
         auth_flow: &AuthFlowCallback,
     ) -> Result<User, Error> {
-        let mut tx = pool.begin().await.map_err(|_| Error::InternalServerError)?;
-
         // Create http client for async requests
         // TODO: move to builder
         let http_client = openidconnect::reqwest::ClientBuilder::new()
@@ -224,26 +224,14 @@ impl OIDCPlugin {
             nonce_key = ?auth_flow.nonce_key,
             "Attempting to get nonce from database"
         );
-        let nonce = sqlx::query("SELECT value FROM nonces WHERE id = ? AND expires_at > ? LIMIT 1")
-            .bind(auth_flow.nonce_key.to_string())
-            .bind(Utc::now())
-            .fetch_optional(&mut *tx)
+        let nonce = user_storage
+            .get_nonce(&auth_flow.nonce_key)
             .await
-            .map_err(|e| {
-                tracing::error!(
-                    nonce_key = auth_flow.nonce_key.clone(),
-                    error = ?e,
-                    "Unable to get nonce from database"
-                );
-                Error::InternalServerError
-            })?;
+            .map_err(|_| Error::InternalServerError)?;
 
-        let nonce: String = match nonce {
-            Some(nonce) => nonce.get("value"),
-            None => {
-                tracing::error!("Nonce not found in database");
-                return Err(Error::InvalidCredentials);
-            }
+        let nonce = match nonce {
+            Some(nonce) => nonce.to_string(),
+            None => return Err(Error::InvalidCredentials),
         };
 
         // Verify id token
@@ -270,84 +258,47 @@ impl OIDCPlugin {
         );
 
         // Check if user exists in database by email
-        let user = sqlx::query(
-            r#"SELECT id, name, email, email_verified_at, created_at, updated_at
-            FROM users
-            WHERE id = (
-                SELECT user_id
-                FROM oidc_accounts
-                WHERE provider = ? AND subject = ?
-                LIMIT 1
-            )"#,
-        )
-        .bind(&self.provider)
-        .bind(&subject)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|_| Error::InternalServerError)?;
+        let oidc_account = user_storage
+            .get_oidc_account_by_provider_and_subject(&self.provider, &subject)
+            .await
+            .map_err(|_| Error::InternalServerError)?;
 
-        let user = match user {
-            Some(user) => {
-                tracing::info!(user.email = ?email, "User found in database");
-                user
-            }
-            None => {
-                tracing::info!("User not found in database, creating user");
-                // User does not exist, create user
-                sqlx::query("INSERT INTO users (id, email, name) VALUES (?, ?, ?)")
-                    .bind(Uuid::new_v4().to_string())
-                    .bind(email.as_str())
-                    .bind(name.as_str())
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            error = ?e,
-                            "Unable to create user in database"
-                        );
-                        Error::InternalServerError
-                    })?;
+        if let Some(oidc_account) = oidc_account {
+            tracing::info!(
+                user_id = ?oidc_account.user_id,
+                "User already exists in database"
+            );
 
-                sqlx::query(
-                    r#"SELECT id, name, email, email_verified_at, created_at, updated_at FROM users WHERE email = ?"#,
-                )
-                .bind(email.as_str())
-                .fetch_one(&mut *tx)
+            let user = user_storage
+                .get_user(&oidc_account.user_id)
                 .await
-                .map_err(|e| {
-                    tracing::error!(
-                        error = ?e,
-                        "Unable to get user from database"
-                    );
-                    Error::InternalServerError
-                })?
-            }
-        };
+                .map_err(|_| Error::InternalServerError)?
+                .ok_or_else(|| Error::UserNotFound)?;
 
-        let user = User {
-            id: user.get("id"),
-            name: user.get("name"),
-            email: user.get("email"),
-            email_verified_at: user.get("email_verified_at"),
-            created_at: user.get("created_at"),
-            updated_at: user.get("updated_at"),
-        };
-        tracing::info!(user = ?user, "User created in database");
+            // The user has already been created, so we can return them immediately
+            return Ok(user);
+        }
+
+        // Create user if they don't exist
+        let user = user_storage
+            .create_user(&NewUser {
+                id: UserId::new_random(),
+                email: email.to_string(),
+            })
+            .await
+            .map_err(|_| Error::InternalServerError)?;
 
         // Create link between user and provider
-        sqlx::query("INSERT INTO oidc_accounts (user_id, provider, subject) VALUES (?, ?, ?)")
-            .bind(&user.id)
-            .bind(&self.provider)
-            .bind(&subject)
-            .execute(&mut *tx)
+        user_storage
+            .create_oidc_account(&OIDCAccount {
+                user_id: user.id.to_string(),
+                provider: self.provider.clone(),
+                subject: subject.clone(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
             .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = ?e,
-                    "Unable to create link between user and provider"
-                );
-                Error::InternalServerError
-            })?;
+            .map_err(|_| Error::InternalServerError)?;
 
         tracing::info!(
             user_id = ?user.id,
