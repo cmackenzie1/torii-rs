@@ -282,10 +282,13 @@ mod tests {
             match self.get_user_by_email(email).await {
                 Ok(Some(user)) => Ok(user),
                 Ok(None) => {
-                    self.create_user(&NewUser {
-                        id: UserId::new_random(),
-                        email: email.to_string(),
-                    })
+                    self.create_user(
+                        &NewUser::builder()
+                            .id(UserId::new_random())
+                            .email(email.to_string())
+                            .build()
+                            .unwrap(),
+                    )
                     .await
                 }
                 Err(e) => Err(e),
@@ -293,16 +296,15 @@ mod tests {
         }
 
         async fn create_user(&self, new_user: &NewUser) -> Result<User, Self::Error> {
-            let id = UserId::new_random();
-            let user = User {
-                id: id.clone(),
-                email: new_user.email.clone(),
-                created_at: chrono::Utc::now(),
-                email_verified_at: None,
-                name: "test".to_string(),
-                updated_at: chrono::Utc::now(),
-            };
-            self.users.insert(id, user.clone());
+            let user = User::builder()
+                .email(new_user.email.clone())
+                .created_at(chrono::Utc::now())
+                .email_verified_at(None)
+                .name("test".to_string())
+                .updated_at(chrono::Utc::now())
+                .build()
+                .unwrap();
+            self.users.insert(user.id.clone(), user.clone());
             Ok(user)
         }
 

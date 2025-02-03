@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::{Session, User, UserId};
@@ -48,21 +50,35 @@ impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[builder(pattern = "owned")]
 pub struct NewUser {
+    #[builder(default = "UserId::new_random()")]
     pub id: UserId,
     pub email: String,
+    #[builder(default = "None")]
+    pub name: Option<String>,
+    #[builder(default = "None")]
+    pub email_verified_at: Option<DateTime<Utc>>,
 }
 
 impl NewUser {
-    pub fn new(id: UserId, email: String) -> Self {
-        Self { id, email }
+    pub fn builder() -> NewUserBuilder {
+        NewUserBuilder::default()
     }
 
-    pub fn new_with_default_id(email: String) -> Self {
-        Self {
-            id: UserId::new_random(),
-            email,
-        }
+    pub fn new(email: String) -> Self {
+        NewUserBuilder::default()
+            .email(email)
+            .build()
+            .expect("Default builder should never fail")
+    }
+
+    pub fn with_id(id: UserId, email: String) -> Self {
+        NewUserBuilder::default()
+            .id(id)
+            .email(email)
+            .build()
+            .expect("Default builder should never fail")
     }
 }

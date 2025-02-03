@@ -58,8 +58,9 @@ impl EmailPasswordPlugin {
             return Err(Error::UserAlreadyExists);
         }
 
+        let new_user = NewUser::builder().email(email.to_string()).build().unwrap();
         let user = storage
-            .create_user(&NewUser::new_with_default_id(email.to_string()))
+            .create_user(&new_user)
             .await
             .expect("Failed to create user");
 

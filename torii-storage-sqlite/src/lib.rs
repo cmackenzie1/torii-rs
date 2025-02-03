@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
+use derive_builder::Builder;
 use sqlx::Row;
 use sqlx::SqlitePool;
+use std::time::Duration;
 use torii_core::{
     storage::{NewUser, SessionStorage, UserStorage},
     Session, User, UserId,
@@ -102,10 +104,13 @@ impl UserStorage for SqliteStorage {
         }
 
         let user = self
-            .create_user(&NewUser {
-                id: UserId::new_random(),
-                email: email.to_string(),
-            })
+            .create_user(
+                &NewUser::builder()
+                    .id(UserId::new_random())
+                    .email(email.to_string())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to get or create user by email");
@@ -269,13 +274,35 @@ impl SessionStorage for SqliteStorage {
     }
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, Builder)]
+#[builder(pattern = "owned")]
 pub struct OIDCAccount {
     pub user_id: String,
     pub provider: String,
     pub subject: String,
+    #[builder(default = "Utc::now()")]
     pub created_at: DateTime<Utc>,
+    #[builder(default = "Utc::now()")]
     pub updated_at: DateTime<Utc>,
+}
+
+impl OIDCAccount {
+    pub fn new(
+        user_id: impl Into<String>,
+        provider: impl Into<String>,
+        subject: impl Into<String>,
+    ) -> Self {
+        OIDCAccountBuilder::default()
+            .user_id(user_id.into())
+            .provider(provider.into())
+            .subject(subject.into())
+            .build()
+            .expect("Default builder should never fail")
+    }
+
+    pub fn is_expired(&self, ttl: Duration) -> bool {
+        Utc::now() > self.created_at + ttl
+    }
 }
 
 #[async_trait]
@@ -428,10 +455,13 @@ mod tests {
     async fn test_sqlite_storage() {
         let storage = setup_sqlite_storage().await.unwrap();
         storage
-            .create_user(&NewUser {
-                id: UserId::new("1"),
-                email: "test@example.com".to_string(),
-            })
+            .create_user(
+                &NewUser::builder()
+                    .id(UserId::new("1"))
+                    .email("test@example.com".to_string())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -447,23 +477,29 @@ mod tests {
     async fn test_sqlite_session_storage() {
         let storage = setup_sqlite_storage().await.unwrap();
         storage
-            .create_user(&NewUser {
-                id: UserId::new("1"),
-                email: "test@example.com".to_string(),
-            })
+            .create_user(
+                &NewUser::builder()
+                    .id(UserId::new("1"))
+                    .email("test@example.com".to_string())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
         storage
-            .create_session(&Session {
-                id: SessionId::new("1"),
-                user_id: UserId::new("1"),
-                user_agent: Some("test".to_string()),
-                ip_address: Some("127.0.0.1".to_string()),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-                expires_at: Utc::now() + Duration::from_secs(1000),
-            })
+            .create_session(
+                &Session::builder()
+                    .id(SessionId::new("1"))
+                    .user_id(UserId::new("1"))
+                    .user_agent(Some("test".to_string()))
+                    .ip_address(Some("127.0.0.1".to_string()))
+                    .created_at(Utc::now())
+                    .updated_at(Utc::now())
+                    .expires_at(Utc::now() + Duration::from_secs(1000))
+                    .build()
+                    .unwrap(),
+            )
             .await
             .unwrap();
 

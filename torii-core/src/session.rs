@@ -117,15 +117,16 @@ mod tests {
 
     #[test]
     fn test_session() {
-        let session = Session {
-            id: SessionId::new_random(),
-            user_id: UserId::new_random(),
-            user_agent: None,
-            ip_address: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            expires_at: Utc::now() + Duration::days(30),
-        };
+        let session = Session::builder()
+            .id(SessionId::new_random())
+            .user_id(UserId::new_random())
+            .user_agent(None)
+            .ip_address(None)
+            .created_at(Utc::now())
+            .updated_at(Utc::now())
+            .expires_at(Utc::now() + Duration::days(30))
+            .build()
+            .unwrap();
 
         assert_eq!(session.id.to_string(), session.id.0.to_string());
     }

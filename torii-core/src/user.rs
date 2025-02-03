@@ -95,6 +95,12 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
+impl User {
+    pub fn builder() -> UserBuilder {
+        UserBuilder::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

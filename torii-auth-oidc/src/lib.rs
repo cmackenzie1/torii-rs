@@ -287,10 +287,13 @@ impl OIDCPlugin {
 
         // Create user if they don't exist
         let user = user_storage
-            .create_user(&NewUser {
-                id: UserId::new_random(),
-                email: email.to_string(),
-            })
+            .create_user(
+                &NewUser::builder()
+                    .id(UserId::new_random())
+                    .email(email.to_string())
+                    .build()
+                    .unwrap(),
+            )
             .await
             .map_err(|_| Error::InternalServerError)?;
 
