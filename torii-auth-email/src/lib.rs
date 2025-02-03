@@ -4,11 +4,14 @@
 //!
 //! Password is hashed using the `password_auth` crate using argon2.
 use async_trait::async_trait;
+use chrono::{Duration, Utc};
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
+use torii_core::session::SessionId;
 use torii_core::storage::{NewUser, SessionStorage, UserStorage};
-use torii_core::{Error, Plugin, User};
+use torii_core::{Error, Plugin, Session, User};
 use torii_storage_sqlite::EmailAuthStorage;
+
 pub struct EmailPasswordPlugin;
 
 impl EmailPasswordPlugin {
@@ -83,7 +86,7 @@ impl EmailPasswordPlugin {
         storage: &S,
         email: &str,
         password: &str,
-    ) -> Result<User, Error> {
+    ) -> Result<(User, Session), Error> {
         let user = storage
             .get_user_by_email(email)
             .await
@@ -97,14 +100,31 @@ impl EmailPasswordPlugin {
 
         verify_password(password, &hash).map_err(|_| Error::InvalidCredentials)?;
 
+        // Create a new session
+        let session = Session {
+            id: SessionId::new_random(),
+            user_id: user.id.clone(),
+            user_agent: None,
+            ip_address: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            expires_at: Utc::now() + Duration::days(30),
+        };
+
+        let session = storage
+            .create_session(&session)
+            .await
+            .map_err(|_| Error::InternalServerError)?;
+
         tracing::info!(
             user.id = %user.id,
             user.email = %user.email,
             user.name = %user.name,
+            session.id = %session.id,
             "Logged in user",
         );
 
-        Ok(user)
+        Ok((user, session))
     }
 }
 
@@ -197,7 +217,7 @@ mod tests {
             .await?;
         assert_eq!(user.email, "test@example.com");
 
-        let user = manager
+        let (user, _session) = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
             .login_user(&*user_storage, "test@example.com", "password")

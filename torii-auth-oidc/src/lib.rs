@@ -5,7 +5,9 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use torii_core::{Error, NewUser, Plugin, SessionStorage, User, UserId, UserStorage};
+use torii_core::{
+    session::SessionId, Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage,
+};
 use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
 use uuid::Uuid;
 
@@ -169,9 +171,9 @@ impl OIDCPlugin {
     pub async fn callback<U: OIDCStorage, S: SessionStorage>(
         &self,
         user_storage: &U,
-        _session_storage: &S,
+        session_storage: &S,
         auth_flow: &AuthFlowCallback,
-    ) -> Result<User, Error> {
+    ) -> Result<(User, Session), Error> {
         // Create http client for async requests
         // TODO: move to builder
         let http_client = openidconnect::reqwest::ClientBuilder::new()
@@ -276,7 +278,21 @@ impl OIDCPlugin {
                 .ok_or_else(|| Error::UserNotFound)?;
 
             // The user has already been created, so we can return them immediately
-            return Ok(user);
+            return Ok((
+                user.clone(),
+                session_storage
+                    .create_session(&Session {
+                        id: SessionId::new_random(),
+                        user_id: user.id.clone(),
+                        user_agent: None,
+                        ip_address: None,
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                        expires_at: Utc::now() + Duration::days(30),
+                    })
+                    .await
+                    .map_err(|_| Error::InternalServerError)?,
+            ));
         }
 
         // Create user if they don't exist
@@ -307,7 +323,31 @@ impl OIDCPlugin {
             "Successfully created link between user and provider"
         );
 
-        Ok(user)
+        // Create a new session
+        let session = Session {
+            id: SessionId::new_random(),
+            user_id: user.id.clone(),
+            user_agent: None,
+            ip_address: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            expires_at: Utc::now() + Duration::days(30),
+        };
+
+        let session = user_storage
+            .create_session(&session)
+            .await
+            .map_err(|_| Error::InternalServerError)?;
+
+        tracing::info!(
+            user_id = ?user.id,
+            session_id = ?session.id,
+            provider = ?self.provider,
+            subject = ?subject,
+            "Successfully created session for authenticated user"
+        );
+
+        Ok((user, session))
     }
 }
 

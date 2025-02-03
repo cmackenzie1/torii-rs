@@ -9,6 +9,7 @@ license.workspace = true
 torii-core = { path = "../torii-core" }
 torii-storage-sqlite = { path = "../torii-storage-sqlite" }
 async-trait.workspace = true
+chrono.workspace = true
 password-auth = { version = "1", features = ["argon2"] }
 regex.workspace = true
 sqlx.workspace = true

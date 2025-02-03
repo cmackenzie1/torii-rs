@@ -61,7 +61,7 @@ async fn callback_handler(
     let nonce_key = jar.get("nonce_key").unwrap().value();
 
     let plugin = state.plugin_manager.get_plugin::<OIDCPlugin>().unwrap();
-    let user = plugin
+    let (user, session) = plugin
         .callback(
             &*state.user_storage,
             &*state.session_storage,
@@ -74,7 +74,14 @@ async fn callback_handler(
         .await
         .unwrap();
 
-    Json(user)
+    // Set session cookie
+    let jar = jar.add(
+        Cookie::build(("session_id", session.id.to_string()))
+            .path("/")
+            .http_only(true),
+    );
+
+    (jar, Json(user))
 }
 
 #[tokio::main]
