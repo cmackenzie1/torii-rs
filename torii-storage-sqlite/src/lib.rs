@@ -238,10 +238,10 @@ impl SessionStorage for SqliteStorage {
             .await
             .map_err(|_| Self::Error::Storage("Failed to create session".to_string()))?;
 
-        Ok(self.get_session(session.id.as_ref()).await?)
+        Ok(self.get_session(session.id.as_ref()).await?.unwrap())
     }
 
-    async fn get_session(&self, id: &str) -> Result<Session, Self::Error> {
+    async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error> {
         let session = sqlx::query_as::<_, Session>(
             r#"
             SELECT id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
@@ -257,7 +257,7 @@ impl SessionStorage for SqliteStorage {
             Self::Error::Storage("Failed to get session".to_string())
         })?;
 
-        Ok(session)
+        Ok(Some(session))
     }
 
     async fn delete_session(&self, id: &str) -> Result<(), Self::Error> {
@@ -504,7 +504,7 @@ mod tests {
             .unwrap();
 
         let session = storage.get_session(&"1").await.unwrap();
-        assert_eq!(session.user_id, UserId::new("1"));
+        assert_eq!(session.unwrap().user_id, UserId::new("1"));
 
         storage.delete_session(&"1").await.unwrap();
         let session = storage.get_session(&"1").await;

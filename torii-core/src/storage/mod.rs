@@ -24,7 +24,7 @@ pub trait SessionStorage: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error>;
-    async fn get_session(&self, id: &str) -> Result<Session, Self::Error>;
+    async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error>;
     async fn delete_session(&self, id: &str) -> Result<(), Self::Error>;
 }
 
