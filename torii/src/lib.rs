@@ -99,7 +99,7 @@ impl Torii<SqliteStorage, SqliteStorage> {
                     .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
 
                 let user = plugin
-                    .create_user(&*self.manager.user_storage(), email, password)
+                    .create_user(self.manager.storage(), email, password)
                     .await?;
 
                 Ok(user)

@@ -3,19 +3,21 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Form, Json, Router,
 };
-use axum_extra::extract::{cookie::Cookie, CookieJar};
+use axum_extra::extract::{
+    cookie::{Cookie, SameSite},
+    CookieJar,
+};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_email::EmailPasswordPlugin;
 use torii_core::plugin::PluginManager;
-use torii_core::{SessionStorage, UserStorage};
 use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic email/password authentication system using Torii.
@@ -54,8 +56,6 @@ struct SignInForm {
 /// - plugin_manager: Coordinates authentication plugins
 #[derive(Clone)]
 struct AppState {
-    user_storage: Arc<SqliteStorage>,
-    session_storage: Arc<SqliteStorage>,
     plugin_manager: Arc<PluginManager<SqliteStorage, SqliteStorage>>,
 }
 
@@ -72,14 +72,28 @@ async fn sign_up_form_handler(
         .plugin_manager
         .get_plugin::<EmailPasswordPlugin>()
         .unwrap();
-    let user = plugin
-        .create_user(&*state.user_storage, &params.email, &params.password)
+
+    match plugin
+        .create_user(
+            state.plugin_manager.storage(),
+            &params.email,
+            &params.password,
+        )
         .await
-        .unwrap();
-
-    tracing::info!(user_id = ?user.id, "User created");
-
-    Redirect::to("/sign-in")
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(json!({ "message": "Successfully signed up" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("Sign up failed: {}", e)
+            })),
+        )
+            .into_response(),
+    }
 }
 
 /// Handles user authentication
@@ -89,26 +103,42 @@ async fn sign_up_form_handler(
 #[axum::debug_handler]
 async fn sign_in_form_handler(
     State(state): State<AppState>,
-    jar: CookieJar,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
         .get_plugin::<EmailPasswordPlugin>()
         .unwrap();
-    let (_, session) = plugin
-        .login_user(&*state.user_storage, &params.email, &params.password)
+
+    match plugin
+        .login_user(
+            state.plugin_manager.storage(),
+            &params.email,
+            &params.password,
+        )
         .await
-        .unwrap();
-
-    // Set session cookie
-    let jar = jar.add(
-        Cookie::build(("session_id", session.id.to_string()))
-            .path("/")
-            .http_only(true),
-    );
-
-    (jar, Redirect::to("/whoami"))
+    {
+        Ok((_, session)) => {
+            let cookie = Cookie::build(("session_id", session.id.to_string()))
+                .path("/")
+                .http_only(true)
+                .secure(false) // TODO: Set to true in production
+                .same_site(SameSite::Lax);
+            (
+                StatusCode::OK,
+                [(header::SET_COOKIE, cookie.to_string())],
+                Json(json!({ "message": "Successfully signed in" })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": format!("Authentication failed: {}", e)
+            })),
+        )
+            .into_response(),
+    }
 }
 
 #[axum::debug_handler]
@@ -153,7 +183,12 @@ async fn verify_session<B>(
 
     if let Some(session_id) = session_id {
         // Verify session exists and is valid
-        if let Ok(session) = state.session_storage.get_session(&session_id).await {
+        if let Ok(session) = state
+            .plugin_manager
+            .storage()
+            .get_session(&session_id)
+            .await
+        {
             if session.is_some() {
                 return next.run(request).await;
             }
@@ -173,14 +208,16 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
 
     if let Some(session_id) = session_id {
         let session = state
-            .session_storage
+            .plugin_manager
+            .storage()
             .get_session(&session_id)
             .await
             .unwrap();
 
         if let Some(session) = session {
             let user = state
-                .user_storage
+                .plugin_manager
+                .storage()
                 .get_user(&session.user_id.as_ref())
                 .await
                 .unwrap();
@@ -214,8 +251,6 @@ async fn main() {
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {
-        user_storage: user_storage.clone(),
-        session_storage: session_storage.clone(),
         plugin_manager: plugin_manager.clone(),
     };
 
