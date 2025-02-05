@@ -12,7 +12,7 @@ use std::any::{Any, TypeId};
 use std::sync::Arc;
 
 use crate::error::Error;
-use crate::storage::{SessionStorage, UserStorage};
+use crate::storage::{SessionStorage, Storage, UserStorage};
 
 /// Represents the authentication method used to authenticate a user.
 /// This is used for plugins to advertise which authentication methods they support.
@@ -72,10 +72,9 @@ pub trait Plugin<U: UserStorage, S: SessionStorage>: Any + Send + Sync + Downcas
 impl_downcast!(sync Plugin<U, S> where U: UserStorage, S: SessionStorage);
 
 /// Manages a collection of plugins.
-pub struct PluginManager<U: UserStorage + ?Sized, S: SessionStorage + ?Sized> {
+pub struct PluginManager<U: UserStorage, S: SessionStorage> {
     plugins: DashMap<TypeId, Arc<dyn Plugin<U, S>>>,
-    user_storage: Arc<U>,
-    session_storage: Arc<S>,
+    storage: Storage<U, S>,
 }
 
 impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
@@ -90,8 +89,7 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
             plugins: DashMap::new(),
-            user_storage,
-            session_storage,
+            storage: Storage::new(user_storage, session_storage),
         }
     }
 
@@ -151,19 +149,18 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
             let plugin = self.plugins.get(&plugin_id).expect("Plugin not found");
             plugin
                 .value()
-                .setup(&self.user_storage, &self.session_storage)
+                .setup(
+                    &self.storage.user_storage(),
+                    &self.storage.session_storage(),
+                )
                 .await?;
             tracing::info!("Setup plugin: {}", plugin.value().name());
         }
         Ok(())
     }
 
-    pub fn user_storage(&self) -> Arc<U> {
-        self.user_storage.clone()
-    }
-
-    pub fn session_storage(&self) -> Arc<S> {
-        self.session_storage.clone()
+    pub fn storage(&self) -> &Storage<U, S> {
+        &self.storage
     }
 
     /// Gets a list of plugin TypeIds in dependency order.

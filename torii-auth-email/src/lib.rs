@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
+use torii_core::storage::Storage;
 use torii_core::storage::{NewUser, SessionStorage, UserStorage};
 use torii_core::{Error, Plugin, Session, User};
 use torii_storage_sqlite::EmailAuthStorage;
@@ -36,7 +37,7 @@ impl<U: UserStorage<Error = Error>, S: SessionStorage<Error = Error>> Plugin<U, 
 impl EmailPasswordPlugin {
     pub async fn create_user<S: EmailAuthStorage<Error = Error>>(
         &self,
-        storage: &S,
+        storage: &Storage<S, impl SessionStorage<Error = Error>>,
         email: &str,
         password: &str,
     ) -> Result<User, Error> {
@@ -47,12 +48,11 @@ impl EmailPasswordPlugin {
             return Err(Error::WeakPassword);
         }
 
-        // TODO: Wrap this in a transaction
-
         if let Some(_user) = storage
+            .user_storage()
             .get_user_by_email(email)
             .await
-            .map_err(|_| Error::InternalServerError)?
+            .map_err(|e| Error::Storage(e.to_string()))?
         {
             tracing::debug!(email = %email, "User already exists");
             return Err(Error::UserAlreadyExists);
@@ -62,13 +62,14 @@ impl EmailPasswordPlugin {
         let user = storage
             .create_user(&new_user)
             .await
-            .expect("Failed to create user");
+            .map_err(|e| Error::Storage(e.to_string()))?;
 
         let hash = generate_hash(password);
         storage
+            .user_storage()
             .set_password_hash(&user.id, &hash)
             .await
-            .expect("Failed to set password");
+            .map_err(|e| Error::Storage(e.to_string()))?;
 
         tracing::info!(
             user.id = %user.id,
@@ -82,38 +83,34 @@ impl EmailPasswordPlugin {
 
     pub async fn login_user<S: EmailAuthStorage<Error = Error>>(
         &self,
-        storage: &S,
+        storage: &Storage<S, impl SessionStorage<Error = Error>>,
         email: &str,
         password: &str,
     ) -> Result<(User, Session), Error> {
         let user = storage
+            .user_storage()
             .get_user_by_email(email)
             .await
-            .map_err(|_| Error::UserNotFound)?
-            .ok_or_else(|| Error::UserNotFound)?;
+            .map_err(|e| Error::Storage(e.to_string()))?
+            .ok_or(Error::UserNotFound)?;
 
         let hash = storage
+            .user_storage()
             .get_password_hash(&user.id)
             .await
-            .map_err(|_| Error::InvalidCredentials)?;
+            .map_err(|e| Error::Storage(e.to_string()))?;
 
         verify_password(password, &hash).map_err(|_| Error::InvalidCredentials)?;
 
-        // Create a new session
-        let session = Session::builder().user_id(user.id.clone()).build().unwrap();
+        let session = Session::builder()
+            .user_id(user.id.clone())
+            .build()
+            .expect("Valid session");
 
         let session = storage
             .create_session(&session)
             .await
-            .map_err(|_| Error::InternalServerError)?;
-
-        tracing::info!(
-            user.id = %user.id,
-            user.email = %user.email,
-            user.name = %user.name,
-            session.id = %session.id,
-            "Logged in user",
-        );
+            .map_err(|e| Error::Storage(e.to_string()))?;
 
         Ok((user, session))
     }
@@ -139,15 +136,8 @@ mod tests {
     use torii_core::PluginManager;
     use torii_storage_sqlite::SqliteStorage;
 
-    async fn setup_plugin() -> Result<
-        (
-            PluginManager<SqliteStorage, SqliteStorage>,
-            Arc<SqliteStorage>,
-            Arc<SqliteStorage>,
-        ),
-        Error,
-    > {
-        let _ = tracing_subscriber::fmt().try_init(); // don't panic if this fails
+    async fn setup_plugin() -> Result<(PluginManager<SqliteStorage, SqliteStorage>,), Error> {
+        let _ = tracing_subscriber::fmt().try_init();
 
         let pool = SqlitePool::connect("sqlite::memory:")
             .await
@@ -163,7 +153,7 @@ mod tests {
         user_storage.migrate().await?;
         session_storage.migrate().await?;
 
-        Ok((manager, user_storage, session_storage))
+        Ok((manager,))
     }
 
     #[test]
@@ -199,19 +189,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_user_and_login() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         let user = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .create_user(&*user_storage, "test@example.com", "password")
+            .create_user(manager.storage(), "test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let (user, _session) = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .login_user(&*user_storage, "test@example.com", "password")
+            .login_user(manager.storage(), "test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
@@ -220,33 +210,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_duplicate_user() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         let _ = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .create_user(&*user_storage, "test@example.com", "password")
+            .create_user(manager.storage(), "test@example.com", "password")
             .await?;
 
-        let user = manager
+        let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .unwrap()
-            .create_user(&*user_storage, "test@example.com", "password")
+            .create_user(manager.storage(), "test@example.com", "password")
             .await;
 
-        assert!(matches!(user, Err(Error::UserAlreadyExists)));
+        assert!(matches!(result, Err(Error::UserAlreadyExists)));
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_invalid_email_format() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&*user_storage, "not-an-email", "password")
+            .create_user(manager.storage(), "not-an-email", "password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidEmailFormat)));
@@ -256,12 +246,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_weak_password() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&*user_storage, "test@example.com", "123")
+            .create_user(manager.storage(), "test@example.com", "123")
             .await;
 
         assert!(matches!(result, Err(Error::WeakPassword)));
@@ -271,18 +261,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_incorrect_password_login() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .create_user(&*user_storage, "test@example.com", "password")
+            .create_user(manager.storage(), "test@example.com", "password")
             .await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .login_user(&*user_storage, "test@example.com", "wrong-password")
+            .login_user(manager.storage(), "test@example.com", "wrong-password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidCredentials)));
@@ -292,12 +282,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_nonexistent_user_login() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
-            .login_user(&*user_storage, "nonexistent@example.com", "password")
+            .login_user(manager.storage(), "nonexistent@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserNotFound)));
@@ -307,13 +297,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_sql_injection_attempt() -> Result<(), Error> {
-        let (manager, user_storage, _session_storage) = setup_plugin().await?;
+        let (manager,) = setup_plugin().await?;
 
         let _ = manager
             .get_plugin::<EmailPasswordPlugin>()
             .expect("Plugin should exist")
             .create_user(
-                &*user_storage,
+                manager.storage(),
                 "test@example.com'; DROP TABLE users;--",
                 "password",
             )

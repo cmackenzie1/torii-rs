@@ -41,6 +41,22 @@ impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
         }
     }
 
+    pub async fn create_user(&self, user: &NewUser) -> Result<User, U::Error> {
+        self.user_storage.create_user(user).await
+    }
+
+    pub async fn get_user(&self, id: &str) -> Result<Option<User>, U::Error> {
+        self.user_storage.get_user(id).await
+    }
+
+    pub async fn create_session(&self, session: &Session) -> Result<Session, S::Error> {
+        self.session_storage.create_session(session).await
+    }
+
+    pub async fn get_session(&self, id: &str) -> Result<Option<Session>, S::Error> {
+        self.session_storage.get_session(id).await
+    }
+
     pub fn user_storage(&self) -> Arc<U> {
         self.user_storage.clone()
     }
