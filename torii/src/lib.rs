@@ -33,35 +33,6 @@ where
         self
     }
 
-    #[cfg(feature = "oidc-auth")]
-    pub fn with_oidc_auth(mut self) -> Self {
-        self.manager.register(torii_auth_oidc::OIDCPlugin::new(
-            "google".to_string(),
-            std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
-            std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
-            "http://localhost:4000/auth/oidc/callback".to_string(),
-        ));
-        self
-    }
-
-    /// Build with all default enabled authentication methods
-    pub fn with_defaults(mut self) -> Self {
-        #[cfg(feature = "email-auth")]
-        {
-            self.manager.register(torii_auth_email::EmailPasswordPlugin);
-        }
-        #[cfg(feature = "oidc-auth")]
-        {
-            self.manager.register(torii_auth_oidc::OIDCPlugin::new(
-                "google".to_string(),
-                std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
-                std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
-                "http://localhost:4000/auth/oidc/callback".to_string(),
-            ));
-        }
-        self
-    }
-
     #[cfg(feature = "sqlite")]
     pub async fn setup_sqlite(self) -> Result<Torii<U, S>, Error> {
         self.manager.setup().await?;
@@ -69,6 +40,44 @@ where
         Ok(Torii {
             manager: self.manager,
         })
+    }
+
+    /// Add an OIDC provider to the Torii instance. Multiple OIDC providers can be added by calling this method multiple times.
+    ///
+    /// # Example
+    /// ```
+    /// let torii = ToriiBuilder::new(user_storage, session_storage)
+    ///     .with_email_auth()
+    ///     .with_oidc_provider("google", "client_id", "client_secret", "redirect_uri")
+    ///     .setup_sqlite()
+    ///     .await?;
+    /// ```
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - The name of the OIDC provider (e.g. "google", "github")
+    /// * `client_id` - The client ID for the OIDC provider
+    /// * `client_secret` - The client secret for the OIDC provider
+    /// * `redirect_uri` - The redirect URI for the OIDC provider
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The builder instance
+    #[cfg(feature = "oidc-auth")]
+    pub fn with_oidc_provider(
+        mut self,
+        provider: &str,
+        client_id: &str,
+        client_secret: &str,
+        redirect_uri: &str,
+    ) -> Self {
+        self.manager.register(torii_auth_oidc::OIDCPlugin::new(
+            provider.to_string(),
+            client_id.to_string(),
+            client_secret.to_string(),
+            redirect_uri.to_string(),
+        ));
+        self
     }
 }
 
@@ -85,7 +94,7 @@ impl Torii<SqliteStorage, SqliteStorage> {
             Arc::new(SqliteStorage::new(pool.clone())),
             Arc::new(SqliteStorage::new(pool.clone())),
         )
-        .with_defaults()
+        .with_email_auth()
         .setup_sqlite()
         .await
     }
@@ -95,7 +104,7 @@ impl Torii<SqliteStorage, SqliteStorage> {
             CreateUserParams::EmailPassword { email, password } => {
                 let plugin = self
                     .manager
-                    .get_plugin::<torii_auth_email::EmailPasswordPlugin>()
+                    .get_plugin::<torii_auth_email::EmailPasswordPlugin>("email_password")
                     .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
 
                 let user = plugin

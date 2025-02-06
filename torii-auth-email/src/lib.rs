@@ -29,8 +29,8 @@ impl Default for EmailPasswordPlugin {
 impl<U: UserStorage<Error = Error>, S: SessionStorage<Error = Error>> Plugin<U, S>
     for EmailPasswordPlugin
 {
-    fn name(&self) -> &'static str {
-        "email_password"
+    fn name(&self) -> String {
+        "email_password".to_string()
     }
 }
 
@@ -192,14 +192,14 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .unwrap()
             .create_user(manager.storage(), "test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let (user, _session) = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .unwrap()
             .login_user(manager.storage(), "test@example.com", "password")
             .await?;
@@ -213,13 +213,13 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .unwrap()
             .create_user(manager.storage(), "test@example.com", "password")
             .await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .unwrap()
             .create_user(manager.storage(), "test@example.com", "password")
             .await;
@@ -234,7 +234,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .expect("Plugin should exist")
             .create_user(manager.storage(), "not-an-email", "password")
             .await;
@@ -249,7 +249,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .expect("Plugin should exist")
             .create_user(manager.storage(), "test@example.com", "123")
             .await;
@@ -264,13 +264,13 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .expect("Plugin should exist")
             .create_user(manager.storage(), "test@example.com", "password")
             .await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .expect("Plugin should exist")
             .login_user(manager.storage(), "test@example.com", "wrong-password")
             .await;
@@ -285,7 +285,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .expect("Plugin should exist")
             .login_user(manager.storage(), "nonexistent@example.com", "password")
             .await;
@@ -300,7 +300,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<EmailPasswordPlugin>()
+            .get_plugin::<EmailPasswordPlugin>("email_password")
             .expect("Plugin should exist")
             .create_user(
                 manager.storage(),

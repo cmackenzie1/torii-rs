@@ -338,8 +338,8 @@ impl OIDCPlugin {
 
 #[async_trait]
 impl<U: UserStorage, S: SessionStorage> Plugin<U, S> for OIDCPlugin {
-    fn name(&self) -> &'static str {
-        "oidc"
+    fn name(&self) -> String {
+        self.provider.clone()
     }
 
     async fn setup(&self, _user_storage: &U, _session_storage: &S) -> Result<(), Error> {

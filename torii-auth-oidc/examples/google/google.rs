@@ -28,7 +28,10 @@ struct AppState {
 
 #[axum::debug_handler]
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
-    let plugin = state.plugin_manager.get_plugin::<OIDCPlugin>().unwrap();
+    let plugin = state
+        .plugin_manager
+        .get_plugin::<OIDCPlugin>("google")
+        .unwrap();
     let auth_flow = plugin
         .begin_auth(
             &*state.user_storage,
@@ -60,7 +63,10 @@ async fn callback_handler(
 ) -> impl IntoResponse {
     let nonce_key = jar.get("nonce_key").unwrap().value();
 
-    let plugin = state.plugin_manager.get_plugin::<OIDCPlugin>().unwrap();
+    let plugin = state
+        .plugin_manager
+        .get_plugin::<OIDCPlugin>("google")
+        .unwrap();
     let (user, session) = plugin
         .callback(
             &*state.user_storage,
