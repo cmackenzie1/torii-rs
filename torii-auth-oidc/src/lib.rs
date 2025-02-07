@@ -5,7 +5,9 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use torii_core::{Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage};
+use torii_core::{
+    storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage,
+};
 use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
 use uuid::Uuid;
 
@@ -96,8 +98,7 @@ impl OIDCPlugin {
     /// * The HTTP client cannot be created
     pub async fn begin_auth<U: OIDCStorage, S: SessionStorage>(
         &self,
-        user_storage: &U,
-        _session_storage: &S,
+        storage: &Storage<U, S>,
         redirect_uri: String,
     ) -> Result<AuthFlowBegin, Error> {
         let http_client = openidconnect::reqwest::ClientBuilder::new()
@@ -137,7 +138,8 @@ impl OIDCPlugin {
         // Store nonce in database
         let nonce_key = Uuid::new_v4().to_string();
         let expires_at = Utc::now() + Duration::hours(1);
-        user_storage
+        storage
+            .user_storage()
             .save_nonce(&nonce_key, &nonce.secret().to_string(), &expires_at)
             .await
             .map_err(|_| Error::InternalServerError)?;
@@ -168,8 +170,7 @@ impl OIDCPlugin {
     /// Returns a [`User`] struct containing the user's information.
     pub async fn callback<U: OIDCStorage, S: SessionStorage>(
         &self,
-        user_storage: &U,
-        session_storage: &S,
+        storage: &Storage<U, S>,
         auth_flow: &AuthFlowCallback,
     ) -> Result<(User, Session), Error> {
         // Create http client for async requests
@@ -224,7 +225,8 @@ impl OIDCPlugin {
             nonce_key = ?auth_flow.nonce_key,
             "Attempting to get nonce from database"
         );
-        let nonce = user_storage
+        let nonce = storage
+            .user_storage()
             .get_nonce(&auth_flow.nonce_key)
             .await
             .map_err(|_| Error::InternalServerError)?;
@@ -258,7 +260,8 @@ impl OIDCPlugin {
         );
 
         // Check if user exists in database by email
-        let oidc_account = user_storage
+        let oidc_account = storage
+            .user_storage()
             .get_oidc_account_by_provider_and_subject(&self.provider, &subject)
             .await
             .map_err(|_| Error::InternalServerError)?;
@@ -269,7 +272,8 @@ impl OIDCPlugin {
                 "User already exists in database"
             );
 
-            let user = user_storage
+            let user = storage
+                .user_storage()
                 .get_user(&oidc_account.user_id)
                 .await
                 .map_err(|_| Error::InternalServerError)?
@@ -278,7 +282,8 @@ impl OIDCPlugin {
             // The user has already been created, so we can return them immediately
             return Ok((
                 user.clone(),
-                session_storage
+                storage
+                    .session_storage()
                     .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
                     .await
                     .map_err(|_| Error::InternalServerError)?,
@@ -286,7 +291,8 @@ impl OIDCPlugin {
         }
 
         // Create user if they don't exist
-        let user = user_storage
+        let user = storage
+            .user_storage()
             .create_user(
                 &NewUser::builder()
                     .id(UserId::new_random())
@@ -298,7 +304,8 @@ impl OIDCPlugin {
             .map_err(|_| Error::InternalServerError)?;
 
         // Create link between user and provider
-        user_storage
+        storage
+            .user_storage()
             .create_oidc_account(&OIDCAccount {
                 user_id: user.id.to_string(),
                 provider: self.provider.clone(),
@@ -319,7 +326,8 @@ impl OIDCPlugin {
         // Create a new session
         let session = Session::builder().user_id(user.id.clone()).build().unwrap();
 
-        let session = user_storage
+        let session = storage
+            .session_storage()
             .create_session(&session)
             .await
             .map_err(|_| Error::InternalServerError)?;

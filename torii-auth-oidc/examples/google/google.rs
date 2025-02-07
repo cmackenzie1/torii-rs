@@ -21,8 +21,6 @@ struct QueryParams {
 
 #[derive(Clone)]
 struct AppState {
-    user_storage: Arc<SqliteStorage>,
-    session_storage: Arc<SqliteStorage>,
     plugin_manager: Arc<PluginManager<SqliteStorage, SqliteStorage>>,
 }
 
@@ -34,8 +32,7 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (Cookie
         .unwrap();
     let auth_flow = plugin
         .begin_auth(
-            &*state.user_storage,
-            &*state.session_storage,
+            &*state.plugin_manager.storage(),
             "http://localhost:4000/auth/google/callback".to_string(),
         )
         .await
@@ -69,8 +66,7 @@ async fn callback_handler(
         .unwrap();
     let (user, session) = plugin
         .callback(
-            &*state.user_storage,
-            &*state.session_storage,
+            &*state.plugin_manager.storage(),
             &AuthFlowCallback {
                 csrf_state: params.state,
                 nonce_key: nonce_key.to_string(),
@@ -117,8 +113,6 @@ async fn main() {
         .route("/auth/google/login", get(login_handler))
         .route("/auth/google/callback", get(callback_handler))
         .with_state(AppState {
-            user_storage: user_storage.clone(),
-            session_storage: session_storage.clone(),
             plugin_manager: Arc::new(plugin_manager),
         });
 

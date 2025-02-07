@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use sqlx::Pool;
 use sqlx::Sqlite;
-use torii_core::plugin::CreateUserParams;
 use torii_core::SessionStorage;
 use torii_core::UserStorage;
 use torii_core::{Error, PluginManager, User};
@@ -20,12 +19,29 @@ where
     U: UserStorage<Error = torii_core::Error>,
     S: SessionStorage<Error = torii_core::Error>,
 {
+    /// Create a new Torii instance with the given user storage and session storage.
+    ///
+    /// # Example
+    /// ```
+    /// let torii = ToriiBuilder::new(user_storage, session_storage)
+    ///     .setup_sqlite()
+    ///     .await?;
+    /// ```
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
             manager: PluginManager::new(user_storage, session_storage),
         }
     }
 
+    /// Add an email authentication plugin to the Torii instance.
+    ///
+    /// # Example
+    /// ```
+    /// let torii = ToriiBuilder::new(user_storage, session_storage)
+    ///     .with_email_auth()
+    ///     .setup_sqlite()
+    ///     .await?;
+    /// ```
     #[cfg(feature = "email-auth")]
     pub fn with_email_auth(mut self) -> Self {
         self.manager
@@ -33,6 +49,14 @@ where
         self
     }
 
+    /// Setup the Torii instance with the given user storage and session storage using SQLite.
+    ///
+    /// # Example
+    /// ```
+    /// let torii = ToriiBuilder::new(user_storage, session_storage)
+    ///     .setup_sqlite()
+    ///     .await?;
+    /// ```
     #[cfg(feature = "sqlite")]
     pub async fn setup_sqlite(self) -> Result<Torii<U, S>, Error> {
         self.manager.setup().await?;
@@ -81,11 +105,33 @@ where
     }
 }
 
-/// Main Torii authentication instance
+/// Main Torii authentication instance that can be used to create users and sessions
+///
+/// # Example
+/// ```
+/// let torii = ToriiBuilder::new(user_storage, session_storage)
+///     .with_email_auth()
+///     .setup_sqlite()
+///     .await?;
+///
+/// let user = torii.create_user(&CreateUserParams::EmailPassword {
+///     email: "test@example.com".to_string(),
+///     password: "password".to_string(),
+/// }).await?;
+/// ```
 pub struct Torii<U: UserStorage, S: SessionStorage> {
     manager: PluginManager<U, S>,
 }
 
+/// Create a new SQLite-based Torii instance with default configuration
+///
+/// # Example
+/// ```
+/// use sqlx::SqlitePool;
+///
+/// let pool = SqlitePool::connect("sqlite::memory:").await?;
+/// let torii = Torii::sqlite(pool).await?;
+/// ```
 #[cfg(feature = "sqlite")]
 impl Torii<SqliteStorage, SqliteStorage> {
     /// Create a new SQLite-based Torii instance with default configuration
@@ -99,28 +145,17 @@ impl Torii<SqliteStorage, SqliteStorage> {
         .await
     }
 
-    pub async fn create_user(&self, params: &CreateUserParams) -> Result<User, Error> {
-        match params {
-            CreateUserParams::EmailPassword { email, password } => {
-                let plugin = self
-                    .manager
-                    .get_plugin::<torii_auth_email::EmailPasswordPlugin>("email_password")
-                    .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
+    pub async fn create_user(&self, email: &str, password: &str) -> Result<User, Error> {
+        let plugin = self
+            .manager
+            .get_plugin::<torii_auth_email::EmailPasswordPlugin>("email_password")
+            .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
 
-                let user = plugin
-                    .create_user(self.manager.storage(), email, password)
-                    .await?;
+        let user = plugin
+            .create_user(self.manager.storage(), email, password)
+            .await?;
 
-                Ok(user)
-            }
-            CreateUserParams::OIDC {
-                provider: _,
-                subject: _,
-            } => {
-                todo!()
-            }
-            _ => Err(Error::UnsupportedAuthMethod("".to_string())),
-        }
+        Ok(user)
     }
 }
 
@@ -129,6 +164,16 @@ impl Torii<SqliteStorage, SqliteStorage> {
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
+
+    async fn setup_torii() -> Result<Torii<SqliteStorage, SqliteStorage>, Error> {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = SqlitePool::connect("sqlite::memory:").await?;
+        let torii = Torii::sqlite(pool.clone()).await?;
+        torii.manager.storage().user_storage().migrate().await?;
+        torii.manager.storage().session_storage().migrate().await?;
+
+        Ok(torii)
+    }
 
     #[tokio::test]
     async fn test_basic_setup() -> Result<(), Error> {
@@ -145,6 +190,17 @@ mod tests {
         .with_email_auth()
         .setup_sqlite()
         .await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_user() -> Result<(), Error> {
+        let torii = setup_torii().await?;
+
+        let user = torii.create_user("test@example.com", "password").await?;
+
+        assert_eq!(user.email, "test@example.com");
 
         Ok(())
     }

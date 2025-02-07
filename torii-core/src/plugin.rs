@@ -14,42 +14,6 @@ use std::sync::Arc;
 use crate::error::Error;
 use crate::storage::{SessionStorage, Storage, UserStorage};
 
-/// Represents the authentication method used to authenticate a user.
-/// This is used for plugins to advertise which authentication methods they support.
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum AuthMethod {
-    EmailPassword,
-    OIDC,
-    WebAuthn,
-}
-
-/// Represents the credentials used to authenticate a user.
-#[derive(Debug, Clone)]
-pub enum AuthenticationRequest {
-    /// Email and password credentials.
-    EmailPassword { email: String, password: String },
-
-    /// OIDC credentials
-    OIDC {
-        provider: String,
-        id_token: Option<String>,
-    },
-
-    /// WebAuthn credentials
-    WebAuthn,
-}
-
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum CreateUserParams {
-    /// Create a user with an email and password.
-    EmailPassword { email: String, password: String },
-
-    /// Create a user with an OAuth2 provider and subject.
-    OIDC { provider: String, subject: String },
-}
-
 #[async_trait]
 pub trait Plugin<U: UserStorage, S: SessionStorage>: Any + Send + Sync + DowncastSync {
     /// The unique name of the plugin instance.
