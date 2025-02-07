@@ -27,7 +27,7 @@ jobs:
         run: cargo clippy --all-features --all-targets
 
       - name: Run tests (with coverage)
-        run: cargo llvm-cov nextest --profile ci
+        run: cargo llvm-cov nextest --profile ci --all-features
 
       - name: Generate coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info

@@ -5,7 +5,9 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use torii_core::{Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage};
+use torii_core::{
+    storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage,
+};
 use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
 use uuid::Uuid;
 
@@ -96,8 +98,7 @@ impl OIDCPlugin {
     /// * The HTTP client cannot be created
     pub async fn begin_auth<U: OIDCStorage, S: SessionStorage>(
         &self,
-        user_storage: &U,
-        _session_storage: &S,
+        storage: &Storage<U, S>,
         redirect_uri: String,
     ) -> Result<AuthFlowBegin, Error> {
         let http_client = openidconnect::reqwest::ClientBuilder::new()
@@ -137,7 +138,8 @@ impl OIDCPlugin {
         // Store nonce in database
         let nonce_key = Uuid::new_v4().to_string();
         let expires_at = Utc::now() + Duration::hours(1);
-        user_storage
+        storage
+            .user_storage()
             .save_nonce(&nonce_key, &nonce.secret().to_string(), &expires_at)
             .await
             .map_err(|_| Error::InternalServerError)?;
@@ -149,6 +151,87 @@ impl OIDCPlugin {
             nonce_key: nonce_key.to_string(),
             authorization_uri: auth_url.to_string(),
         })
+    }
+
+    /// Creates or retrieves an existing user based on OIDC account information
+    ///
+    /// # Arguments
+    /// * `storage` - The storage instance for the OIDC provider
+    /// * `email` - The email address of the user
+    /// * `subject` - The subject of the OIDC account
+    ///
+    /// # Returns
+    /// Returns a [`User`] struct containing the user's information.
+    pub async fn get_or_create_user<U: OIDCStorage, S: SessionStorage>(
+        &self,
+        storage: &Storage<U, S>,
+        email: String,
+        subject: String,
+    ) -> Result<User, Error> {
+        // Check if user exists in database by provider and subject
+        let oidc_account = storage
+            .user_storage()
+            .get_oidc_account_by_provider_and_subject(&self.provider, &subject)
+            .await
+            .map_err(|_| Error::InternalServerError)?;
+
+        if let Some(oidc_account) = oidc_account {
+            tracing::info!(
+                user_id = ?oidc_account.user_id,
+                "User already exists in database"
+            );
+
+            let user = storage
+                .user_storage()
+                .get_user(&oidc_account.user_id)
+                .await
+                .map_err(|_| Error::InternalServerError)?
+                .ok_or_else(|| Error::UserNotFound)?;
+
+            return Ok(user);
+        }
+
+        // Create new user
+        let user = storage
+            .user_storage()
+            .create_user(
+                &NewUser::builder()
+                    .id(UserId::new_random())
+                    .email(email)
+                    .build()
+                    .unwrap(),
+            )
+            .await
+            .map_err(|_| Error::InternalServerError)?;
+
+        // Create link between user and provider
+        storage
+            .user_storage()
+            .create_oidc_account(&OIDCAccount {
+                user_id: user.id.to_string(),
+                provider: self.provider.clone(),
+                subject: subject.clone(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .await
+            .map_err(|_| Error::InternalServerError)?;
+
+        tracing::info!(
+            user_id = ?user.id,
+            provider = ?self.provider,
+            subject = ?subject,
+            "Successfully created link between user and provider"
+        );
+
+        tracing::info!(
+            user_id = ?user.id,
+            provider = ?self.provider,
+            subject = ?subject,
+            "Successfully created session for authenticated user"
+        );
+
+        Ok(user)
     }
 
     /// Complete the authentication process by exchanging the authorization code for an access token and user information.
@@ -168,8 +251,7 @@ impl OIDCPlugin {
     /// Returns a [`User`] struct containing the user's information.
     pub async fn callback<U: OIDCStorage, S: SessionStorage>(
         &self,
-        user_storage: &U,
-        session_storage: &S,
+        storage: &Storage<U, S>,
         auth_flow: &AuthFlowCallback,
     ) -> Result<(User, Session), Error> {
         // Create http client for async requests
@@ -224,7 +306,8 @@ impl OIDCPlugin {
             nonce_key = ?auth_flow.nonce_key,
             "Attempting to get nonce from database"
         );
-        let nonce = user_storage
+        let nonce = storage
+            .user_storage()
             .get_nonce(&auth_flow.nonce_key)
             .await
             .map_err(|_| Error::InternalServerError)?;
@@ -243,12 +326,16 @@ impl OIDCPlugin {
         tracing::info!(claims = ?claims, "Verified id token");
 
         let subject = claims.subject().to_string();
-        let email = claims.email().ok_or_else(|| Error::InvalidCredentials)?;
+        let email = claims
+            .email()
+            .ok_or_else(|| Error::InvalidCredentials)?
+            .to_string();
         let name = claims
             .name()
             .ok_or_else(|| Error::InvalidCredentials)?
             .get(None)
-            .unwrap();
+            .ok_or_else(|| Error::InvalidCredentials)?
+            .to_string();
 
         tracing::info!(
             subject = ?subject,
@@ -257,80 +344,16 @@ impl OIDCPlugin {
             "User claims"
         );
 
-        // Check if user exists in database by email
-        let oidc_account = user_storage
-            .get_oidc_account_by_provider_and_subject(&self.provider, &subject)
+        let user = self
+            .get_or_create_user(storage, email, subject)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
-        if let Some(oidc_account) = oidc_account {
-            tracing::info!(
-                user_id = ?oidc_account.user_id,
-                "User already exists in database"
-            );
-
-            let user = user_storage
-                .get_user(&oidc_account.user_id)
-                .await
-                .map_err(|_| Error::InternalServerError)?
-                .ok_or_else(|| Error::UserNotFound)?;
-
-            // The user has already been created, so we can return them immediately
-            return Ok((
-                user.clone(),
-                session_storage
-                    .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
-                    .await
-                    .map_err(|_| Error::InternalServerError)?,
-            ));
-        }
-
-        // Create user if they don't exist
-        let user = user_storage
-            .create_user(
-                &NewUser::builder()
-                    .id(UserId::new_random())
-                    .email(email.to_string())
-                    .build()
-                    .unwrap(),
-            )
+        let session = storage
+            .session_storage()
+            .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
             .await
             .map_err(|_| Error::InternalServerError)?;
-
-        // Create link between user and provider
-        user_storage
-            .create_oidc_account(&OIDCAccount {
-                user_id: user.id.to_string(),
-                provider: self.provider.clone(),
-                subject: subject.clone(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            })
-            .await
-            .map_err(|_| Error::InternalServerError)?;
-
-        tracing::info!(
-            user_id = ?user.id,
-            provider = ?self.provider,
-            subject = ?subject,
-            "Successfully created link between user and provider"
-        );
-
-        // Create a new session
-        let session = Session::builder().user_id(user.id.clone()).build().unwrap();
-
-        let session = user_storage
-            .create_session(&session)
-            .await
-            .map_err(|_| Error::InternalServerError)?;
-
-        tracing::info!(
-            user_id = ?user.id,
-            session_id = ?session.id,
-            provider = ?self.provider,
-            subject = ?subject,
-            "Successfully created session for authenticated user"
-        );
 
         Ok((user, session))
     }
@@ -338,8 +361,8 @@ impl OIDCPlugin {
 
 #[async_trait]
 impl<U: UserStorage, S: SessionStorage> Plugin<U, S> for OIDCPlugin {
-    fn name(&self) -> &'static str {
-        "oidc"
+    fn name(&self) -> String {
+        self.provider.clone()
     }
 
     async fn setup(&self, _user_storage: &U, _session_storage: &S) -> Result<(), Error> {

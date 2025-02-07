@@ -23,7 +23,7 @@ lint:
 
 # Run tests using nextest
 test:
-	@cargo nextest run --no-fail-fast 
+	@cargo nextest run --no-fail-fast --all-features
 
 # Run tests with coverage report
 coverage:

@@ -8,52 +8,17 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use downcast_rs::{impl_downcast, DowncastSync};
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::sync::Arc;
 
 use crate::error::Error;
 use crate::storage::{SessionStorage, Storage, UserStorage};
 
-/// Represents the authentication method used to authenticate a user.
-/// This is used for plugins to advertise which authentication methods they support.
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum AuthMethod {
-    EmailPassword,
-    OIDC,
-    WebAuthn,
-}
-
-/// Represents the credentials used to authenticate a user.
-#[derive(Debug, Clone)]
-pub enum AuthenticationRequest {
-    /// Email and password credentials.
-    EmailPassword { email: String, password: String },
-
-    /// OIDC credentials
-    OIDC {
-        provider: String,
-        id_token: Option<String>,
-    },
-
-    /// WebAuthn credentials
-    WebAuthn,
-}
-
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum CreateUserParams {
-    /// Create a user with an email and password.
-    EmailPassword { email: String, password: String },
-
-    /// Create a user with an OAuth2 provider and subject.
-    OIDC { provider: String, subject: String },
-}
-
 #[async_trait]
 pub trait Plugin<U: UserStorage, S: SessionStorage>: Any + Send + Sync + DowncastSync {
-    /// The name of the plugin.
-    fn name(&self) -> &'static str;
+    /// The unique name of the plugin instance.
+    /// For OIDC plugins, this should be the provider name (e.g. "google", "github")
+    fn name(&self) -> String;
 
     /// Get the dependencies of this plugin.
     /// Returns a list of plugin names that must be initialized before this one.
@@ -73,7 +38,7 @@ impl_downcast!(sync Plugin<U, S> where U: UserStorage, S: SessionStorage);
 
 /// Manages a collection of plugins.
 pub struct PluginManager<U: UserStorage, S: SessionStorage> {
-    plugins: DashMap<TypeId, Arc<dyn Plugin<U, S>>>,
+    plugins: DashMap<String, Arc<dyn Plugin<U, S>>>,
     storage: Storage<U, S>,
 }
 
@@ -105,10 +70,10 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     ///
-    /// let plugin = plugin_manager.get_plugin::<MyPlugin>();
+    /// let plugin = plugin_manager.get_plugin::<MyPlugin>("my_plugin");
     /// ```
-    pub fn get_plugin<T: Plugin<U, S> + 'static>(&self) -> Option<Arc<T>> {
-        let plugin = self.plugins.get(&TypeId::of::<T>())?;
+    pub fn get_plugin<T: Plugin<U, S> + 'static>(&self, name: &str) -> Option<Arc<T>> {
+        let plugin = self.plugins.get(name)?;
         plugin.value().clone().downcast_arc::<T>().ok()
     }
 
@@ -125,10 +90,10 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// plugin_manager.register(MyPlugin);
     /// ```
     pub fn register<T: Plugin<U, S> + 'static>(&mut self, plugin: T) {
+        let name = plugin.name();
         let plugin = Arc::new(plugin);
-        let type_id = TypeId::of::<T>();
-        self.plugins.insert(type_id, plugin.clone());
-        tracing::info!("Registered plugin: {}", plugin.name());
+        self.plugins.insert(name.clone(), plugin.clone());
+        tracing::info!(plugin.name = name, "Registered plugin");
     }
 
     /// Sets up all registered plugins in dependency order.
@@ -164,13 +129,13 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     }
 
     /// Gets a list of plugin TypeIds in dependency order.
-    fn get_ordered_plugins(&self) -> Result<Vec<TypeId>, Error> {
+    fn get_ordered_plugins(&self) -> Result<Vec<String>, Error> {
         let mut ordered = Vec::new();
         let mut visited = std::collections::HashSet::new();
         let mut temp_visited = std::collections::HashSet::new();
 
-        for plugin_id in self.plugins.iter().map(|p| *p.key()) {
-            self.visit_plugin(plugin_id, &mut ordered, &mut visited, &mut temp_visited)?;
+        for plugin_id in self.plugins.iter().map(|p| p.key().clone()) {
+            self.visit_plugin(&plugin_id, &mut ordered, &mut visited, &mut temp_visited)?;
         }
 
         Ok(ordered)
@@ -179,36 +144,36 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// Helper function for topological sort of plugins.
     fn visit_plugin(
         &self,
-        plugin_id: TypeId,
-        ordered: &mut Vec<TypeId>,
-        visited: &mut std::collections::HashSet<TypeId>,
-        temp_visited: &mut std::collections::HashSet<TypeId>,
+        plugin_id: &str,
+        ordered: &mut Vec<String>,
+        visited: &mut std::collections::HashSet<String>,
+        temp_visited: &mut std::collections::HashSet<String>,
     ) -> Result<(), Error> {
-        if temp_visited.contains(&plugin_id) {
+        if temp_visited.contains(plugin_id) {
             return Err(Error::Plugin("Circular dependency detected".into()));
         }
-        if visited.contains(&plugin_id) {
+        if visited.contains(plugin_id) {
             return Ok(());
         }
 
-        temp_visited.insert(plugin_id);
+        temp_visited.insert(plugin_id.to_string());
 
-        let plugin = self.plugins.get(&plugin_id).expect("Plugin not found");
+        let plugin = self.plugins.get(plugin_id).expect("Plugin not found");
 
         for dep_name in plugin.value().dependencies() {
             let dep_id = self
                 .plugins
                 .iter()
                 .find(|p| p.value().name() == dep_name)
-                .map(|p| *p.key())
+                .map(|p| p.key().clone())
                 .ok_or_else(|| Error::Plugin(format!("Dependency '{}' not found", dep_name)))?;
 
-            self.visit_plugin(dep_id, ordered, visited, temp_visited)?;
+            self.visit_plugin(&dep_id, ordered, visited, temp_visited)?;
         }
 
-        temp_visited.remove(&plugin_id);
-        visited.insert(plugin_id);
-        ordered.push(plugin_id);
+        temp_visited.remove(&plugin_id.to_string());
+        visited.insert(plugin_id.to_string());
+        ordered.push(plugin_id.to_string());
 
         Ok(())
     }
@@ -226,8 +191,8 @@ mod tests {
 
     #[async_trait]
     impl Plugin<TestStorage, TestStorage> for TestPlugin {
-        fn name(&self) -> &'static str {
-            "test"
+        fn name(&self) -> String {
+            "test".to_string()
         }
 
         async fn setup(
@@ -347,7 +312,7 @@ mod tests {
         let (user_storage, session_storage) = setup_test_storage();
         let mut plugin_manager = PluginManager::new(user_storage, session_storage);
         plugin_manager.register(TestPlugin::new());
-        let plugin = plugin_manager.get_plugin::<TestPlugin>().unwrap();
+        let plugin = plugin_manager.get_plugin::<TestPlugin>("test").unwrap();
         assert_eq!(plugin.name(), "test");
     }
 

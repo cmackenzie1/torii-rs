@@ -70,7 +70,7 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin>()
+        .get_plugin::<EmailPasswordPlugin>("email_password")
         .unwrap();
 
     match plugin
@@ -107,7 +107,7 @@ async fn sign_in_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin>()
+        .get_plugin::<EmailPasswordPlugin>("email_password")
         .unwrap();
 
     match plugin
