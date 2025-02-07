@@ -1,5 +1,7 @@
 # Torii
 
+![Torii Logo](./assets/splash.jpeg)
+
 > ⚠️ **Warning**: This project is in early development and is not stable. The API is subject to change without notice.
 
 ## Overview
