@@ -2,13 +2,12 @@
 
 ![Torii Logo](./assets/splash.jpeg)
 
-> ⚠️ **Warning**: This project is in early development and is not stable. The API is subject to change without notice.
+> [!WARNING]
+> This project is in early development and is not production-ready. The API is subject to change without notice.
 
 ## Overview
 
-Torii is currently under active development. As we are in the initial phases, many features are experimental and may be significantly modified or removed in future versions.
-
-The goal of Torii is to provide a simple and flexible authentication system for web applications through plugins.
+Torii is a flexible authentication framework for Rust applications that provides a plugin-based system for multiple authentication methods. It's designed to be simple to use while remaining extensible for various authentication needs.
 
 ## Development Status
 
@@ -16,16 +15,27 @@ The goal of Torii is to provide a simple and flexible authentication system for 
 - ⚠️ Not Production Ready
 - 📝 APIs Subject to Change
 
+## Features
+
+- 🔐 Multiple authentication methods
+  - Email/Password authentication
+  - OpenID Connect (OIDC)
+  - WebAuthn (Coming Soon)
+- 💾 Storage backends
+  - SQLite support
+  - Postgres support (#3)
+  - MySQL support (#4)
+- 🔌 Plugin system for extending functionality
+
 ## Current Plugins
 
-- [Password Auth](./torii-auth-email/README.md)
-- OAuth 2.0 Auth (coming soon)
-- OpenID Connect Auth (coming soon)
-- WebAuthn Auth (coming soon)
+- [Email/Password Authentication](./torii-auth-email/README.md)
+- [OpenID Connect (OIDC)](./torii-auth-oidc/README.md)
 
-## Disclaimer
+## Security
 
-This project is not production ready and should not be used in production environments. The maintainers are not responsible for any data loss or other issues that may arise from using this software.
+> [!IMPORTANT]
+> As this project is in early development, it has not undergone security audits and should not be used in production environments. The maintainers are not responsible for any security issues that may arise from using this software.
 
 ## Contributing
 

@@ -1,3 +1,26 @@
+//! Torii - A flexible authentication framework for Rust
+//!
+//! Torii provides a pluggable authentication system that supports multiple
+//! authentication methods and storage backends.
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use torii::{Torii, ToriiBuilder};
+//! use torii_auth_email::EmailAuthPlugin;
+//! use torii_storage_sqlite::SqliteStorage;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let storage = SqliteStorage::new("torii.db").await?;
+//!
+//! let torii = ToriiBuilder::new(storage, storage)
+//!     .with_email_auth()
+//!     .setup_sqlite()
+//!     .await?;
+//! # Ok(())
+//! # }
+//! ```
+
 use std::sync::Arc;
 
 use sqlx::Pool;
