@@ -109,7 +109,7 @@ impl EmailPasswordPlugin {
 
         // Delete all existing sessions for this user for security
         storage
-            .delete_sessions_for_user(user_id.as_ref())
+            .delete_sessions_for_user(user_id)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
 
@@ -373,7 +373,7 @@ mod tests {
         // Verify initial session exists
         let initial_session = manager
             .storage()
-            .get_session(session.id.as_ref())
+            .get_session(&session.id)
             .await
             .expect("Failed to get session")
             .expect("Session should exist");
@@ -385,7 +385,7 @@ mod tests {
             .await?;
 
         // Verify old session was deleted
-        let deleted_session = manager.storage().get_session(session.id.as_ref()).await;
+        let deleted_session = manager.storage().get_session(&session.id).await;
         assert!(deleted_session.is_err());
 
         // Verify can login with new password

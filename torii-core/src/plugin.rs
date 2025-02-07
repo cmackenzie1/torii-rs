@@ -269,8 +269,8 @@ mod tests {
     impl UserStorage for TestStorage {
         type Error = Error;
 
-        async fn get_user(&self, id: &str) -> Result<Option<User>, Self::Error> {
-            Ok(self.users.get(&UserId::new(id)).map(|u| u.clone()))
+        async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
+            Ok(self.users.get(id).map(|u| u.clone()))
         }
 
         async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
@@ -316,8 +316,8 @@ mod tests {
             Ok(user.clone())
         }
 
-        async fn delete_user(&self, id: &str) -> Result<(), Self::Error> {
-            self.users.remove(&UserId::new(id));
+        async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
+            self.users.remove(id);
             Ok(())
         }
     }
@@ -326,8 +326,8 @@ mod tests {
     impl SessionStorage for TestStorage {
         type Error = Error;
 
-        async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error> {
-            Ok(self.sessions.get(&SessionId::new(id)).map(|s| s.clone()))
+        async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+            Ok(self.sessions.get(id).map(|s| s.clone()))
         }
 
         async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
@@ -335,14 +335,13 @@ mod tests {
             Ok(session.clone())
         }
 
-        async fn delete_session(&self, id: &str) -> Result<(), Self::Error> {
-            self.sessions.remove(&SessionId::new(id));
+        async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
+            self.sessions.remove(id);
             Ok(())
         }
 
-        async fn delete_sessions_for_user(&self, user_id: &str) -> Result<(), Self::Error> {
-            let user_id = UserId::new(user_id);
-            self.sessions.retain(|_, s| s.user_id != user_id);
+        async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+            self.sessions.retain(|_, s| s.user_id != *user_id);
             Ok(())
         }
 
@@ -428,12 +427,12 @@ mod tests {
 
         // Verify expired session was removed but valid session remains
         assert!(session_storage
-            .get_session("expired")
+            .get_session(&SessionId::new("expired"))
             .await
             .expect("Failed to get session")
             .is_none());
         assert!(session_storage
-            .get_session("valid")
+            .get_session(&SessionId::new("valid"))
             .await
             .expect("Failed to get session")
             .is_some());

@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_email::EmailPasswordPlugin;
-use torii_core::plugin::PluginManager;
+use torii_core::{plugin::PluginManager, session::SessionId};
 use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic email/password authentication system using Torii.
@@ -186,7 +186,7 @@ async fn verify_session<B>(
         if let Ok(session) = state
             .plugin_manager
             .storage()
-            .get_session(&session_id)
+            .get_session(&SessionId::new(&session_id))
             .await
         {
             if session.is_some() {
@@ -210,7 +210,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
         let session = state
             .plugin_manager
             .storage()
-            .get_session(&session_id)
+            .get_session(&SessionId::new(&session_id))
             .await
             .unwrap();
 
@@ -218,7 +218,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
             let user = state
                 .plugin_manager
                 .storage()
-                .get_user(&session.user_id.as_ref())
+                .get_user(&session.user_id)
                 .await
                 .unwrap();
             return Json(user).into_response();

@@ -198,7 +198,7 @@ impl Torii<SqliteStorage, SqliteStorage> {
         self.manager
             .storage()
             .session_storage()
-            .delete_session(session.id.as_ref())
+            .delete_session(&session.id)
             .await
     }
 
