@@ -1,5 +1,10 @@
 # Torii
 
+[![CI](https://github.com/cmackenzie1/torii-rs/actions/workflows/ci.yaml/badge.svg)](https://github.com/cmackenzie1/torii-rs/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/gh/cmackenzie1/torii-rs/branch/main/graph/badge.svg?token=MHF0G453L0)](https://codecov.io/gh/cmackenzie1/torii-rs)
+[![docs.rs](https://img.shields.io/docsrs/torii)](https://docs.rs/torii/latest/torii/)
+[![Crates.io Version](https://img.shields.io/crates/v/torii)](https://crates.io/crates/torii)
+
 ![Torii Logo](./assets/splash.jpeg)
 
 > [!WARNING]
