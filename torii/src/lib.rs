@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sqlx::Pool;
 use sqlx::Sqlite;
+use torii_core::Session;
 use torii_core::SessionStorage;
 use torii_core::UserStorage;
 use torii_core::{Error, PluginManager, User};
@@ -145,7 +146,11 @@ impl Torii<SqliteStorage, SqliteStorage> {
         .await
     }
 
-    pub async fn create_user(&self, email: &str, password: &str) -> Result<User, Error> {
+    pub async fn create_user_with_email_password(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<User, Error> {
         let plugin = self
             .manager
             .get_plugin::<torii_auth_email::EmailPasswordPlugin>("email_password")
@@ -153,6 +158,54 @@ impl Torii<SqliteStorage, SqliteStorage> {
 
         let user = plugin
             .create_user(self.manager.storage(), email, password)
+            .await?;
+
+        Ok(user)
+    }
+
+    pub async fn create_session_for_user(&self, user: &User) -> Result<Session, Error> {
+        let session = Session::builder().user_id(user.id.clone()).build().unwrap();
+
+        self.manager
+            .storage()
+            .session_storage()
+            .create_session(&session)
+            .await
+    }
+
+    pub async fn revoke_session(&self, session: &Session) -> Result<(), Error> {
+        self.manager
+            .storage()
+            .session_storage()
+            .delete_session(session.id.as_ref())
+            .await
+    }
+
+    /// Create a new user with an OIDC provider
+    ///
+    /// # Example
+    /// ```
+    /// let torii = Torii::sqlite(pool).await?;
+    /// let user = torii.create_user_with_oidc("google", "test@example.com", "1234567890").await?;
+    /// ```
+    #[cfg(feature = "oidc-auth")]
+    pub async fn create_user_with_oidc(
+        &self,
+        provider: &str,
+        email: &str,
+        subject: &str,
+    ) -> Result<User, Error> {
+        let plugin = self
+            .manager
+            .get_plugin::<torii_auth_oidc::OIDCPlugin>(provider)
+            .ok_or(Error::UnsupportedAuthMethod(provider.to_string()))?;
+
+        let user = plugin
+            .get_or_create_user(
+                self.manager.storage(),
+                email.to_string(),
+                subject.to_string(),
+            )
             .await?;
 
         Ok(user)
@@ -169,6 +222,25 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
         let pool = SqlitePool::connect("sqlite::memory:").await?;
         let torii = Torii::sqlite(pool.clone()).await?;
+
+        torii.manager.storage().user_storage().migrate().await?;
+        torii.manager.storage().session_storage().migrate().await?;
+
+        Ok(torii)
+    }
+
+    async fn setup_torii_with_oidc() -> Result<Torii<SqliteStorage, SqliteStorage>, Error> {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = SqlitePool::connect("sqlite::memory:").await?;
+        let torii = ToriiBuilder::<SqliteStorage, SqliteStorage>::new(
+            Arc::new(SqliteStorage::new(pool.clone())),
+            Arc::new(SqliteStorage::new(pool.clone())),
+        )
+        .with_email_auth()
+        .with_oidc_provider("google", "client_id", "client_secret", "redirect_uri")
+        .setup_sqlite()
+        .await?;
+
         torii.manager.storage().user_storage().migrate().await?;
         torii.manager.storage().session_storage().migrate().await?;
 
@@ -195,12 +267,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_user() -> Result<(), Error> {
+    async fn test_create_user_with_email_password() -> Result<(), Error> {
         let torii = setup_torii().await?;
 
-        let user = torii.create_user("test@example.com", "password").await?;
+        let user = torii
+            .create_user_with_email_password("test@example.com", "password")
+            .await?;
 
         assert_eq!(user.email, "test@example.com");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_session_for_user() -> Result<(), Error> {
+        let torii = setup_torii().await?;
+
+        let user = torii
+            .create_user_with_email_password("test@example.com", "password")
+            .await?;
+
+        let session = torii.create_session_for_user(&user).await?;
+
+        assert_eq!(session.user_id, user.id);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_revoke_session() -> Result<(), Error> {
+        let torii = setup_torii().await?;
+
+        let user = torii
+            .create_user_with_email_password("test@example.com", "password")
+            .await?;
+
+        let session = torii.create_session_for_user(&user).await?;
+
+        torii.revoke_session(&session).await?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "oidc-auth")]
+    #[tokio::test]
+    async fn test_create_user_with_oidc() -> Result<(), Error> {
+        let torii = setup_torii_with_oidc().await?;
+
+        let user = torii
+            .create_user_with_oidc("google", "test@example.com", "1234567890")
+            .await?;
+
+        assert_eq!(user.email, "test@example.com");
+
+        Ok(())
+    }
+
+    #[cfg(feature = "oidc-auth")]
+    #[tokio::test]
+    async fn test_create_session_for_user_with_oidc() -> Result<(), Error> {
+        let torii = setup_torii_with_oidc().await?;
+
+        let user = torii
+            .create_user_with_oidc("google", "test@example.com", "1234567890")
+            .await?;
+
+        let session = torii.create_session_for_user(&user).await?;
+
+        assert_eq!(session.user_id, user.id);
 
         Ok(())
     }
