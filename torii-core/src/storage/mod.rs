@@ -26,8 +26,10 @@ pub trait SessionStorage: Send + Sync + 'static {
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error>;
     async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error>;
     async fn delete_session(&self, id: &str) -> Result<(), Self::Error>;
+    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
 }
 
+#[derive(Debug, Clone)]
 pub struct Storage<U: UserStorage, S: SessionStorage> {
     user_storage: Arc<U>,
     session_storage: Arc<S>,

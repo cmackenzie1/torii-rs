@@ -272,6 +272,19 @@ impl SessionStorage for SqliteStorage {
 
         Ok(())
     }
+
+    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
+        sqlx::query("DELETE FROM sessions WHERE expires_at < ?")
+            .bind(Utc::now())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to cleanup expired sessions");
+                Self::Error::Storage("Failed to cleanup expired sessions".to_string())
+            })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Builder)]
@@ -451,63 +464,140 @@ mod tests {
         Ok(SqliteStorage::new(pool))
     }
 
-    #[tokio::test]
-    async fn test_sqlite_storage() {
-        let storage = setup_sqlite_storage().await.unwrap();
+    async fn create_test_user(
+        storage: &SqliteStorage,
+        id: &str,
+    ) -> Result<User, torii_core::Error> {
         storage
             .create_user(
                 &NewUser::builder()
-                    .id(UserId::new("1"))
+                    .id(UserId::new(id))
                     .email("test@example.com".to_string())
                     .build()
-                    .unwrap(),
+                    .expect("Failed to build user"),
             )
             .await
-            .unwrap();
+    }
 
-        let user = storage.get_user(&"1").await.unwrap().unwrap();
+    async fn create_test_session(
+        storage: &SqliteStorage,
+        session_id: &str,
+        user_id: &str,
+        expires_in: Duration,
+    ) -> Result<Session, torii_core::Error> {
+        let now = Utc::now();
+        storage
+            .create_session(
+                &Session::builder()
+                    .id(SessionId::new(session_id))
+                    .user_id(UserId::new(user_id))
+                    .user_agent(Some("test".to_string()))
+                    .ip_address(Some("127.0.0.1".to_string()))
+                    .created_at(now)
+                    .updated_at(now)
+                    .expires_at(now + expires_in)
+                    .build()
+                    .expect("Failed to build session"),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_storage() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+        let user = create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user");
         assert_eq!(user.email, "test@example.com");
 
-        storage.delete_user(&"1").await.unwrap();
-        let user = storage.get_user(&"1").await.unwrap();
-        assert!(user.is_none());
+        let fetched = storage.get_user("1").await.expect("Failed to get user");
+        assert_eq!(
+            fetched.expect("User should exist").email,
+            "test@example.com"
+        );
+
+        storage
+            .delete_user("1")
+            .await
+            .expect("Failed to delete user");
+        let deleted = storage.get_user("1").await.expect("Failed to get user");
+        assert!(deleted.is_none());
     }
 
     #[tokio::test]
     async fn test_sqlite_session_storage() {
-        let storage = setup_sqlite_storage().await.unwrap();
-        storage
-            .create_user(
-                &NewUser::builder()
-                    .id(UserId::new("1"))
-                    .email("test@example.com".to_string())
-                    .build()
-                    .unwrap(),
-            )
+        let storage = setup_sqlite_storage()
             .await
-            .unwrap();
+            .expect("Failed to setup storage");
+        create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user");
+
+        let _session = create_test_session(&storage, "1", "1", Duration::from_secs(1000))
+            .await
+            .expect("Failed to create session");
+
+        let fetched = storage
+            .get_session("1")
+            .await
+            .expect("Failed to get session")
+            .expect("Session should exist");
+        assert_eq!(fetched.user_id, UserId::new("1"));
 
         storage
-            .create_session(
-                &Session::builder()
-                    .id(SessionId::new("1"))
-                    .user_id(UserId::new("1"))
-                    .user_agent(Some("test".to_string()))
-                    .ip_address(Some("127.0.0.1".to_string()))
-                    .created_at(Utc::now())
-                    .updated_at(Utc::now())
-                    .expires_at(Utc::now() + Duration::from_secs(1000))
-                    .build()
-                    .unwrap(),
-            )
+            .delete_session("1")
             .await
-            .unwrap();
+            .expect("Failed to delete session");
+        let deleted = storage.get_session("1").await;
+        assert!(deleted.is_err());
+    }
 
-        let session = storage.get_session(&"1").await.unwrap();
-        assert_eq!(session.unwrap().user_id, UserId::new("1"));
+    #[tokio::test]
+    async fn test_sqlite_session_cleanup() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+        create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user");
 
-        storage.delete_session(&"1").await.unwrap();
-        let session = storage.get_session(&"1").await;
-        assert!(session.is_err());
+        // Create an already expired session by setting expires_at in the past
+        let expired_session = Session {
+            id: SessionId::new("expired"),
+            user_id: UserId::new("1"),
+            user_agent: None,
+            ip_address: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+        };
+        storage
+            .create_session(&expired_session)
+            .await
+            .expect("Failed to create expired session");
+
+        // Create valid session
+        create_test_session(&storage, "valid", "1", Duration::from_secs(3600))
+            .await
+            .expect("Failed to create valid session");
+
+        // Run cleanup
+        storage
+            .cleanup_expired_sessions()
+            .await
+            .expect("Failed to cleanup sessions");
+
+        // Verify expired session was removed
+        let expired_session = storage.get_session("expired").await;
+        assert!(expired_session.is_err());
+
+        // Verify valid session remains
+        let valid_session = storage
+            .get_session("valid")
+            .await
+            .expect("Failed to get valid session");
+        assert!(valid_session.is_some());
     }
 }
