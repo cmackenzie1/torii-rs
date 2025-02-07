@@ -27,6 +27,7 @@ pub trait SessionStorage: Send + Sync + 'static {
     async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error>;
     async fn delete_session(&self, id: &str) -> Result<(), Self::Error>;
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
+    async fn delete_sessions_for_user(&self, user_id: &str) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,14 @@ impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
 
     pub async fn get_session(&self, id: &str) -> Result<Option<Session>, S::Error> {
         self.session_storage.get_session(id).await
+    }
+
+    pub async fn delete_session(&self, id: &str) -> Result<(), S::Error> {
+        self.session_storage.delete_session(id).await
+    }
+
+    pub async fn delete_sessions_for_user(&self, user_id: &str) -> Result<(), S::Error> {
+        self.session_storage.delete_sessions_for_user(user_id).await
     }
 
     pub fn user_storage(&self) -> Arc<U> {

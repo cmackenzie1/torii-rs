@@ -273,6 +273,19 @@ impl SessionStorage for SqliteStorage {
         Ok(())
     }
 
+    async fn delete_sessions_for_user(&self, user_id: &str) -> Result<(), Self::Error> {
+        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to delete sessions for user");
+                Self::Error::Storage("Failed to delete sessions for user".to_string())
+            })?;
+
+        Ok(())
+    }
+
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE expires_at < ?")
             .bind(Utc::now())
@@ -472,7 +485,7 @@ mod tests {
             .create_user(
                 &NewUser::builder()
                     .id(UserId::new(id))
-                    .email("test@example.com".to_string())
+                    .email(format!("test{}@example.com", id))
                     .build()
                     .expect("Failed to build user"),
             )
@@ -510,12 +523,12 @@ mod tests {
         let user = create_test_user(&storage, "1")
             .await
             .expect("Failed to create user");
-        assert_eq!(user.email, "test@example.com");
+        assert_eq!(user.email, format!("test1@example.com"));
 
         let fetched = storage.get_user("1").await.expect("Failed to get user");
         assert_eq!(
             fetched.expect("User should exist").email,
-            "test@example.com"
+            format!("test1@example.com")
         );
 
         storage
@@ -599,5 +612,52 @@ mod tests {
             .await
             .expect("Failed to get valid session");
         assert!(valid_session.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_delete_sessions_for_user() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+
+        // Create test users
+        create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user 1");
+        create_test_user(&storage, "2")
+            .await
+            .expect("Failed to create user 2");
+
+        // Create sessions for user 1
+        create_test_session(&storage, "session1", "1", Duration::from_secs(3600))
+            .await
+            .expect("Failed to create session 1");
+        create_test_session(&storage, "session2", "1", Duration::from_secs(3600))
+            .await
+            .expect("Failed to create session 2");
+
+        // Create session for user 2
+        create_test_session(&storage, "session3", "2", Duration::from_secs(3600))
+            .await
+            .expect("Failed to create session 3");
+
+        // Delete all sessions for user 1
+        storage
+            .delete_sessions_for_user("1")
+            .await
+            .expect("Failed to delete sessions for user");
+
+        // Verify user 1's sessions are deleted
+        let session1 = storage.get_session("session1").await;
+        assert!(session1.is_err());
+        let session2 = storage.get_session("session2").await;
+        assert!(session2.is_err());
+
+        // Verify user 2's session remains
+        let session3 = storage
+            .get_session("session3")
+            .await
+            .expect("Failed to get session 3");
+        assert!(session3.is_some());
     }
 }

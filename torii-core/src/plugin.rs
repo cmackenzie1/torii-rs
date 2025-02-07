@@ -340,9 +340,15 @@ mod tests {
             Ok(())
         }
 
+        async fn delete_sessions_for_user(&self, user_id: &str) -> Result<(), Self::Error> {
+            let user_id = UserId::new(user_id);
+            self.sessions.retain(|_, s| s.user_id != user_id);
+            Ok(())
+        }
+
         async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
-            self.sessions
-                .retain(|_, s| s.expires_at > chrono::Utc::now());
+            let now = chrono::Utc::now();
+            self.sessions.retain(|_, s| s.expires_at > now);
             Ok(())
         }
     }
