@@ -5,18 +5,18 @@ use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::{Session, User, UserId};
+use crate::{session::SessionId, Session, User, UserId};
 
 #[async_trait]
 pub trait UserStorage: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error>;
-    async fn get_user(&self, id: &str) -> Result<Option<User>, Self::Error>;
+    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error>;
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error>;
     async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error>;
     async fn update_user(&self, user: &User) -> Result<User, Self::Error>;
-    async fn delete_user(&self, id: &str) -> Result<(), Self::Error>;
+    async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error>;
 }
 
 #[async_trait]
@@ -24,10 +24,13 @@ pub trait SessionStorage: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error>;
-    async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error>;
-    async fn delete_session(&self, id: &str) -> Result<(), Self::Error>;
+    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error>;
+    async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error>;
+    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error>;
 }
 
+#[derive(Debug, Clone)]
 pub struct Storage<U: UserStorage, S: SessionStorage> {
     user_storage: Arc<U>,
     session_storage: Arc<S>,
@@ -45,7 +48,7 @@ impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
         self.user_storage.create_user(user).await
     }
 
-    pub async fn get_user(&self, id: &str) -> Result<Option<User>, U::Error> {
+    pub async fn get_user(&self, id: &UserId) -> Result<Option<User>, U::Error> {
         self.user_storage.get_user(id).await
     }
 
@@ -53,8 +56,16 @@ impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
         self.session_storage.create_session(session).await
     }
 
-    pub async fn get_session(&self, id: &str) -> Result<Option<Session>, S::Error> {
+    pub async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, S::Error> {
         self.session_storage.get_session(id).await
+    }
+
+    pub async fn delete_session(&self, id: &SessionId) -> Result<(), S::Error> {
+        self.session_storage.delete_session(id).await
+    }
+
+    pub async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), S::Error> {
+        self.session_storage.delete_sessions_for_user(user_id).await
     }
 
     pub fn user_storage(&self) -> Arc<U> {

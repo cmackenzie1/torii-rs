@@ -10,6 +10,7 @@ use dashmap::DashMap;
 use downcast_rs::{impl_downcast, DowncastSync};
 use std::any::Any;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::error::Error;
 use crate::storage::{SessionStorage, Storage, UserStorage};
@@ -177,6 +178,46 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
 
         Ok(())
     }
+
+    /// Starts a background task to cleanup expired sessions.
+    ///
+    /// # Example
+    /// ```
+    /// use torii_core::PluginManager;
+    /// use torii_core::SessionCleanupConfig;
+    ///
+    /// let plugin_manager = PluginManager::new();
+    /// plugin_manager.start_session_cleanup_task(SessionCleanupConfig::default());
+    /// ```
+    pub async fn start_session_cleanup_task(&self, config: SessionCleanupConfig) {
+        let storage = self.storage.session_storage().clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(config.interval);
+            loop {
+                interval.tick().await;
+                if let Err(e) = storage.cleanup_expired_sessions().await {
+                    tracing::error!("Failed to cleanup sessions: {}", e);
+                }
+            }
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct SessionCleanupConfig {
+    /// How often to run the cleanup task (default: 1 hour)
+    pub interval: Duration,
+    /// Maximum age of sessions before they're cleaned up (default: 30 days)
+    pub max_session_age: Duration,
+}
+
+impl Default for SessionCleanupConfig {
+    fn default() -> Self {
+        Self {
+            interval: Duration::from_secs(3600),           // 1 hour
+            max_session_age: Duration::from_secs(2592000), // 30 days
+        }
+    }
 }
 
 #[cfg(test)]
@@ -228,8 +269,8 @@ mod tests {
     impl UserStorage for TestStorage {
         type Error = Error;
 
-        async fn get_user(&self, id: &str) -> Result<Option<User>, Self::Error> {
-            Ok(self.users.get(&UserId::new(id)).map(|u| u.clone()))
+        async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
+            Ok(self.users.get(id).map(|u| u.clone()))
         }
 
         async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
@@ -275,8 +316,8 @@ mod tests {
             Ok(user.clone())
         }
 
-        async fn delete_user(&self, id: &str) -> Result<(), Self::Error> {
-            self.users.remove(&UserId::new(id));
+        async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
+            self.users.remove(id);
             Ok(())
         }
     }
@@ -285,8 +326,8 @@ mod tests {
     impl SessionStorage for TestStorage {
         type Error = Error;
 
-        async fn get_session(&self, id: &str) -> Result<Option<Session>, Self::Error> {
-            Ok(self.sessions.get(&SessionId::new(id)).map(|s| s.clone()))
+        async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+            Ok(self.sessions.get(id).map(|s| s.clone()))
         }
 
         async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
@@ -294,8 +335,19 @@ mod tests {
             Ok(session.clone())
         }
 
-        async fn delete_session(&self, id: &str) -> Result<(), Self::Error> {
-            self.sessions.remove(&SessionId::new(id));
+        async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
+            self.sessions.remove(id);
+            Ok(())
+        }
+
+        async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+            self.sessions.retain(|_, s| s.user_id != *user_id);
+            Ok(())
+        }
+
+        async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
+            let now = chrono::Utc::now();
+            self.sessions.retain(|_, s| s.expires_at > now);
             Ok(())
         }
     }
@@ -324,5 +376,65 @@ mod tests {
 
         // This should now work without duplicate migration errors
         plugin_manager.setup().await.expect("Setup failed");
+    }
+
+    #[tokio::test]
+    async fn test_session_cleanup() {
+        let (user_storage, session_storage) = setup_test_storage();
+        let plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+
+        // Create an expired session
+        let expired_session = Session {
+            id: SessionId::new("expired"),
+            user_id: UserId::new("test"),
+            user_agent: None,
+            ip_address: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: chrono::Utc::now() - chrono::Duration::hours(1),
+        };
+        session_storage
+            .create_session(&expired_session)
+            .await
+            .expect("Failed to create expired session");
+
+        // Create a valid session
+        let valid_session = Session {
+            id: SessionId::new("valid"),
+            user_id: UserId::new("test"),
+            user_agent: None,
+            ip_address: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        };
+        session_storage
+            .create_session(&valid_session)
+            .await
+            .expect("Failed to create valid session");
+
+        // Configure cleanup to run frequently
+        let config = SessionCleanupConfig {
+            interval: Duration::from_millis(100),
+            max_session_age: Duration::from_secs(3600),
+        };
+
+        // Start cleanup task
+        plugin_manager.start_session_cleanup_task(config).await;
+
+        // Wait for cleanup to run
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Verify expired session was removed but valid session remains
+        assert!(session_storage
+            .get_session(&SessionId::new("expired"))
+            .await
+            .expect("Failed to get session")
+            .is_none());
+        assert!(session_storage
+            .get_session(&SessionId::new("valid"))
+            .await
+            .expect("Failed to get session")
+            .is_some());
     }
 }

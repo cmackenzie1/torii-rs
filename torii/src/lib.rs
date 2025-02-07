@@ -115,10 +115,7 @@ where
 ///     .setup_sqlite()
 ///     .await?;
 ///
-/// let user = torii.create_user(&CreateUserParams::EmailPassword {
-///     email: "test@example.com".to_string(),
-///     password: "password".to_string(),
-/// }).await?;
+/// let user = torii.create_user_with_email_password("test@example.com", "password").await?;
 /// ```
 pub struct Torii<U: UserStorage, S: SessionStorage> {
     manager: PluginManager<U, S>,
@@ -146,6 +143,13 @@ impl Torii<SqliteStorage, SqliteStorage> {
         .await
     }
 
+    /// Create a new user with an email and password
+    ///
+    /// # Example
+    /// ```
+    /// let torii = Torii::sqlite(pool).await?;
+    /// let user = torii.create_user_with_email_password("test@example.com", "password").await?;
+    /// ```
     pub async fn create_user_with_email_password(
         &self,
         email: &str,
@@ -163,6 +167,14 @@ impl Torii<SqliteStorage, SqliteStorage> {
         Ok(user)
     }
 
+    /// Create a new session for a user
+    ///
+    /// # Example
+    /// ```
+    /// let torii = Torii::sqlite(pool).await?;
+    /// let user = torii.create_user_with_email_password("test@example.com", "password").await?;
+    /// let session = torii.create_session_for_user(&user).await?;
+    /// ```
     pub async fn create_session_for_user(&self, user: &User) -> Result<Session, Error> {
         let session = Session::builder().user_id(user.id.clone()).build().unwrap();
 
@@ -173,11 +185,20 @@ impl Torii<SqliteStorage, SqliteStorage> {
             .await
     }
 
+    /// Revoke a session
+    ///
+    /// # Example
+    /// ```
+    /// let torii = Torii::sqlite(pool).await?;
+    /// let user = torii.create_user_with_email_password("test@example.com", "password").await?;
+    /// let session = torii.create_session_for_user(&user).await?;
+    /// let session = torii.revoke_session(&session).await?;
+    /// ```
     pub async fn revoke_session(&self, session: &Session) -> Result<(), Error> {
         self.manager
             .storage()
             .session_storage()
-            .delete_session(session.id.as_ref())
+            .delete_session(&session.id)
             .await
     }
 

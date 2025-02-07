@@ -8,7 +8,7 @@ use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::storage::Storage;
 use torii_core::storage::{NewUser, SessionStorage, UserStorage};
-use torii_core::{Error, Plugin, Session, User};
+use torii_core::{Error, Plugin, Session, User, UserId};
 use torii_storage_sqlite::EmailAuthStorage;
 
 pub struct EmailPasswordPlugin;
@@ -79,6 +79,46 @@ impl EmailPasswordPlugin {
         );
 
         Ok(user)
+    }
+
+    pub async fn change_password<S: EmailAuthStorage<Error = Error>>(
+        &self,
+        storage: &Storage<S, impl SessionStorage<Error = Error>>,
+        user_id: &UserId,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<(), Error> {
+        if !is_valid_password(new_password) {
+            return Err(Error::WeakPassword);
+        }
+
+        let stored_hash = storage
+            .user_storage()
+            .get_password_hash(user_id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        verify_password(old_password, &stored_hash).map_err(|_| Error::InvalidCredentials)?;
+
+        let new_hash = generate_hash(new_password);
+        storage
+            .user_storage()
+            .set_password_hash(user_id, &new_hash)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        // Delete all existing sessions for this user for security
+        storage
+            .delete_sessions_for_user(user_id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        tracing::info!(
+            user.id = %user_id,
+            "Changed user password",
+        );
+
+        Ok(())
     }
 
     pub async fn login_user<S: EmailAuthStorage<Error = Error>>(
@@ -309,6 +349,56 @@ mod tests {
             )
             .await
             .expect_err("Should fail validation");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_change_password() -> Result<(), Error> {
+        let (manager,) = setup_plugin().await?;
+        let plugin = manager
+            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .expect("Plugin should exist");
+
+        // Create initial user
+        let user = plugin
+            .create_user(manager.storage(), "test@example.com", "password")
+            .await?;
+
+        let session = manager
+            .storage()
+            .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
+            .await?;
+
+        // Verify initial session exists
+        let initial_session = manager
+            .storage()
+            .get_session(&session.id)
+            .await
+            .expect("Failed to get session")
+            .expect("Session should exist");
+        assert_eq!(initial_session.user_id, user.id);
+
+        // Change password
+        plugin
+            .change_password(manager.storage(), &user.id, "password", "new-password")
+            .await?;
+
+        // Verify old session was deleted
+        let deleted_session = manager.storage().get_session(&session.id).await;
+        assert!(deleted_session.is_err());
+
+        // Verify can login with new password
+        let result = plugin
+            .login_user(manager.storage(), "test@example.com", "new-password")
+            .await;
+        assert!(result.is_ok());
+
+        // Verify can't login with old password
+        let result = plugin
+            .login_user(manager.storage(), "test@example.com", "password")
+            .await;
+        assert!(matches!(result, Err(Error::InvalidCredentials)));
 
         Ok(())
     }

@@ -208,7 +208,7 @@ impl OIDCPlugin {
         storage
             .user_storage()
             .create_oidc_account(&OIDCAccount {
-                user_id: user.id.to_string(),
+                user_id: user.id.clone(),
                 provider: self.provider.clone(),
                 subject: subject.clone(),
                 created_at: Utc::now(),
