@@ -100,8 +100,7 @@ async fn main() {
     session_storage.migrate().await.unwrap();
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(OIDCPlugin::new(
-        "google".to_string(),
+    plugin_manager.register(OIDCPlugin::google(
         std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
         std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback".to_string(),

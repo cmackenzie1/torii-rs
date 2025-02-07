@@ -16,9 +16,30 @@ use uuid::Uuid;
 /// See the [`OIDCPlugin`] struct for the core plugin struct.
 ///
 /// See the [`AuthFlowBegin`] and [`AuthFlowCallback`] structs for the core authentication flow.
+///
+/// # Examples
+/// ```rust
+/// // Using the builder pattern
+/// let plugin = OIDCPlugin::builder("google")
+///     .client_id(env::var("GOOGLE_CLIENT_ID")?)
+///     .client_secret(env::var("GOOGLE_CLIENT_SECRET")?)
+///     .redirect_uri("http://localhost:8080/callback")
+///     .build();
+///
+/// // Using preset for Google
+/// let plugin = OIDCPlugin::google(
+///     env::var("GOOGLE_CLIENT_ID")?,
+///     env::var("GOOGLE_CLIENT_SECRET")?,
+///     "http://localhost:8080/callback".to_string(),
+/// );
+/// ```
 pub struct OIDCPlugin {
-    /// The provider name. i.e. "google" or "github"
-    provider: String,
+    /// The provider name. i.e. "google"
+    pub provider: String,
+    /// The issuer URL for the OIDC provider
+    pub issuer_url: String,
+    /// The scopes to request from the provider
+    pub scopes: Vec<String>,
 
     /// The client id.
     client_id: String,
@@ -28,6 +49,64 @@ pub struct OIDCPlugin {
 
     /// The redirect uri.
     redirect_uri: String,
+}
+
+pub struct OIDCPluginBuilder {
+    provider: String,
+    client_id: String,
+    client_secret: String,
+    redirect_uri: String,
+    issuer_url: String,
+    scopes: Vec<String>,
+}
+
+impl OIDCPluginBuilder {
+    pub fn new(provider: &str) -> Self {
+        Self {
+            provider: provider.to_string(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            redirect_uri: String::new(),
+            issuer_url: String::new(),
+            scopes: vec!["email".to_string(), "profile".to_string()],
+        }
+    }
+
+    pub fn client_id(mut self, client_id: impl Into<String>) -> Self {
+        self.client_id = client_id.into();
+        self
+    }
+
+    pub fn client_secret(mut self, client_secret: impl Into<String>) -> Self {
+        self.client_secret = client_secret.into();
+        self
+    }
+
+    pub fn redirect_uri(mut self, redirect_uri: impl Into<String>) -> Self {
+        self.redirect_uri = redirect_uri.into();
+        self
+    }
+
+    pub fn issuer_url(mut self, issuer_url: impl Into<String>) -> Self {
+        self.issuer_url = issuer_url.into();
+        self
+    }
+
+    pub fn add_scope(mut self, scope: impl Into<String>) -> Self {
+        self.scopes.push(scope.into());
+        self
+    }
+
+    pub fn build(self) -> OIDCPlugin {
+        OIDCPlugin {
+            provider: self.provider,
+            client_id: self.client_id,
+            client_secret: self.client_secret,
+            redirect_uri: self.redirect_uri,
+            issuer_url: self.issuer_url,
+            scopes: self.scopes,
+        }
+    }
 }
 
 /// The start of the OIDC authentication flow for authorization code grant. This is the first step in the flow and is used to start the flow by redirecting the user to the provider's authorization URL.
@@ -58,18 +137,35 @@ pub struct AuthFlowCallback {
 }
 
 impl OIDCPlugin {
+    pub fn builder(provider: &str) -> OIDCPluginBuilder {
+        OIDCPluginBuilder::new(provider)
+    }
+
     pub fn new(
         provider: String,
         client_id: String,
         client_secret: String,
         redirect_uri: String,
+        issuer_url: String,
+        scopes: Vec<String>,
     ) -> Self {
         Self {
             provider,
             client_id,
             client_secret,
             redirect_uri,
+            issuer_url,
+            scopes,
         }
+    }
+
+    pub fn google(client_id: String, client_secret: String, redirect_uri: String) -> Self {
+        OIDCPluginBuilder::new("google")
+            .client_id(client_id)
+            .client_secret(client_secret)
+            .redirect_uri(redirect_uri)
+            .issuer_url("https://accounts.google.com")
+            .build()
     }
 }
 
@@ -106,7 +202,7 @@ impl OIDCPlugin {
             .map_err(|_| Error::InternalServerError)?;
 
         let provider_metadata = CoreProviderMetadata::discover_async(
-            IssuerUrl::new("https://accounts.google.com".to_string()).unwrap(),
+            IssuerUrl::new(self.issuer_url.clone()).unwrap(),
             &http_client,
         )
         .await

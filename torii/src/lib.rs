@@ -118,12 +118,16 @@ where
         client_id: &str,
         client_secret: &str,
         redirect_uri: &str,
+        issuer_url: &str,
+        scopes: &[&str],
     ) -> Self {
         self.manager.register(torii_auth_oidc::OIDCPlugin::new(
             provider.to_string(),
             client_id.to_string(),
             client_secret.to_string(),
             redirect_uri.to_string(),
+            issuer_url.to_string(),
+            scopes.iter().map(|s| s.to_string()).collect(),
         ));
         self
     }
@@ -281,7 +285,14 @@ mod tests {
             Arc::new(SqliteStorage::new(pool.clone())),
         )
         .with_email_auth()
-        .with_oidc_provider("google", "client_id", "client_secret", "redirect_uri")
+        .with_oidc_provider(
+            "google",
+            "client_id",
+            "client_secret",
+            "redirect_uri",
+            "https://accounts.google.com",
+            &["email", "profile"],
+        )
         .setup_sqlite()
         .await?;
 
