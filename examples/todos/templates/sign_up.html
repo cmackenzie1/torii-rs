@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Sign Up{% endblock %}
+
+{% block content %}
+<main class="container">
+    <h1>Todos</h1>
+    <article>
+        <header>
+            <h2>Sign Up</h2>
+        </header>
+        <form hx-post="/auth/sign-up" hx-swap="outerHTML">
+            <label for="signup-email">
+                Email:
+                <input type="email" id="signup-email" name="email" required>
+            </label>
+            <label for="signup-password">
+                Password:
+                <input type="password" id="signup-password" name="password" required>
+            </label>
+            <button type="submit">Sign Up</button>
+        </form>
+        <footer>
+            <p>Already have an account? <a href="/sign-in">Sign in</a></p>
+        </footer>
+    </article>
+</main>
+{% endblock %}

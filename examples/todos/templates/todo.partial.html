@@ -1,0 +1,15 @@
+<li class="todo-item" id="todo-{{ todo.id }}">
+    <div class="grid">
+        <label class="todo-title">
+            <input type="checkbox" hx-post="/todos/{{ todo.id }}/toggle" hx-swap="outerHTML"
+                hx-target="#todo-{{ todo.id }}" {% if todo.completed_at.is_some() %}checked{% endif %}>
+            <span {% if todo.completed_at.is_some() %}style="text-decoration: line-through" {% endif %}>
+                {{ todo.title }}
+            </span>
+        </label>
+        <button class="outline secondary" hx-delete="/todos/{{ todo.id }}" hx-swap="outerHTML"
+            hx-target="#todo-{{ todo.id }}" style="width: auto">
+            Delete
+        </button>
+    </div>
+</li>

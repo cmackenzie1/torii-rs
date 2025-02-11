@@ -51,8 +51,6 @@ struct SignInForm {
 
 /// Application state shared between route handlers
 /// Contains references to:
-/// - user_storage: Handles user data persistence
-/// - session_storage: Manages authentication sessions
 /// - plugin_manager: Coordinates authentication plugins
 #[derive(Clone)]
 struct AppState {

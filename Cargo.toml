@@ -6,6 +6,7 @@ members = [
     "torii-core",
     "torii-storage-sqlite",
 ]
+exclude = ["examples/todos"]
 resolver = "2"
 
 [workspace.package]

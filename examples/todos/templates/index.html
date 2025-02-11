@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Todos{% endblock %}
+
+{% block content %}
+<main class="container">
+    <h1>Todos</h1>
+    <article>
+        <header>
+            <h2>My Tasks</h2>
+        </header>
+        <form hx-post="/todos" hx-swap="beforeend" hx-target="#todo-list">
+            <div class="grid">
+                <input type="text" name="title" placeholder="Add a new todo..." required>
+                <button type="submit" style="width: auto;">Add</button>
+            </div>
+        </form>
+        <ul id="todo-list">
+            {% for todo in todos %}
+            {% include "todo.partial.html" %}
+            {% endfor %}
+        </ul>
+    </article>
+</main>
+{% endblock %}

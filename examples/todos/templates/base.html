@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>{% block title %}{{ title }}{% endblock %}</title>
+    {% block head %}{% endblock %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <script src="https://unpkg.com/htmx.org@2.0.4"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"></script>
+</head>
+
+<body class="container">
+    <header>
+        <nav>
+            <a href="/">Home</a>
+            {% if let Some(user) = context.user %}
+            <a href="/sign-out">Sign Out</a>
+            {% else %}
+            <a href="/sign-in">Sign In</a>
+            <a href="/sign-up">Sign Up</a>
+            {% endif %}
+        </nav>
+    </header>
+    <div id="content">
+        {% block content %}<p>Placeholder content</p>{% endblock %}
+    </div>
+</body>
+
+</html>
