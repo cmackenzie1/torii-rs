@@ -19,8 +19,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(String);
 
 impl SessionId {
@@ -67,7 +66,7 @@ impl std::fmt::Display for SessionId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 pub struct Session {
     /// The unique identifier for the session.
     #[builder(default = "SessionId::new_random()")]

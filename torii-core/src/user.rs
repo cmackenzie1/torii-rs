@@ -18,8 +18,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A unique, stable identifier for a specific user
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, Hash)]
-#[sqlx(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct UserId(String);
 
 impl UserId {
@@ -70,7 +69,7 @@ impl std::fmt::Display for UserId {
 ///
 /// Many of these fields are optional, as they may not be available from the authentication provider,
 /// or may not be known at the time of authentication.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 pub struct User {
     // The unique identifier for the user.
     #[builder(default = "UserId::new_random()")]
@@ -98,6 +97,21 @@ pub struct User {
 impl User {
     pub fn builder() -> UserBuilder {
         UserBuilder::default()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+pub struct OAuthAccount {
+    pub user_id: UserId,
+    pub provider: String,
+    pub subject: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl OAuthAccount {
+    pub fn builder() -> OAuthAccountBuilder {
+        OAuthAccountBuilder::default()
     }
 }
 

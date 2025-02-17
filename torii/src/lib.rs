@@ -266,18 +266,34 @@ mod tests {
 
     async fn setup_torii() -> Result<Torii<SqliteStorage, SqliteStorage>, Error> {
         let _ = tracing_subscriber::fmt::try_init();
-        let pool = SqlitePool::connect("sqlite::memory:").await?;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .map_err(|_| Error::Storage("Failed to connect to sqlite".to_string()))?;
         let torii = Torii::sqlite(pool.clone()).await?;
 
-        torii.manager.storage().user_storage().migrate().await?;
-        torii.manager.storage().session_storage().migrate().await?;
+        torii
+            .manager
+            .storage()
+            .user_storage()
+            .migrate()
+            .await
+            .map_err(|_| Error::Storage("Failed to migrate user storage".to_string()))?;
+        torii
+            .manager
+            .storage()
+            .session_storage()
+            .migrate()
+            .await
+            .map_err(|_| Error::Storage("Failed to migrate session storage".to_string()))?;
 
         Ok(torii)
     }
 
     async fn setup_torii_with_oauth() -> Result<Torii<SqliteStorage, SqliteStorage>, Error> {
         let _ = tracing_subscriber::fmt::try_init();
-        let pool = SqlitePool::connect("sqlite::memory:").await?;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .map_err(|_| Error::Storage("Failed to connect to sqlite".to_string()))?;
         let torii = ToriiBuilder::<SqliteStorage, SqliteStorage>::new(
             Arc::new(SqliteStorage::new(pool.clone())),
             Arc::new(SqliteStorage::new(pool.clone())),
@@ -293,15 +309,29 @@ mod tests {
         )
         .build();
 
-        torii.manager.storage().user_storage().migrate().await?;
-        torii.manager.storage().session_storage().migrate().await?;
+        torii
+            .manager
+            .storage()
+            .user_storage()
+            .migrate()
+            .await
+            .map_err(|_| Error::Storage("Failed to migrate user storage".to_string()))?;
+        torii
+            .manager
+            .storage()
+            .session_storage()
+            .migrate()
+            .await
+            .map_err(|_| Error::Storage("Failed to migrate session storage".to_string()))?;
 
         Ok(torii)
     }
 
     #[tokio::test]
     async fn test_basic_setup() -> Result<(), Error> {
-        let pool = SqlitePool::connect("sqlite::memory:").await?;
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .map_err(|_| Error::Storage("Failed to connect to sqlite".to_string()))?;
 
         // Quick setup with defaults
         let _torii = Torii::sqlite(pool.clone()).await?;

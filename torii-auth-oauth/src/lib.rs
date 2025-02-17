@@ -5,8 +5,8 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
+use torii_core::storage::OAuthStorage;
 use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
-use torii_storage_sqlite::{OAuthAccount, OAuthStorage};
 use uuid::Uuid;
 
 /// The core oauth plugin struct, responsible for handling oauth authentication flow.
@@ -18,14 +18,16 @@ use uuid::Uuid;
 /// # Examples
 /// ```rust
 /// // Using the builder pattern
-/// let plugin = oauthPlugin::builder("google")
+/// use std::env;
+/// use torii_auth_oauth::OAuthPlugin;
+/// let plugin = OAuthPlugin::builder("google")
 ///     .client_id(env::var("GOOGLE_CLIENT_ID")?)
 ///     .client_secret(env::var("GOOGLE_CLIENT_SECRET")?)
 ///     .redirect_uri("http://localhost:8080/callback")
 ///     .build();
 ///
 /// // Using preset for Google
-/// let plugin = oauthPlugin::google(
+/// let plugin = OAuthPlugin::google(
 ///     env::var("GOOGLE_CLIENT_ID")?,
 ///     env::var("GOOGLE_CLIENT_SECRET")?,
 ///     "http://localhost:8080/callback".to_string(),
@@ -280,7 +282,7 @@ impl OAuthPlugin {
                 .get_user(&oauth_account.user_id)
                 .await
                 .map_err(|_| Error::InternalServerError)?
-                .ok_or_else(|| Error::UserNotFound)?;
+                .ok_or(Error::UserNotFound)?;
 
             return Ok(user);
         }
@@ -301,13 +303,7 @@ impl OAuthPlugin {
         // Create link between user and provider
         storage
             .user_storage()
-            .create_oauth_account(&OAuthAccount {
-                user_id: user.id.clone(),
-                provider: self.provider.clone(),
-                subject: subject.clone(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            })
+            .create_oauth_account(&self.provider, &subject, &user.id)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
@@ -389,9 +385,7 @@ impl OAuthPlugin {
         tracing::info!("Successfully exchanged code for token response");
 
         // Get id token from token response
-        let id_token = token_response
-            .id_token()
-            .ok_or_else(|| Error::InvalidCredentials)?;
+        let id_token = token_response.id_token().ok_or(Error::InvalidCredentials)?;
 
         tracing::info!("Successfully got id token from token response");
 
@@ -420,15 +414,12 @@ impl OAuthPlugin {
         tracing::info!(claims = ?claims, "Verified id token");
 
         let subject = claims.subject().to_string();
-        let email = claims
-            .email()
-            .ok_or_else(|| Error::InvalidCredentials)?
-            .to_string();
+        let email = claims.email().ok_or(Error::InvalidCredentials)?.to_string();
         let name = claims
             .name()
-            .ok_or_else(|| Error::InvalidCredentials)?
+            .ok_or(Error::InvalidCredentials)?
             .get(None)
-            .ok_or_else(|| Error::InvalidCredentials)?
+            .ok_or(Error::InvalidCredentials)?
             .to_string();
 
         tracing::info!(

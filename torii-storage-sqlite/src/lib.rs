@@ -2,11 +2,11 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use derive_builder::Builder;
-use sqlx::Row;
 use sqlx::SqlitePool;
 use std::time::Duration;
 use torii_core::session::SessionId;
-use torii_core::storage::EmailPasswordStorage;
+use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
+use torii_core::user::OAuthAccount;
 use torii_core::Error;
 use torii_core::{
     storage::{NewUser, SessionStorage, UserStorage},
@@ -31,13 +31,50 @@ impl SqliteStorage {
     }
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SqliteUser {
+    id: String,
+    email: String,
+    name: String,
+    email_verified_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<SqliteUser> for User {
+    fn from(user: SqliteUser) -> Self {
+        User::builder()
+            .id(UserId::new(&user.id))
+            .email(user.email)
+            .name(user.name)
+            .email_verified_at(user.email_verified_at)
+            .created_at(user.created_at)
+            .updated_at(user.updated_at)
+            .build()
+            .unwrap()
+    }
+}
+
+impl From<User> for SqliteUser {
+    fn from(user: User) -> Self {
+        SqliteUser {
+            id: user.id.into_inner(),
+            email: user.email,
+            name: user.name,
+            email_verified_at: user.email_verified_at,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+        }
+    }
+}
+
 #[async_trait]
 impl UserStorage for SqliteStorage {
     type Error = torii_core::Error;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error> {
         sqlx::query("INSERT INTO users (id, email) VALUES (?, ?)")
-            .bind(&user.id)
+            .bind(user.id.as_ref())
             .bind(&user.email)
             .execute(&self.pool)
             .await
@@ -55,14 +92,14 @@ impl UserStorage for SqliteStorage {
     }
 
     async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
-        let user = sqlx::query_as::<_, User>(
+        let user = sqlx::query_as::<_, SqliteUser>(
             r#"
             SELECT id, email, name, email_verified_at, created_at, updated_at 
             FROM users 
             WHERE id = ?
             "#,
         )
-        .bind(id)
+        .bind(id.as_ref())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
@@ -71,14 +108,14 @@ impl UserStorage for SqliteStorage {
         })?;
 
         if let Some(user) = user {
-            Ok(Some(user))
+            Ok(Some(user.into()))
         } else {
             Ok(None)
         }
     }
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
-        let user = sqlx::query_as::<_, User>(
+        let user = sqlx::query_as::<_, SqliteUser>(
             r#"
             SELECT id, email, name, email_verified_at, created_at, updated_at 
             FROM users 
@@ -94,7 +131,7 @@ impl UserStorage for SqliteStorage {
         })?;
 
         if let Some(user) = user {
-            Ok(Some(user))
+            Ok(Some(user.into()))
         } else {
             Ok(None)
         }
@@ -124,7 +161,7 @@ impl UserStorage for SqliteStorage {
     }
 
     async fn update_user(&self, user: &User) -> Result<User, Self::Error> {
-        sqlx::query_as::<_, User>(
+        sqlx::query_as::<_, SqliteUser>(
             r#"
             UPDATE users 
             SET email = ?, name = ?, email_verified_at = ?, updated_at = ? 
@@ -136,7 +173,7 @@ impl UserStorage for SqliteStorage {
         .bind(&user.name)
         .bind(user.email_verified_at)
         .bind(user.updated_at)
-        .bind(&user.id)
+        .bind(user.id.as_ref())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -154,7 +191,7 @@ impl UserStorage for SqliteStorage {
 
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(id)
+            .bind(id.as_ref())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -166,14 +203,45 @@ impl UserStorage for SqliteStorage {
     }
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SqliteSession {
+    id: String,
+    user_id: String,
+    user_agent: Option<String>,
+    ip_address: Option<String>,
+}
+
+impl From<SqliteSession> for Session {
+    fn from(session: SqliteSession) -> Self {
+        Session::builder()
+            .id(SessionId::new(&session.id))
+            .user_id(UserId::new(&session.user_id))
+            .user_agent(session.user_agent)
+            .ip_address(session.ip_address)
+            .build()
+            .unwrap()
+    }
+}
+
+impl From<Session> for SqliteSession {
+    fn from(session: Session) -> Self {
+        SqliteSession {
+            id: session.id.into_inner(),
+            user_id: session.user_id.into_inner(),
+            user_agent: session.user_agent,
+            ip_address: session.ip_address,
+        }
+    }
+}
+
 #[async_trait]
 impl SessionStorage for SqliteStorage {
     type Error = torii_core::Error;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
         sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-            .bind(&session.id)
-            .bind(&session.user_id)
+            .bind(session.id.as_ref())
+            .bind(session.user_id.as_ref())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
             .bind(session.created_at)
@@ -187,14 +255,14 @@ impl SessionStorage for SqliteStorage {
     }
 
     async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
-        let session = sqlx::query_as::<_, Session>(
+        let session = sqlx::query_as::<_, SqliteSession>(
             r#"
             SELECT id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             FROM sessions
             WHERE id = ?
             "#,
         )
-        .bind(id)
+        .bind(id.as_ref())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -202,30 +270,17 @@ impl SessionStorage for SqliteStorage {
             Self::Error::Storage("Failed to get session".to_string())
         })?;
 
-        Ok(Some(session))
+        Ok(Some(session.into()))
     }
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(id)
+            .bind(id.as_ref())
             .execute(&self.pool)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete session");
                 Self::Error::Storage("Failed to delete session".to_string())
-            })?;
-
-        Ok(())
-    }
-
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
-            .bind(user_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to delete sessions for user");
-                Self::Error::Storage("Failed to delete sessions for user".to_string())
             })?;
 
         Ok(())
@@ -243,24 +298,41 @@ impl SessionStorage for SqliteStorage {
 
         Ok(())
     }
+
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+            .bind(user_id.as_ref())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to delete sessions for user");
+                Self::Error::Storage("Failed to delete sessions for user".to_string())
+            })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Builder)]
 #[builder(pattern = "owned")]
-pub struct OAuthAccount {
-    pub user_id: UserId,
-    pub provider: String,
-    pub subject: String,
+pub struct SqliteOAuthAccount {
+    user_id: String,
+    provider: String,
+    subject: String,
     #[builder(default = "Utc::now()")]
-    pub created_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
     #[builder(default = "Utc::now()")]
     pub updated_at: DateTime<Utc>,
 }
 
-impl OAuthAccount {
+impl SqliteOAuthAccount {
+    pub fn builder() -> SqliteOAuthAccountBuilder {
+        SqliteOAuthAccountBuilder::default()
+    }
+
     pub fn new(user_id: UserId, provider: impl Into<String>, subject: impl Into<String>) -> Self {
-        OAuthAccountBuilder::default()
-            .user_id(user_id)
+        SqliteOAuthAccountBuilder::default()
+            .user_id(user_id.into_inner())
             .provider(provider.into())
             .subject(subject.into())
             .build()
@@ -272,86 +344,84 @@ impl OAuthAccount {
     }
 }
 
-#[async_trait]
-pub trait OAuthStorage: UserStorage + SessionStorage {
-    type Error: std::error::Error + Send + Sync;
+impl From<SqliteOAuthAccount> for OAuthAccount {
+    fn from(oauth_account: SqliteOAuthAccount) -> Self {
+        OAuthAccount::builder()
+            .user_id(UserId::new(&oauth_account.user_id))
+            .provider(oauth_account.provider)
+            .subject(oauth_account.subject)
+            .created_at(oauth_account.created_at)
+            .updated_at(oauth_account.updated_at)
+            .build()
+            .expect("Default builder should never fail")
+    }
+}
 
-    async fn create_oauth_account(
-        &self,
-        oauth_account: &OAuthAccount,
-    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error>;
-
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OAuthStorage>::Error>;
-    async fn save_nonce(
-        &self,
-        id: &str,
-        value: &str,
-        expires_at: &DateTime<Utc>,
-    ) -> Result<(), <Self as OAuthStorage>::Error>;
-
-    async fn get_oauth_account_by_provider_and_subject(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error>;
+impl From<OAuthAccount> for SqliteOAuthAccount {
+    fn from(oauth_account: OAuthAccount) -> Self {
+        SqliteOAuthAccount::builder()
+            .user_id(oauth_account.user_id.into_inner())
+            .provider(oauth_account.provider)
+            .subject(oauth_account.subject)
+            .created_at(oauth_account.created_at)
+            .updated_at(oauth_account.updated_at)
+            .build()
+            .expect("Default builder should never fail")
+    }
 }
 
 #[async_trait]
 impl OAuthStorage for SqliteStorage {
-    type Error = torii_core::Error;
-
     async fn create_oauth_account(
         &self,
-        oauth_account: &OAuthAccount,
-    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error> {
+        provider: &str,
+        subject: &str,
+        user_id: &UserId,
+    ) -> Result<OAuthAccount, Self::Error> {
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(&oauth_account.user_id)
-            .bind(&oauth_account.provider)
-            .bind(&oauth_account.subject)
-            .bind(oauth_account.created_at)
-            .bind(oauth_account.updated_at)
+            .bind(user_id.as_ref())
+            .bind(provider)
+            .bind(subject)
+            .bind(Utc::now())
+            .bind(Utc::now())
             .execute(&self.pool)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to create oauth account");
-                <Self as OAuthStorage>::Error::Storage(
+                Self::Error::Storage(
                     "Failed to create oauth account".to_string(),
                 )
             })?;
 
-        let oauth_account = sqlx::query_as::<_, OAuthAccount>(
+        let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
             r#"
             SELECT user_id, provider, subject, created_at, updated_at
             FROM oauth_accounts
             WHERE user_id = ?
             "#,
         )
-        .bind(&oauth_account.user_id)
+        .bind(user_id.as_ref())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get oauth account");
-            <Self as OAuthStorage>::Error::Storage("Failed to get oauth account".to_string())
+            Self::Error::Storage("Failed to get oauth account".to_string())
         })?;
 
-        Ok(oauth_account)
+        Ok(oauth_account.into())
     }
 
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OAuthStorage>::Error> {
-        let nonce = sqlx::query("SELECT value FROM nonces WHERE id = ?")
+    async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error> {
+        let nonce: Option<String> = sqlx::query_scalar("SELECT value FROM nonces WHERE id = ?")
             .bind(id)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to get nonce");
-                <Self as OAuthStorage>::Error::Storage("Failed to get nonce".to_string())
+                Self::Error::Storage("Failed to get nonce".to_string())
             })?;
 
-        if let Some(nonce) = nonce {
-            Ok(Some(nonce.get("value")))
-        } else {
-            Ok(None)
-        }
+        Ok(nonce)
     }
 
     async fn save_nonce(
@@ -359,7 +429,7 @@ impl OAuthStorage for SqliteStorage {
         id: &str,
         value: &str,
         expires_at: &DateTime<Utc>,
-    ) -> Result<(), <Self as OAuthStorage>::Error> {
+    ) -> Result<(), Self::Error> {
         sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
             .bind(id)
             .bind(value)
@@ -368,7 +438,7 @@ impl OAuthStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to save nonce");
-                <Self as OAuthStorage>::Error::Storage("Failed to save nonce".to_string())
+                Self::Error::Storage("Failed to save nonce".to_string())
             })?;
 
         Ok(())
@@ -378,8 +448,8 @@ impl OAuthStorage for SqliteStorage {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
-        let oauth_account = sqlx::query_as::<_, OAuthAccount>(
+    ) -> Result<Option<OAuthAccount>, Self::Error> {
+        let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
             r#"
             SELECT user_id, provider, subject, created_at, updated_at
             FROM oauth_accounts
@@ -392,14 +462,64 @@ impl OAuthStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get oauth account");
-            <Self as OAuthStorage>::Error::Storage("Failed to get oauth account".to_string())
+            Self::Error::Storage("Failed to get oauth account".to_string())
         })?;
 
         if let Some(oauth_account) = oauth_account {
-            Ok(Some(oauth_account))
+            Ok(Some(oauth_account.into()))
         } else {
             Ok(None)
         }
+    }
+
+    async fn get_user_by_provider_and_subject(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<User>, Self::Error> {
+        let user = sqlx::query_as::<_, SqliteUser>(
+            r#"
+            SELECT id, email, name, email_verified_at, created_at, updated_at
+            FROM users
+            WHERE provider = ? AND subject = ?
+            "#,
+        )
+        .bind(provider)
+        .bind(subject)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get user by provider and subject");
+            Self::Error::Storage("Failed to get user by provider and subject".to_string())
+        })?;
+
+        if let Some(user) = user {
+            Ok(Some(user.into()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn link_oauth_account(
+        &self,
+        user_id: &UserId,
+        provider: &str,
+        subject: &str,
+    ) -> Result<(), Self::Error> {
+        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(user_id.as_ref())
+            .bind(provider)
+            .bind(subject)
+            .bind(Utc::now())
+            .bind(Utc::now())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to link oauth account");
+                Self::Error::Storage("Failed to link oauth account".to_string())
+            })?;
+
+        Ok(())
     }
 }
 
@@ -408,7 +528,7 @@ impl EmailPasswordStorage for SqliteStorage {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
         sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
             .bind(hash)
-            .bind(user_id)
+            .bind(user_id.as_ref())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
@@ -417,9 +537,10 @@ impl EmailPasswordStorage for SqliteStorage {
 
     async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error> {
         let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
-            .bind(user_id)
+            .bind(user_id.as_ref())
             .fetch_optional(&self.pool)
-            .await?;
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
         Ok(result)
     }
 }
