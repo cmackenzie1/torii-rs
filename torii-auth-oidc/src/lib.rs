@@ -5,9 +5,7 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use torii_core::{
-    storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId, UserStorage,
-};
+use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
 use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
 use uuid::Uuid;
 
@@ -456,12 +454,8 @@ impl OIDCPlugin {
 }
 
 #[async_trait]
-impl<U: UserStorage, S: SessionStorage> Plugin<U, S> for OIDCPlugin {
+impl Plugin for OIDCPlugin {
     fn name(&self) -> String {
         self.provider.clone()
-    }
-
-    async fn setup(&self, _user_storage: &U, _session_storage: &S) -> Result<(), Error> {
-        Ok(())
     }
 }

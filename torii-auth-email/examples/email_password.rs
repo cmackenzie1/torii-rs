@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_email::EmailPasswordPlugin;
-use torii_core::{plugin::PluginManager, session::SessionId};
+use torii_core::{plugin::PluginManager, session::SessionId, storage::Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic email/password authentication system using Torii.
@@ -68,17 +68,10 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin>("email_password")
+        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin
-        .create_user(
-            state.plugin_manager.storage(),
-            &params.email,
-            &params.password,
-        )
-        .await
-    {
+    match plugin.create_user(&params.email, &params.password).await {
         Ok(_) => (
             StatusCode::OK,
             Json(json!({ "message": "Successfully signed up" })),
@@ -103,19 +96,12 @@ async fn sign_in_form_handler(
     State(state): State<AppState>,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
-    let plugin = state
+    let plugin: Arc<EmailPasswordPlugin<_, _>> = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin>("email_password")
+        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin
-        .login_user(
-            state.plugin_manager.storage(),
-            &params.email,
-            &params.password,
-        )
-        .await
-    {
+    match plugin.login_user(&params.email, &params.password).await {
         Ok((_, session)) => {
             let cookie = Cookie::build(("session_id", session.id.to_string()))
                 .path("/")
@@ -242,10 +228,10 @@ async fn main() {
 
     user_storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
+    let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(EmailPasswordPlugin::new());
-    plugin_manager.setup().await.unwrap();
+    plugin_manager.register(EmailPasswordPlugin::new(storage));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

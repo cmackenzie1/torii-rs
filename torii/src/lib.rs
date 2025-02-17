@@ -30,6 +30,8 @@ use torii_core::SessionStorage;
 use torii_core::UserStorage;
 use torii_core::{Error, PluginManager, User};
 
+use torii_core::storage::{EmailPasswordStorage, Storage};
+
 #[cfg(feature = "sqlite")]
 use torii_storage_sqlite::SqliteStorage;
 
@@ -67,27 +69,18 @@ where
     ///     .await?;
     /// ```
     #[cfg(feature = "email-auth")]
-    pub fn with_email_auth(mut self) -> Self {
+    pub fn with_email_auth(mut self) -> Self
+    where
+        U: EmailPasswordStorage,
+        S: SessionStorage,
+    {
+        let storage = Storage::new(
+            self.manager.storage().user_storage(),
+            self.manager.storage().session_storage(),
+        );
         self.manager
-            .register(torii_auth_email::EmailPasswordPlugin::new());
+            .register(torii_auth_email::EmailPasswordPlugin::new(storage));
         self
-    }
-
-    /// Setup the Torii instance with the given user storage and session storage using SQLite.
-    ///
-    /// # Example
-    /// ```
-    /// let torii = ToriiBuilder::new(user_storage, session_storage)
-    ///     .setup_sqlite()
-    ///     .await?;
-    /// ```
-    #[cfg(feature = "sqlite")]
-    pub async fn setup_sqlite(self) -> Result<Torii<U, S>, Error> {
-        self.manager.setup().await?;
-
-        Ok(Torii {
-            manager: self.manager,
-        })
     }
 
     /// Add an OIDC provider to the Torii instance. Multiple OIDC providers can be added by calling this method multiple times.
@@ -131,6 +124,12 @@ where
         ));
         self
     }
+
+    fn build(self) -> Torii<U, S> {
+        Torii {
+            manager: self.manager,
+        }
+    }
 }
 
 /// Main Torii authentication instance that can be used to create users and sessions
@@ -161,13 +160,12 @@ pub struct Torii<U: UserStorage, S: SessionStorage> {
 impl Torii<SqliteStorage, SqliteStorage> {
     /// Create a new SQLite-based Torii instance with default configuration
     pub async fn sqlite(pool: Pool<Sqlite>) -> Result<Self, Error> {
-        ToriiBuilder::<SqliteStorage, SqliteStorage>::new(
+        Ok(ToriiBuilder::<SqliteStorage, SqliteStorage>::new(
             Arc::new(SqliteStorage::new(pool.clone())),
             Arc::new(SqliteStorage::new(pool.clone())),
         )
         .with_email_auth()
-        .setup_sqlite()
-        .await
+        .build())
     }
 
     /// Create a new user with an email and password
@@ -182,14 +180,14 @@ impl Torii<SqliteStorage, SqliteStorage> {
         email: &str,
         password: &str,
     ) -> Result<User, Error> {
-        let plugin = self
+        let plugin: Arc<torii_auth_email::EmailPasswordPlugin<SqliteStorage, SqliteStorage>> = self
             .manager
-            .get_plugin::<torii_auth_email::EmailPasswordPlugin>("email_password")
+            .get_plugin::<torii_auth_email::EmailPasswordPlugin<SqliteStorage, SqliteStorage>>(
+                "email_password",
+            )
             .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
 
-        let user = plugin
-            .create_user(self.manager.storage(), email, password)
-            .await?;
+        let user = plugin.create_user(email, password).await?;
 
         Ok(user)
     }
@@ -293,8 +291,7 @@ mod tests {
             "https://accounts.google.com",
             &["email", "profile"],
         )
-        .setup_sqlite()
-        .await?;
+        .build();
 
         torii.manager.storage().user_storage().migrate().await?;
         torii.manager.storage().session_storage().migrate().await?;
@@ -315,8 +312,7 @@ mod tests {
             Arc::new(SqliteStorage::new(pool.clone())),
         )
         .with_email_auth()
-        .setup_sqlite()
-        .await?;
+        .build();
 
         Ok(())
     }

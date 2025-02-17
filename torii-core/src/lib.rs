@@ -8,6 +8,7 @@
 //!
 //! See [`User`] for the core user struct, [`Session`] for the core session struct, and [`Plugin`] for the plugin system.
 //!
+pub mod auth;
 pub mod error;
 pub mod plugin;
 pub mod session;

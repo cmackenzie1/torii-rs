@@ -6,6 +6,8 @@ use sqlx::Row;
 use sqlx::SqlitePool;
 use std::time::Duration;
 use torii_core::session::SessionId;
+use torii_core::storage::EmailPasswordStorage;
+use torii_core::Error;
 use torii_core::{
     storage::{NewUser, SessionStorage, UserStorage},
     Session, User, UserId,
@@ -161,64 +163,6 @@ impl UserStorage for SqliteStorage {
             })?;
 
         Ok(())
-    }
-}
-
-#[async_trait]
-pub trait EmailAuthStorage: UserStorage + SessionStorage {
-    type Error: std::error::Error + Send + Sync;
-
-    async fn set_password_hash(
-        &self,
-        user_id: &UserId,
-        hash: &str,
-    ) -> Result<(), <Self as EmailAuthStorage>::Error>;
-    async fn get_password_hash(
-        &self,
-        user_id: &UserId,
-    ) -> Result<String, <Self as EmailAuthStorage>::Error>;
-}
-
-#[async_trait]
-impl EmailAuthStorage for SqliteStorage {
-    type Error = torii_core::Error;
-
-    async fn set_password_hash(
-        &self,
-        user_id: &UserId,
-        hash: &str,
-    ) -> Result<(), <Self as EmailAuthStorage>::Error> {
-        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
-            .bind(hash)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to set password hash");
-                <Self as EmailAuthStorage>::Error::Storage(
-                    "Failed to set password hash".to_string(),
-                )
-            })?;
-
-        Ok(())
-    }
-
-    async fn get_password_hash(
-        &self,
-        user_id: &UserId,
-    ) -> Result<String, <Self as EmailAuthStorage>::Error> {
-        let hash = sqlx::query("SELECT password_hash FROM users WHERE id = ?")
-            .bind(user_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get password hash");
-                <Self as EmailAuthStorage>::Error::Storage(
-                    "Failed to get password hash".to_string(),
-                )
-            })?;
-
-        Ok(hash.get("password_hash"))
     }
 }
 
@@ -456,6 +400,27 @@ impl OIDCStorage for SqliteStorage {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[async_trait]
+impl EmailPasswordStorage for SqliteStorage {
+    async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+            .bind(hash)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error> {
+        let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(result)
     }
 }
 

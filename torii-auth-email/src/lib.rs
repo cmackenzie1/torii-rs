@@ -6,41 +6,56 @@
 use async_trait::async_trait;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
-use torii_core::storage::Storage;
-use torii_core::storage::{NewUser, SessionStorage, UserStorage};
-use torii_core::{Error, Plugin, Session, User, UserId};
-use torii_storage_sqlite::EmailAuthStorage;
+use torii_core::auth::{AuthPlugin, Credentials};
+use torii_core::storage::{EmailPasswordStorage, Storage};
+use torii_core::Plugin;
+use torii_core::{
+    storage::{NewUser, SessionStorage},
+    Error, Session, User, UserId,
+};
 
-pub struct EmailPasswordPlugin;
-
-impl EmailPasswordPlugin {
-    pub fn new() -> Self {
-        Self {}
-    }
+/// Email/password authentication plugin
+///
+/// This plugin provides email and password authentication for Torii.
+///
+/// Username is set to the provided email address.
+///
+/// Password is hashed using the `password_auth` crate using argon2.
+pub struct EmailPasswordPlugin<U, S>
+where
+    U: EmailPasswordStorage,
+    S: SessionStorage<Error = Error>,
+{
+    storage: Storage<U, S>,
 }
 
-impl Default for EmailPasswordPlugin {
-    fn default() -> Self {
-        Self::new()
+impl<U, S> EmailPasswordPlugin<U, S>
+where
+    U: EmailPasswordStorage,
+    S: SessionStorage<Error = Error>,
+{
+    pub fn new(storage: Storage<U, S>) -> Self {
+        Self { storage }
     }
 }
 
 #[async_trait]
-impl<U: UserStorage<Error = Error>, S: SessionStorage<Error = Error>> Plugin<U, S>
-    for EmailPasswordPlugin
+impl<U, S> Plugin for EmailPasswordPlugin<U, S>
+where
+    U: EmailPasswordStorage,
+    S: SessionStorage<Error = Error>,
 {
     fn name(&self) -> String {
         "email_password".to_string()
     }
 }
 
-impl EmailPasswordPlugin {
-    pub async fn create_user<S: EmailAuthStorage<Error = Error>>(
-        &self,
-        storage: &Storage<S, impl SessionStorage<Error = Error>>,
-        email: &str,
-        password: &str,
-    ) -> Result<User, Error> {
+impl<U, S> EmailPasswordPlugin<U, S>
+where
+    U: EmailPasswordStorage,
+    S: SessionStorage<Error = Error>,
+{
+    pub async fn create_user(&self, email: &str, password: &str) -> Result<User, Error> {
         if !is_valid_email(email) {
             return Err(Error::InvalidEmailFormat);
         }
@@ -48,7 +63,8 @@ impl EmailPasswordPlugin {
             return Err(Error::WeakPassword);
         }
 
-        if let Some(_user) = storage
+        if let Some(_user) = self
+            .storage
             .user_storage()
             .get_user_by_email(email)
             .await
@@ -59,13 +75,14 @@ impl EmailPasswordPlugin {
         }
 
         let new_user = NewUser::builder().email(email.to_string()).build().unwrap();
-        let user = storage
+        let user = self
+            .storage
             .create_user(&new_user)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
 
         let hash = generate_hash(password);
-        storage
+        self.storage
             .user_storage()
             .set_password_hash(&user.id, &hash)
             .await
@@ -81,9 +98,8 @@ impl EmailPasswordPlugin {
         Ok(user)
     }
 
-    pub async fn change_password<S: EmailAuthStorage<Error = Error>>(
+    pub async fn change_password(
         &self,
-        storage: &Storage<S, impl SessionStorage<Error = Error>>,
         user_id: &UserId,
         old_password: &str,
         new_password: &str,
@@ -92,23 +108,30 @@ impl EmailPasswordPlugin {
             return Err(Error::WeakPassword);
         }
 
-        let stored_hash = storage
+        let stored_hash = self
+            .storage
             .user_storage()
             .get_password_hash(user_id)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
 
-        verify_password(old_password, &stored_hash).map_err(|_| Error::InvalidCredentials)?;
+        if stored_hash.is_none() {
+            return Err(Error::InvalidCredentials);
+        }
+
+        verify_password(old_password, &stored_hash.unwrap())
+            .map_err(|_| Error::InvalidCredentials)?;
 
         let new_hash = generate_hash(new_password);
-        storage
+        self.storage
             .user_storage()
             .set_password_hash(user_id, &new_hash)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
 
         // Delete all existing sessions for this user for security
-        storage
+        self.storage
+            .session_storage()
             .delete_sessions_for_user(user_id)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
@@ -121,33 +144,33 @@ impl EmailPasswordPlugin {
         Ok(())
     }
 
-    pub async fn login_user<S: EmailAuthStorage<Error = Error>>(
-        &self,
-        storage: &Storage<S, impl SessionStorage<Error = Error>>,
-        email: &str,
-        password: &str,
-    ) -> Result<(User, Session), Error> {
-        let user = storage
-            .user_storage()
+    pub async fn login_user(&self, email: &str, password: &str) -> Result<(User, Session), Error> {
+        let user_storage = self.storage.user_storage();
+
+        let user = user_storage
             .get_user_by_email(email)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?
             .ok_or(Error::UserNotFound)?;
 
-        let hash = storage
-            .user_storage()
+        let hash = user_storage
             .get_password_hash(&user.id)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
 
-        verify_password(password, &hash).map_err(|_| Error::InvalidCredentials)?;
+        if hash.is_none() {
+            return Err(Error::InvalidCredentials);
+        }
+
+        verify_password(password, &hash.unwrap()).map_err(|_| Error::InvalidCredentials)?;
 
         let session = Session::builder()
             .user_id(user.id.clone())
             .build()
             .expect("Valid session");
 
-        let session = storage
+        let session = self
+            .storage
             .create_session(&session)
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
@@ -168,6 +191,46 @@ fn is_valid_password(password: &str) -> bool {
     password.len() >= 8
 }
 
+#[async_trait]
+impl<U, S> AuthPlugin for EmailPasswordPlugin<U, S>
+where
+    U: EmailPasswordStorage,
+    S: SessionStorage<Error = Error>,
+{
+    fn auth_method(&self) -> &str {
+        "email_password"
+    }
+
+    async fn authenticate(&self, credentials: &Credentials) -> Result<(User, Session), Error> {
+        match credentials {
+            Credentials::EmailPassword { email, password } => {
+                self.login_user(email, password).await
+            }
+            _ => Err(Error::InvalidCredentials),
+        }
+    }
+
+    async fn validate_session(&self, session: &Session) -> Result<bool, Error> {
+        let session = self
+            .storage
+            .get_session(&session.id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        Ok(session.is_some())
+    }
+
+    async fn logout(&self, session: &Session) -> Result<(), Error> {
+        self.storage
+            .session_storage()
+            .delete_session(&session.id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,9 +249,9 @@ mod tests {
         let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
         let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
 
+        let storage = Storage::new(user_storage.clone(), session_storage.clone());
         let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-        manager.register(EmailPasswordPlugin);
-        manager.setup().await?;
+        manager.register(EmailPasswordPlugin::new(storage));
 
         user_storage.migrate().await?;
         session_storage.migrate().await?;
@@ -232,16 +295,16 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .create_user(manager.storage(), "test@example.com", "password")
+            .create_user("test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let (user, _session) = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .login_user(manager.storage(), "test@example.com", "password")
+            .login_user("test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
@@ -253,15 +316,15 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .create_user(manager.storage(), "test@example.com", "password")
+            .create_user("test@example.com", "password")
             .await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .create_user(manager.storage(), "test@example.com", "password")
+            .create_user("test@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserAlreadyExists)));
@@ -274,9 +337,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user(manager.storage(), "not-an-email", "password")
+            .create_user("not-an-email", "password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidEmailFormat)));
@@ -289,9 +352,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user(manager.storage(), "test@example.com", "123")
+            .create_user("test@example.com", "123")
             .await;
 
         assert!(matches!(result, Err(Error::WeakPassword)));
@@ -304,15 +367,15 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user(manager.storage(), "test@example.com", "password")
+            .create_user("test@example.com", "password")
             .await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .login_user(manager.storage(), "test@example.com", "wrong-password")
+            .login_user("test@example.com", "wrong-password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidCredentials)));
@@ -325,9 +388,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .login_user(manager.storage(), "nonexistent@example.com", "password")
+            .login_user("nonexistent@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserNotFound)));
@@ -340,13 +403,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user(
-                manager.storage(),
-                "test@example.com'; DROP TABLE users;--",
-                "password",
-            )
+            .create_user("test@example.com'; DROP TABLE users;--", "password")
             .await
             .expect_err("Should fail validation");
 
@@ -357,13 +416,11 @@ mod tests {
     async fn test_change_password() -> Result<(), Error> {
         let (manager,) = setup_plugin().await?;
         let plugin = manager
-            .get_plugin::<EmailPasswordPlugin>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist");
 
         // Create initial user
-        let user = plugin
-            .create_user(manager.storage(), "test@example.com", "password")
-            .await?;
+        let user = plugin.create_user("test@example.com", "password").await?;
 
         let session = manager
             .storage()
@@ -381,7 +438,7 @@ mod tests {
 
         // Change password
         plugin
-            .change_password(manager.storage(), &user.id, "password", "new-password")
+            .change_password(&user.id, "password", "new-password")
             .await?;
 
         // Verify old session was deleted
@@ -389,15 +446,11 @@ mod tests {
         assert!(deleted_session.is_err());
 
         // Verify can login with new password
-        let result = plugin
-            .login_user(manager.storage(), "test@example.com", "new-password")
-            .await;
+        let result = plugin.login_user("test@example.com", "new-password").await;
         assert!(result.is_ok());
 
         // Verify can't login with old password
-        let result = plugin
-            .login_user(manager.storage(), "test@example.com", "password")
-            .await;
+        let result = plugin.login_user("test@example.com", "password").await;
         assert!(matches!(result, Err(Error::InvalidCredentials)));
 
         Ok(())
