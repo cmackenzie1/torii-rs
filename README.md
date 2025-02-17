@@ -24,7 +24,7 @@ Torii is a flexible authentication framework for Rust applications that provides
 
 - 🔐 Multiple authentication methods
   - Email/Password authentication
-  - OpenID Connect (OIDC)
+  - OAuth2 / OpenID Connect (OIDC)
   - WebAuthn (Coming Soon)
 - 💾 Storage backends
   - SQLite support
@@ -35,7 +35,7 @@ Torii is a flexible authentication framework for Rust applications that provides
 ## Current Plugins
 
 - [Email/Password Authentication](./torii-auth-email/README.md)
-- [OpenID Connect (OIDC)](./torii-auth-oidc/README.md)
+- [OAuth2 / OpenID Connect (oidc)](./torii-auth-oauth/README.md)
 
 ## Security
 

@@ -247,7 +247,7 @@ impl SessionStorage for SqliteStorage {
 
 #[derive(Debug, Clone, sqlx::FromRow, Builder)]
 #[builder(pattern = "owned")]
-pub struct OIDCAccount {
+pub struct OAuthAccount {
     pub user_id: UserId,
     pub provider: String,
     pub subject: String,
@@ -257,9 +257,9 @@ pub struct OIDCAccount {
     pub updated_at: DateTime<Utc>,
 }
 
-impl OIDCAccount {
+impl OAuthAccount {
     pub fn new(user_id: UserId, provider: impl Into<String>, subject: impl Into<String>) -> Self {
-        OIDCAccountBuilder::default()
+        OAuthAccountBuilder::default()
             .user_id(user_id)
             .provider(provider.into())
             .subject(subject.into())
@@ -273,78 +273,78 @@ impl OIDCAccount {
 }
 
 #[async_trait]
-pub trait OIDCStorage: UserStorage + SessionStorage {
+pub trait OAuthStorage: UserStorage + SessionStorage {
     type Error: std::error::Error + Send + Sync;
 
-    async fn create_oidc_account(
+    async fn create_oauth_account(
         &self,
-        oidc_account: &OIDCAccount,
-    ) -> Result<OIDCAccount, <Self as OIDCStorage>::Error>;
+        oauth_account: &OAuthAccount,
+    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error>;
 
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OIDCStorage>::Error>;
+    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OAuthStorage>::Error>;
     async fn save_nonce(
         &self,
         id: &str,
         value: &str,
         expires_at: &DateTime<Utc>,
-    ) -> Result<(), <Self as OIDCStorage>::Error>;
+    ) -> Result<(), <Self as OAuthStorage>::Error>;
 
-    async fn get_oidc_account_by_provider_and_subject(
+    async fn get_oauth_account_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OIDCAccount>, <Self as OIDCStorage>::Error>;
+    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error>;
 }
 
 #[async_trait]
-impl OIDCStorage for SqliteStorage {
+impl OAuthStorage for SqliteStorage {
     type Error = torii_core::Error;
 
-    async fn create_oidc_account(
+    async fn create_oauth_account(
         &self,
-        oidc_account: &OIDCAccount,
-    ) -> Result<OIDCAccount, <Self as OIDCStorage>::Error> {
-        sqlx::query("INSERT INTO oidc_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(&oidc_account.user_id)
-            .bind(&oidc_account.provider)
-            .bind(&oidc_account.subject)
-            .bind(oidc_account.created_at)
-            .bind(oidc_account.updated_at)
+        oauth_account: &OAuthAccount,
+    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error> {
+        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+            .bind(&oauth_account.user_id)
+            .bind(&oauth_account.provider)
+            .bind(&oauth_account.subject)
+            .bind(oauth_account.created_at)
+            .bind(oauth_account.updated_at)
             .execute(&self.pool)
             .await
             .map_err(|e| {
-                tracing::error!(error = %e, "Failed to create oidc account");
-                <Self as OIDCStorage>::Error::Storage(
-                    "Failed to create oidc account".to_string(),
+                tracing::error!(error = %e, "Failed to create oauth account");
+                <Self as OAuthStorage>::Error::Storage(
+                    "Failed to create oauth account".to_string(),
                 )
             })?;
 
-        let oidc_account = sqlx::query_as::<_, OIDCAccount>(
+        let oauth_account = sqlx::query_as::<_, OAuthAccount>(
             r#"
             SELECT user_id, provider, subject, created_at, updated_at
-            FROM oidc_accounts
+            FROM oauth_accounts
             WHERE user_id = ?
             "#,
         )
-        .bind(&oidc_account.user_id)
+        .bind(&oauth_account.user_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get oidc account");
-            <Self as OIDCStorage>::Error::Storage("Failed to get oidc account".to_string())
+            tracing::error!(error = %e, "Failed to get oauth account");
+            <Self as OAuthStorage>::Error::Storage("Failed to get oauth account".to_string())
         })?;
 
-        Ok(oidc_account)
+        Ok(oauth_account)
     }
 
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OIDCStorage>::Error> {
+    async fn get_nonce(&self, id: &str) -> Result<Option<String>, <Self as OAuthStorage>::Error> {
         let nonce = sqlx::query("SELECT value FROM nonces WHERE id = ?")
             .bind(id)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to get nonce");
-                <Self as OIDCStorage>::Error::Storage("Failed to get nonce".to_string())
+                <Self as OAuthStorage>::Error::Storage("Failed to get nonce".to_string())
             })?;
 
         if let Some(nonce) = nonce {
@@ -359,7 +359,7 @@ impl OIDCStorage for SqliteStorage {
         id: &str,
         value: &str,
         expires_at: &DateTime<Utc>,
-    ) -> Result<(), <Self as OIDCStorage>::Error> {
+    ) -> Result<(), <Self as OAuthStorage>::Error> {
         sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
             .bind(id)
             .bind(value)
@@ -368,21 +368,21 @@ impl OIDCStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to save nonce");
-                <Self as OIDCStorage>::Error::Storage("Failed to save nonce".to_string())
+                <Self as OAuthStorage>::Error::Storage("Failed to save nonce".to_string())
             })?;
 
         Ok(())
     }
 
-    async fn get_oidc_account_by_provider_and_subject(
+    async fn get_oauth_account_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OIDCAccount>, <Self as OIDCStorage>::Error> {
-        let oidc_account = sqlx::query_as::<_, OIDCAccount>(
+    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
+        let oauth_account = sqlx::query_as::<_, OAuthAccount>(
             r#"
             SELECT user_id, provider, subject, created_at, updated_at
-            FROM oidc_accounts
+            FROM oauth_accounts
             WHERE provider = ? AND subject = ?
             "#,
         )
@@ -391,12 +391,12 @@ impl OIDCStorage for SqliteStorage {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get oidc account");
-            <Self as OIDCStorage>::Error::Storage("Failed to get oidc account".to_string())
+            tracing::error!(error = %e, "Failed to get oauth account");
+            <Self as OAuthStorage>::Error::Storage("Failed to get oauth account".to_string())
         })?;
 
-        if let Some(oidc_account) = oidc_account {
-            Ok(Some(oidc_account))
+        if let Some(oauth_account) = oauth_account {
+            Ok(Some(oauth_account))
         } else {
             Ok(None)
         }

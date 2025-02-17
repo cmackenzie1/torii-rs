@@ -20,7 +20,7 @@ use crate::{
 #[async_trait]
 pub trait Plugin: Any + Send + Sync + DowncastSync {
     /// The unique name of the plugin instance.
-    /// For OIDC plugins, this should be the provider name (e.g. "google", "github")
+    /// For oauth plugins, this should be the provider name (e.g. "google", "github")
     fn name(&self) -> String;
 
     /// Get the dependencies of this plugin.

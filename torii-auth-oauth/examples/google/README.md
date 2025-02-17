@@ -1,6 +1,6 @@
-# Google OIDC Example
+# Google OAuth Example
 
-This example demonstrates how to use the OIDC plugin to authenticate a user using Google.
+This example demonstrates how to use the oauth plugin to authenticate a user using Google.
 
 ## Environment Variables
 

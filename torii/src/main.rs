@@ -11,7 +11,7 @@ struct Cli {
 
     /// Enable OpenID Connect authentication
     #[arg(long)]
-    oidc_auth: bool,
+    oauth_auth: bool,
 
     /// Database connection string
     #[arg(long)]

@@ -83,29 +83,29 @@ where
         self
     }
 
-    /// Add an OIDC provider to the Torii instance. Multiple OIDC providers can be added by calling this method multiple times.
+    /// Add an oauth provider to the Torii instance. Multiple oauth providers can be added by calling this method multiple times.
     ///
     /// # Example
     /// ```
     /// let torii = ToriiBuilder::new(user_storage, session_storage)
     ///     .with_email_auth()
-    ///     .with_oidc_provider("google", "client_id", "client_secret", "redirect_uri")
+    ///     .with_oauth_provider("google", "client_id", "client_secret", "redirect_uri")
     ///     .setup_sqlite()
     ///     .await?;
     /// ```
     ///
     /// # Arguments
     ///
-    /// * `provider` - The name of the OIDC provider (e.g. "google", "github")
-    /// * `client_id` - The client ID for the OIDC provider
-    /// * `client_secret` - The client secret for the OIDC provider
-    /// * `redirect_uri` - The redirect URI for the OIDC provider
+    /// * `provider` - The name of the oauth provider (e.g. "google", "github")
+    /// * `client_id` - The client ID for the oauth provider
+    /// * `client_secret` - The client secret for the oauth provider
+    /// * `redirect_uri` - The redirect URI for the oauth provider
     ///
     /// # Returns
     ///
     /// * `Self` - The builder instance
-    #[cfg(feature = "oidc-auth")]
-    pub fn with_oidc_provider(
+    #[cfg(feature = "oauth-auth")]
+    pub fn with_oauth_provider(
         mut self,
         provider: &str,
         client_id: &str,
@@ -114,7 +114,7 @@ where
         issuer_url: &str,
         scopes: &[&str],
     ) -> Self {
-        self.manager.register(torii_auth_oidc::OIDCPlugin::new(
+        self.manager.register(torii_auth_oauth::OAuthPlugin::new(
             provider.to_string(),
             client_id.to_string(),
             client_secret.to_string(),
@@ -227,15 +227,15 @@ impl Torii<SqliteStorage, SqliteStorage> {
             .await
     }
 
-    /// Create a new user with an OIDC provider
+    /// Create a new user with an oauth provider
     ///
     /// # Example
     /// ```
     /// let torii = Torii::sqlite(pool).await?;
-    /// let user = torii.create_user_with_oidc("google", "test@example.com", "1234567890").await?;
+    /// let user = torii.create_user_with_oauth("google", "test@example.com", "1234567890").await?;
     /// ```
-    #[cfg(feature = "oidc-auth")]
-    pub async fn create_user_with_oidc(
+    #[cfg(feature = "oauth-auth")]
+    pub async fn create_user_with_oauth(
         &self,
         provider: &str,
         email: &str,
@@ -243,7 +243,7 @@ impl Torii<SqliteStorage, SqliteStorage> {
     ) -> Result<User, Error> {
         let plugin = self
             .manager
-            .get_plugin::<torii_auth_oidc::OIDCPlugin>(provider)
+            .get_plugin::<torii_auth_oauth::OAuthPlugin>(provider)
             .ok_or(Error::UnsupportedAuthMethod(provider.to_string()))?;
 
         let user = plugin
@@ -275,7 +275,7 @@ mod tests {
         Ok(torii)
     }
 
-    async fn setup_torii_with_oidc() -> Result<Torii<SqliteStorage, SqliteStorage>, Error> {
+    async fn setup_torii_with_oauth() -> Result<Torii<SqliteStorage, SqliteStorage>, Error> {
         let _ = tracing_subscriber::fmt::try_init();
         let pool = SqlitePool::connect("sqlite::memory:").await?;
         let torii = ToriiBuilder::<SqliteStorage, SqliteStorage>::new(
@@ -283,7 +283,7 @@ mod tests {
             Arc::new(SqliteStorage::new(pool.clone())),
         )
         .with_email_auth()
-        .with_oidc_provider(
+        .with_oauth_provider(
             "google",
             "client_id",
             "client_secret",
@@ -360,13 +360,13 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "oidc-auth")]
+    #[cfg(feature = "oauth-auth")]
     #[tokio::test]
-    async fn test_create_user_with_oidc() -> Result<(), Error> {
-        let torii = setup_torii_with_oidc().await?;
+    async fn test_create_user_with_oauth() -> Result<(), Error> {
+        let torii = setup_torii_with_oauth().await?;
 
         let user = torii
-            .create_user_with_oidc("google", "test@example.com", "1234567890")
+            .create_user_with_oauth("google", "test@example.com", "1234567890")
             .await?;
 
         assert_eq!(user.email, "test@example.com");
@@ -374,13 +374,13 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "oidc-auth")]
+    #[cfg(feature = "oauth-auth")]
     #[tokio::test]
-    async fn test_create_session_for_user_with_oidc() -> Result<(), Error> {
-        let torii = setup_torii_with_oidc().await?;
+    async fn test_create_session_for_user_with_oauth() -> Result<(), Error> {
+        let torii = setup_torii_with_oauth().await?;
 
         let user = torii
-            .create_user_with_oidc("google", "test@example.com", "1234567890")
+            .create_user_with_oauth("google", "test@example.com", "1234567890")
             .await?;
 
         let session = torii.create_session_for_user(&user).await?;
