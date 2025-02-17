@@ -1,6 +1,6 @@
 -- Add up migration script here
 -- dialect: sqlite
-CREATE TABLE IF NOT EXISTS oidc_accounts (
+CREATE TABLE IF NOT EXISTS oauth_accounts (
     id INTEGER PRIMARY KEY,
     user_id TEXT NOT NULL,
     provider TEXT NOT NULL,

@@ -2,7 +2,7 @@
 members = [
     "torii",
     "torii-auth-email",
-    "torii-auth-oidc",
+    "torii-auth-oauth",
     "torii-core",
     "torii-storage-sqlite",
 ]

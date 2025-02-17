@@ -6,35 +6,35 @@ use openidconnect::{
     TokenResponse,
 };
 use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
-use torii_storage_sqlite::{OIDCAccount, OIDCStorage};
+use torii_storage_sqlite::{OAuthAccount, OAuthStorage};
 use uuid::Uuid;
 
-/// The core OIDC plugin struct, responsible for handling OIDC authentication flow.
+/// The core oauth plugin struct, responsible for handling oauth authentication flow.
 ///
-/// See the [`OIDCPlugin`] struct for the core plugin struct.
+/// See the [`oauthPlugin`] struct for the core plugin struct.
 ///
 /// See the [`AuthFlowBegin`] and [`AuthFlowCallback`] structs for the core authentication flow.
 ///
 /// # Examples
 /// ```rust
 /// // Using the builder pattern
-/// let plugin = OIDCPlugin::builder("google")
+/// let plugin = oauthPlugin::builder("google")
 ///     .client_id(env::var("GOOGLE_CLIENT_ID")?)
 ///     .client_secret(env::var("GOOGLE_CLIENT_SECRET")?)
 ///     .redirect_uri("http://localhost:8080/callback")
 ///     .build();
 ///
 /// // Using preset for Google
-/// let plugin = OIDCPlugin::google(
+/// let plugin = oauthPlugin::google(
 ///     env::var("GOOGLE_CLIENT_ID")?,
 ///     env::var("GOOGLE_CLIENT_SECRET")?,
 ///     "http://localhost:8080/callback".to_string(),
 /// );
 /// ```
-pub struct OIDCPlugin {
+pub struct OAuthPlugin {
     /// The provider name. i.e. "google"
     pub provider: String,
-    /// The issuer URL for the OIDC provider
+    /// The issuer URL for the oauth provider
     pub issuer_url: String,
     /// The scopes to request from the provider
     pub scopes: Vec<String>,
@@ -49,7 +49,7 @@ pub struct OIDCPlugin {
     redirect_uri: String,
 }
 
-pub struct OIDCPluginBuilder {
+pub struct OAuthPluginBuilder {
     provider: String,
     client_id: String,
     client_secret: String,
@@ -58,7 +58,7 @@ pub struct OIDCPluginBuilder {
     scopes: Vec<String>,
 }
 
-impl OIDCPluginBuilder {
+impl OAuthPluginBuilder {
     pub fn new(provider: &str) -> Self {
         Self {
             provider: provider.to_string(),
@@ -95,8 +95,8 @@ impl OIDCPluginBuilder {
         self
     }
 
-    pub fn build(self) -> OIDCPlugin {
-        OIDCPlugin {
+    pub fn build(self) -> OAuthPlugin {
+        OAuthPlugin {
             provider: self.provider,
             client_id: self.client_id,
             client_secret: self.client_secret,
@@ -107,9 +107,9 @@ impl OIDCPluginBuilder {
     }
 }
 
-/// The start of the OIDC authentication flow for authorization code grant. This is the first step in the flow and is used to start the flow by redirecting the user to the provider's authorization URL.
+/// The start of the oauth authentication flow for authorization code grant. This is the first step in the flow and is used to start the flow by redirecting the user to the provider's authorization URL.
 ///
-/// See the [`OIDCPlugin::begin_auth`] method for the core authentication flow.
+/// See the [`oauthPlugin::begin_auth`] method for the core authentication flow.
 #[derive(Debug)]
 pub struct AuthFlowBegin {
     /// The CSRF state. This value is used to prevent CSRF attacks and may be stored in a cookie.
@@ -134,9 +134,9 @@ pub struct AuthFlowCallback {
     pub code: String,
 }
 
-impl OIDCPlugin {
-    pub fn builder(provider: &str) -> OIDCPluginBuilder {
-        OIDCPluginBuilder::new(provider)
+impl OAuthPlugin {
+    pub fn builder(provider: &str) -> OAuthPluginBuilder {
+        OAuthPluginBuilder::new(provider)
     }
 
     pub fn new(
@@ -158,7 +158,7 @@ impl OIDCPlugin {
     }
 
     pub fn google(client_id: String, client_secret: String, redirect_uri: String) -> Self {
-        OIDCPluginBuilder::new("google")
+        OAuthPluginBuilder::new("google")
             .client_id(client_id)
             .client_secret(client_secret)
             .redirect_uri(redirect_uri)
@@ -167,10 +167,10 @@ impl OIDCPlugin {
     }
 }
 
-impl OIDCPlugin {
+impl OAuthPlugin {
     /// Begin the authentication process by generating a new CSRF state and redirecting the user to the provider's authorization URL.
     ///
-    /// This method is the first step in the OIDC authorization code flow. It will:
+    /// This method is the first step in the oauth authorization code flow. It will:
     /// 1. Generate a CSRF token and nonce for security
     /// 2. Store the nonce in the database for later verification
     /// 3. Generate the authorization URL to redirect the user to
@@ -190,7 +190,7 @@ impl OIDCPlugin {
     /// * The provider metadata discovery fails
     /// * The nonce cannot be stored in the database
     /// * The HTTP client cannot be created
-    pub async fn begin_auth<U: OIDCStorage, S: SessionStorage>(
+    pub async fn begin_auth<U: OAuthStorage, S: SessionStorage>(
         &self,
         storage: &Storage<U, S>,
         redirect_uri: String,
@@ -206,14 +206,14 @@ impl OIDCPlugin {
         .await
         .map_err(|_| Error::InternalServerError)?;
 
-        let oidc_client = CoreClient::from_provider_metadata(
+        let oauth_client = CoreClient::from_provider_metadata(
             provider_metadata,
             ClientId::new(self.client_id.clone()),
             Some(ClientSecret::new(self.client_secret.clone())),
         )
         .set_redirect_uri(RedirectUrl::new(redirect_uri).unwrap());
 
-        let (auth_url, csrf_token, nonce) = oidc_client
+        let (auth_url, csrf_token, nonce) = oauth_client
             .authorize_url(
                 CoreAuthenticationFlow::AuthorizationCode,
                 CsrfToken::new_random,
@@ -247,37 +247,37 @@ impl OIDCPlugin {
         })
     }
 
-    /// Creates or retrieves an existing user based on OIDC account information
+    /// Creates or retrieves an existing user based on oauth account information
     ///
     /// # Arguments
-    /// * `storage` - The storage instance for the OIDC provider
+    /// * `storage` - The storage instance for the oauth provider
     /// * `email` - The email address of the user
-    /// * `subject` - The subject of the OIDC account
+    /// * `subject` - The subject of the oauth account
     ///
     /// # Returns
     /// Returns a [`User`] struct containing the user's information.
-    pub async fn get_or_create_user<U: OIDCStorage, S: SessionStorage>(
+    pub async fn get_or_create_user<U: OAuthStorage, S: SessionStorage>(
         &self,
         storage: &Storage<U, S>,
         email: String,
         subject: String,
     ) -> Result<User, Error> {
         // Check if user exists in database by provider and subject
-        let oidc_account = storage
+        let oauth_account = storage
             .user_storage()
-            .get_oidc_account_by_provider_and_subject(&self.provider, &subject)
+            .get_oauth_account_by_provider_and_subject(&self.provider, &subject)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
-        if let Some(oidc_account) = oidc_account {
+        if let Some(oauth_account) = oauth_account {
             tracing::info!(
-                user_id = ?oidc_account.user_id,
+                user_id = ?oauth_account.user_id,
                 "User already exists in database"
             );
 
             let user = storage
                 .user_storage()
-                .get_user(&oidc_account.user_id)
+                .get_user(&oauth_account.user_id)
                 .await
                 .map_err(|_| Error::InternalServerError)?
                 .ok_or_else(|| Error::UserNotFound)?;
@@ -301,7 +301,7 @@ impl OIDCPlugin {
         // Create link between user and provider
         storage
             .user_storage()
-            .create_oidc_account(&OIDCAccount {
+            .create_oauth_account(&OAuthAccount {
                 user_id: user.id.clone(),
                 provider: self.provider.clone(),
                 subject: subject.clone(),
@@ -330,7 +330,7 @@ impl OIDCPlugin {
 
     /// Complete the authentication process by exchanging the authorization code for an access token and user information.
     ///
-    /// This method is the second step in the OIDC authorization code flow. It will:
+    /// This method is the second step in the oauth authorization code flow. It will:
     /// 1. Exchange the authorization code for an access token and user information
     /// 2. Verify the nonce
     /// 3. Verify the id token
@@ -343,7 +343,7 @@ impl OIDCPlugin {
     ///
     /// # Returns
     /// Returns a [`User`] struct containing the user's information.
-    pub async fn callback<U: OIDCStorage, S: SessionStorage>(
+    pub async fn callback<U: OAuthStorage, S: SessionStorage>(
         &self,
         storage: &Storage<U, S>,
         auth_flow: &AuthFlowCallback,
@@ -365,7 +365,7 @@ impl OIDCPlugin {
 
         // Create client from provider metadata
         // TODO: Move to builder / init
-        let oidc_client = CoreClient::from_provider_metadata(
+        let oauth_client = CoreClient::from_provider_metadata(
             provider_metadata,
             ClientId::new(self.client_id.clone()),
             Some(ClientSecret::new(self.client_secret.clone())),
@@ -373,7 +373,7 @@ impl OIDCPlugin {
         .set_redirect_uri(RedirectUrl::new(self.redirect_uri.clone()).unwrap());
 
         // Exchange code for token response
-        let token_response = oidc_client
+        let token_response = oauth_client
             .exchange_code(AuthorizationCode::new(auth_flow.code.to_string()))
             .map_err(|_| Error::InternalServerError)?
             .request_async(&http_client)
@@ -412,7 +412,7 @@ impl OIDCPlugin {
         };
 
         // Verify id token
-        let id_token_verifier = oidc_client.id_token_verifier();
+        let id_token_verifier = oauth_client.id_token_verifier();
         let claims = id_token
             .claims(&id_token_verifier, &Nonce::new(nonce))
             .map_err(|_| Error::InvalidCredentials)?;
@@ -454,7 +454,7 @@ impl OIDCPlugin {
 }
 
 #[async_trait]
-impl Plugin for OIDCPlugin {
+impl Plugin for OAuthPlugin {
     fn name(&self) -> String {
         self.provider.clone()
     }

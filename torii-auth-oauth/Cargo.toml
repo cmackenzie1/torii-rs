@@ -1,5 +1,5 @@
 [package]
-name = "torii-auth-oidc"
+name = "torii-auth-oauth"
 version = "0.1.0"
 edition.workspace = true
 repository.workspace = true

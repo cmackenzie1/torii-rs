@@ -89,10 +89,10 @@ impl EmailPasswordPlugin {
 }
 ```
 
-### OIDC Plugin
+### OAuth Plugin
 
 ```rust
-impl EventHandler for OIDCPlugin {
+impl EventHandler for OAuthPlugin {
     async fn handle_event(&self, event: PluginEvent) -> Result<(), Error> {
         match event {
             PluginEvent::UserAuthenticated { user, source, .. } => {
@@ -120,7 +120,7 @@ impl EventHandler for OIDCPlugin {
 
 1. **Account Linking**
 
-   - Link OIDC accounts with email accounts
+   - Link OAuth accounts with email accounts
    - Merge user data from different auth methods
 
 2. **Audit Logging**

@@ -9,7 +9,7 @@ use axum::{
 use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
-use torii_auth_oidc::{AuthFlowCallback, OIDCPlugin};
+use torii_auth_oauth::{AuthFlowCallback, OAuthPlugin};
 use torii_core::plugin::PluginManager;
 use torii_storage_sqlite::SqliteStorage;
 
@@ -28,7 +28,7 @@ struct AppState {
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
     let plugin = state
         .plugin_manager
-        .get_plugin::<OIDCPlugin>("google")
+        .get_plugin::<OAuthPlugin>("google")
         .unwrap();
     let auth_flow = plugin
         .begin_auth(
@@ -62,7 +62,7 @@ async fn callback_handler(
 
     let plugin = state
         .plugin_manager
-        .get_plugin::<OIDCPlugin>("google")
+        .get_plugin::<OAuthPlugin>("google")
         .unwrap();
     let (user, session) = plugin
         .callback(
@@ -100,7 +100,7 @@ async fn main() {
     session_storage.migrate().await.unwrap();
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(OIDCPlugin::google(
+    plugin_manager.register(OAuthPlugin::google(
         std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
         std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback".to_string(),
