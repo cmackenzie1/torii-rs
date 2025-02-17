@@ -2,10 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    // Database errors
-    #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
-
     // Plugin errors
     #[error("Plugin error: {0}")]
     Plugin(String),

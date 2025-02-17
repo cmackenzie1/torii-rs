@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::{session::SessionId, Error, Session, User, UserId};
+use crate::{session::SessionId, Error, OAuthAccount, Session, User, UserId};
 
 #[async_trait]
 pub trait StoragePlugin: Send + Sync + 'static {
@@ -54,18 +54,39 @@ pub trait EmailPasswordStorage: UserStorage {
 /// Storage methods specific to OAuth authentication
 #[async_trait]
 pub trait OAuthStorage: UserStorage {
+    async fn create_oauth_account(
+        &self,
+        provider: &str,
+        subject: &str,
+        user_id: &UserId,
+    ) -> Result<OAuthAccount, Self::Error>;
+
+    async fn get_user_by_provider_and_subject(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<User>, Self::Error>;
+
+    async fn get_oauth_account_by_provider_and_subject(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<OAuthAccount>, Self::Error>;
+
     async fn link_oauth_account(
         &self,
         user_id: &UserId,
         provider: &str,
-        provider_user_id: &str,
+        subject: &str,
     ) -> Result<(), Self::Error>;
 
-    async fn get_user_by_oauth(
+    async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error>;
+    async fn save_nonce(
         &self,
-        provider: &str,
-        provider_user_id: &str,
-    ) -> Result<Option<User>, Self::Error>;
+        id: &str,
+        value: &str,
+        expires_at: &DateTime<Utc>,
+    ) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone)]

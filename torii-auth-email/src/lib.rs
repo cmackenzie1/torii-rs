@@ -253,8 +253,14 @@ mod tests {
         let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
         manager.register(EmailPasswordPlugin::new(storage));
 
-        user_storage.migrate().await?;
-        session_storage.migrate().await?;
+        user_storage
+            .migrate()
+            .await
+            .map_err(|_| Error::Storage("Failed to migrate user storage".to_string()))?;
+        session_storage
+            .migrate()
+            .await
+            .map_err(|_| Error::Storage("Failed to migrate session storage".to_string()))?;
 
         Ok((manager,))
     }
