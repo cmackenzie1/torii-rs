@@ -5,7 +5,21 @@ use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::{session::SessionId, Session, User, UserId};
+use crate::{session::SessionId, Error, Session, User, UserId};
+
+#[async_trait]
+pub trait StoragePlugin: Send + Sync + 'static {
+    type Config;
+
+    /// Initialize storage with config
+    async fn initialize(&self, config: Self::Config) -> Result<(), Error>;
+
+    /// Storage health check
+    async fn health_check(&self) -> Result<(), Error>;
+
+    /// Clean up expired data
+    async fn cleanup(&self) -> Result<(), Error>;
+}
 
 #[async_trait]
 pub trait UserStorage: Send + Sync + 'static {
@@ -28,6 +42,30 @@ pub trait SessionStorage: Send + Sync + 'static {
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error>;
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error>;
+}
+
+/// Storage methods specific to email/password authentication
+#[async_trait]
+pub trait EmailPasswordStorage: UserStorage {
+    async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Self::Error>;
+    async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Self::Error>;
+}
+
+/// Storage methods specific to OAuth authentication
+#[async_trait]
+pub trait OAuthStorage: UserStorage {
+    async fn link_oauth_account(
+        &self,
+        user_id: &UserId,
+        provider: &str,
+        provider_user_id: &str,
+    ) -> Result<(), Self::Error>;
+
+    async fn get_user_by_oauth(
+        &self,
+        provider: &str,
+        provider_user_id: &str,
+    ) -> Result<Option<User>, Self::Error>;
 }
 
 #[derive(Debug, Clone)]

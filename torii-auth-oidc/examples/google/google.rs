@@ -105,7 +105,6 @@ async fn main() {
         std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback".to_string(),
     ));
-    plugin_manager.setup().await.unwrap();
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))

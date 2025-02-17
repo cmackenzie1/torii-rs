@@ -1,6 +1,6 @@
 # RFC 0002: Separate Core Plugin Interfaces
 
-**Status**: Draft - Not thoroughly reviewed
+**Status**: Implemented
 
 ## Summary
 

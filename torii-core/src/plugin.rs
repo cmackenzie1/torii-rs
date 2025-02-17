@@ -8,15 +8,17 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use downcast_rs::{impl_downcast, DowncastSync};
-use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{any::Any, collections::HashMap};
 
-use crate::error::Error;
-use crate::storage::{SessionStorage, Storage, UserStorage};
+use crate::{
+    auth::AuthPlugin,
+    storage::{SessionStorage, Storage, StoragePlugin, UserStorage},
+};
 
 #[async_trait]
-pub trait Plugin<U: UserStorage, S: SessionStorage>: Any + Send + Sync + DowncastSync {
+pub trait Plugin: Any + Send + Sync + DowncastSync {
     /// The unique name of the plugin instance.
     /// For OIDC plugins, this should be the provider name (e.g. "google", "github")
     fn name(&self) -> String;
@@ -26,20 +28,14 @@ pub trait Plugin<U: UserStorage, S: SessionStorage>: Any + Send + Sync + Downcas
     fn dependencies(&self) -> Vec<&'static str> {
         Vec::new()
     }
-
-    /// Setup the plugin. This is called when the plugin is registered and may be used to
-    /// perform any necessary initialization of the user and session storage. Migrations
-    /// should be handled outside of the runtime (i.e, using sqlx::migrate with whatever storage
-    /// backend you are using).
-    async fn setup(&self, _user_storage: &U, _session_storage: &S) -> Result<(), Error> {
-        Ok(())
-    }
 }
-impl_downcast!(sync Plugin<U, S> where U: UserStorage, S: SessionStorage);
+impl_downcast!(sync Plugin);
 
 /// Manages a collection of plugins.
 pub struct PluginManager<U: UserStorage, S: SessionStorage> {
-    plugins: DashMap<String, Arc<dyn Plugin<U, S>>>,
+    auth_plugins: DashMap<String, Arc<dyn AuthPlugin>>,
+    storage_plugins: DashMap<String, Arc<dyn StoragePlugin<Config = HashMap<String, String>>>>,
+    plugins: DashMap<String, Arc<dyn Plugin>>,
     storage: Storage<U, S>,
 }
 
@@ -54,6 +50,8 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// ```
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
+            auth_plugins: DashMap::new(),
+            storage_plugins: DashMap::new(),
             plugins: DashMap::new(),
             storage: Storage::new(user_storage, session_storage),
         }
@@ -73,7 +71,7 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     ///
     /// let plugin = plugin_manager.get_plugin::<MyPlugin>("my_plugin");
     /// ```
-    pub fn get_plugin<T: Plugin<U, S> + 'static>(&self, name: &str) -> Option<Arc<T>> {
+    pub fn get_plugin<T: Plugin + 'static>(&self, name: &str) -> Option<Arc<T>> {
         let plugin = self.plugins.get(name)?;
         plugin.value().clone().downcast_arc::<T>().ok()
     }
@@ -90,93 +88,29 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     /// ```
-    pub fn register<T: Plugin<U, S> + 'static>(&mut self, plugin: T) {
+    pub fn register<T: Plugin + 'static>(&mut self, plugin: T) {
         let name = plugin.name();
         let plugin = Arc::new(plugin);
         self.plugins.insert(name.clone(), plugin.clone());
         tracing::info!(plugin.name = name, "Registered plugin");
     }
 
-    /// Sets up all registered plugins in dependency order.
-    ///
-    /// # Example
-    /// ```
-    /// use torii_core::{PluginManager, Plugin};
-    /// use sqlx::{Pool, Sqlite};
-    ///
-    /// async fn setup(pool: &Pool<Sqlite>) {
-    ///     let plugin_manager = PluginManager::new();
-    ///     plugin_manager.setup(pool).await.expect("Failed to setup plugins");
-    /// }
-    /// ```
-    pub async fn setup(&self) -> Result<(), Error> {
-        let ordered = self.get_ordered_plugins()?;
-        for plugin_id in ordered {
-            let plugin = self.plugins.get(&plugin_id).expect("Plugin not found");
-            plugin
-                .value()
-                .setup(
-                    &self.storage.user_storage(),
-                    &self.storage.session_storage(),
-                )
-                .await?;
-            tracing::info!("Setup plugin: {}", plugin.value().name());
-        }
-        Ok(())
+    pub fn register_auth(&mut self, plugin: impl AuthPlugin) {
+        self.auth_plugins
+            .insert(plugin.auth_method().to_string(), Arc::new(plugin));
+    }
+
+    pub fn register_storage(
+        &mut self,
+        name: &str,
+        plugin: impl StoragePlugin<Config = HashMap<String, String>>,
+    ) {
+        self.storage_plugins
+            .insert(name.to_string(), Arc::new(plugin));
     }
 
     pub fn storage(&self) -> &Storage<U, S> {
         &self.storage
-    }
-
-    /// Gets a list of plugin TypeIds in dependency order.
-    fn get_ordered_plugins(&self) -> Result<Vec<String>, Error> {
-        let mut ordered = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut temp_visited = std::collections::HashSet::new();
-
-        for plugin_id in self.plugins.iter().map(|p| p.key().clone()) {
-            self.visit_plugin(&plugin_id, &mut ordered, &mut visited, &mut temp_visited)?;
-        }
-
-        Ok(ordered)
-    }
-
-    /// Helper function for topological sort of plugins.
-    fn visit_plugin(
-        &self,
-        plugin_id: &str,
-        ordered: &mut Vec<String>,
-        visited: &mut std::collections::HashSet<String>,
-        temp_visited: &mut std::collections::HashSet<String>,
-    ) -> Result<(), Error> {
-        if temp_visited.contains(plugin_id) {
-            return Err(Error::Plugin("Circular dependency detected".into()));
-        }
-        if visited.contains(plugin_id) {
-            return Ok(());
-        }
-
-        temp_visited.insert(plugin_id.to_string());
-
-        let plugin = self.plugins.get(plugin_id).expect("Plugin not found");
-
-        for dep_name in plugin.value().dependencies() {
-            let dep_id = self
-                .plugins
-                .iter()
-                .find(|p| p.value().name() == dep_name)
-                .map(|p| p.key().clone())
-                .ok_or_else(|| Error::Plugin(format!("Dependency '{}' not found", dep_name)))?;
-
-            self.visit_plugin(&dep_id, ordered, visited, temp_visited)?;
-        }
-
-        temp_visited.remove(&plugin_id.to_string());
-        visited.insert(plugin_id.to_string());
-        ordered.push(plugin_id.to_string());
-
-        Ok(())
     }
 
     /// Starts a background task to cleanup expired sessions.
@@ -223,7 +157,7 @@ impl Default for SessionCleanupConfig {
 #[cfg(test)]
 mod tests {
 
-    use crate::{session::SessionId, NewUser, Session, User, UserId};
+    use crate::{session::SessionId, Error, NewUser, Session, User, UserId};
 
     use super::*;
 
@@ -231,17 +165,9 @@ mod tests {
     struct TestPlugin;
 
     #[async_trait]
-    impl Plugin<TestStorage, TestStorage> for TestPlugin {
+    impl Plugin for TestPlugin {
         fn name(&self) -> String {
             "test".to_string()
-        }
-
-        async fn setup(
-            &self,
-            _user_storage: &TestStorage,
-            _session_storage: &TestStorage,
-        ) -> Result<(), Error> {
-            Ok(())
         }
     }
 
@@ -366,16 +292,6 @@ mod tests {
         plugin_manager.register(TestPlugin::new());
         let plugin = plugin_manager.get_plugin::<TestPlugin>("test").unwrap();
         assert_eq!(plugin.name(), "test");
-    }
-
-    #[tokio::test]
-    async fn test_basic_setup() {
-        let (user_storage, session_storage) = setup_test_storage();
-        let mut plugin_manager = PluginManager::new(user_storage, session_storage);
-        plugin_manager.register(TestPlugin::new());
-
-        // This should now work without duplicate migration errors
-        plugin_manager.setup().await.expect("Setup failed");
     }
 
     #[tokio::test]
