@@ -5,6 +5,7 @@ members = [
     "torii-auth-oauth",
     "torii-core",
     "torii-storage-sqlite",
+    "torii-storage-postgres",
 ]
 exclude = ["examples/todos"]
 resolver = "2"
