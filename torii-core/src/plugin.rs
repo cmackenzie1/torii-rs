@@ -229,7 +229,7 @@ mod tests {
                 .email(new_user.email.clone())
                 .created_at(chrono::Utc::now())
                 .email_verified_at(None)
-                .name("test".to_string())
+                .name(None)
                 .updated_at(chrono::Utc::now())
                 .build()
                 .unwrap();

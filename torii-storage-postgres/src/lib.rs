@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use derive_builder::Builder;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use std::time::Duration;
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
@@ -13,12 +13,13 @@ use torii_core::{
     Session, User, UserId,
 };
 
-pub struct SqliteStorage {
-    pool: SqlitePool,
+#[derive(Debug)]
+pub struct PostgresStorage {
+    pool: PgPool,
 }
 
-impl SqliteStorage {
-    pub fn new(pool: SqlitePool) -> Self {
+impl PostgresStorage {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
@@ -32,7 +33,7 @@ impl SqliteStorage {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-pub struct SqliteUser {
+pub struct PostgresUser {
     id: String,
     email: String,
     name: Option<String>,
@@ -41,8 +42,8 @@ pub struct SqliteUser {
     updated_at: DateTime<Utc>,
 }
 
-impl From<SqliteUser> for User {
-    fn from(user: SqliteUser) -> Self {
+impl From<PostgresUser> for User {
+    fn from(user: PostgresUser) -> Self {
         User::builder()
             .id(UserId::new(&user.id))
             .email(user.email)
@@ -55,9 +56,9 @@ impl From<SqliteUser> for User {
     }
 }
 
-impl From<User> for SqliteUser {
+impl From<User> for PostgresUser {
     fn from(user: User) -> Self {
-        SqliteUser {
+        PostgresUser {
             id: user.id.into_inner(),
             email: user.email,
             name: user.name,
@@ -69,34 +70,35 @@ impl From<User> for SqliteUser {
 }
 
 #[async_trait]
-impl UserStorage for SqliteStorage {
+impl UserStorage for PostgresStorage {
     type Error = torii_core::Error;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error> {
-        sqlx::query("INSERT INTO users (id, email) VALUES (?, ?)")
-            .bind(user.id.as_ref())
-            .bind(&user.email)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to create user");
-                Self::Error::Storage("Failed to create user".to_string())
-            })?;
+        let user = sqlx::query_as::<_, PostgresUser>(
+            r#"
+            INSERT INTO users (id, email) 
+            VALUES ($1::uuid, $2) 
+            RETURNING id::text, email, name, email_verified_at, created_at, updated_at
+            "#,
+        )
+        .bind(user.id.as_ref())
+        .bind(&user.email)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to create user");
+            Self::Error::Storage("Failed to create user".to_string())
+        })?;
 
-        let user = self.get_user(&user.id).await?;
-        if let Some(user) = user {
-            Ok(user)
-        } else {
-            Err(Self::Error::Storage("Failed to create user".to_string()))
-        }
+        Ok(user.into())
     }
 
     async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
-        let user = sqlx::query_as::<_, SqliteUser>(
+        let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at 
+            SELECT id::text, email, name, email_verified_at, created_at, updated_at 
             FROM users 
-            WHERE id = ?
+            WHERE id::text = $1
             "#,
         )
         .bind(id.as_ref())
@@ -115,11 +117,11 @@ impl UserStorage for SqliteStorage {
     }
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
-        let user = sqlx::query_as::<_, SqliteUser>(
+        let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at 
+            SELECT id::text, email, name, email_verified_at, created_at, updated_at 
             FROM users 
-            WHERE email = ?
+            WHERE email = $1
             "#,
         )
         .bind(email)
@@ -161,12 +163,12 @@ impl UserStorage for SqliteStorage {
     }
 
     async fn update_user(&self, user: &User) -> Result<User, Self::Error> {
-        sqlx::query_as::<_, SqliteUser>(
+        let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             UPDATE users 
-            SET email = ?, name = ?, email_verified_at = ?, updated_at = ? 
-            WHERE id = ?
-            RETURNING id, email, name, email_verified_at, created_at, updated_at
+            SET email = $1, name = $2, email_verified_at = $3, updated_at = $4 
+            WHERE id::text = $5
+            RETURNING id::text, email, name, email_verified_at, created_at, updated_at
             "#,
         )
         .bind(&user.email)
@@ -181,16 +183,11 @@ impl UserStorage for SqliteStorage {
             Self::Error::Storage("Failed to update user".to_string())
         })?;
 
-        let user = self.get_user(&user.id).await?;
-        if let Some(user) = user {
-            Ok(user)
-        } else {
-            Err(Self::Error::Storage("Failed to update user".to_string()))
-        }
+        Ok(user.into())
     }
 
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM users WHERE id = ?")
+        sqlx::query("DELETE FROM users WHERE id::text = $1")
             .bind(id.as_ref())
             .execute(&self.pool)
             .await
@@ -204,15 +201,15 @@ impl UserStorage for SqliteStorage {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-pub struct SqliteSession {
+pub struct PostgresSession {
     id: String,
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
 }
 
-impl From<SqliteSession> for Session {
-    fn from(session: SqliteSession) -> Self {
+impl From<PostgresSession> for Session {
+    fn from(session: PostgresSession) -> Self {
         Session::builder()
             .id(SessionId::new(&session.id))
             .user_id(UserId::new(&session.user_id))
@@ -223,9 +220,9 @@ impl From<SqliteSession> for Session {
     }
 }
 
-impl From<Session> for SqliteSession {
+impl From<Session> for PostgresSession {
     fn from(session: Session) -> Self {
-        SqliteSession {
+        PostgresSession {
             id: session.id.into_inner(),
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
@@ -235,11 +232,11 @@ impl From<Session> for SqliteSession {
 }
 
 #[async_trait]
-impl SessionStorage for SqliteStorage {
+impl SessionStorage for PostgresStorage {
     type Error = torii_core::Error;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
-        sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)")
             .bind(session.id.as_ref())
             .bind(session.user_id.as_ref())
             .bind(&session.user_agent)
@@ -249,17 +246,20 @@ impl SessionStorage for SqliteStorage {
             .bind(session.expires_at)
             .execute(&self.pool)
             .await
-            .map_err(|_| Self::Error::Storage("Failed to create session".to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to create session");
+                Self::Error::Storage("Failed to create session".to_string())
+            })?;
 
         Ok(self.get_session(&session.id).await?.unwrap())
     }
 
     async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
-        let session = sqlx::query_as::<_, SqliteSession>(
+        let session = sqlx::query_as::<_, PostgresSession>(
             r#"
-            SELECT id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
+            SELECT id::text, user_id::text, user_agent, ip_address, created_at, updated_at, expires_at
             FROM sessions
-            WHERE id = ?
+            WHERE id::text = $1
             "#,
         )
         .bind(id.as_ref())
@@ -274,7 +274,7 @@ impl SessionStorage for SqliteStorage {
     }
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
+        sqlx::query("DELETE FROM sessions WHERE id::text = $1")
             .bind(id.as_ref())
             .execute(&self.pool)
             .await
@@ -287,7 +287,7 @@ impl SessionStorage for SqliteStorage {
     }
 
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE expires_at < ?")
+        sqlx::query("DELETE FROM sessions WHERE expires_at < $1")
             .bind(Utc::now())
             .execute(&self.pool)
             .await
@@ -300,7 +300,7 @@ impl SessionStorage for SqliteStorage {
     }
 
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+        sqlx::query("DELETE FROM sessions WHERE user_id::text = $1")
             .bind(user_id.as_ref())
             .execute(&self.pool)
             .await
@@ -315,7 +315,7 @@ impl SessionStorage for SqliteStorage {
 
 #[derive(Debug, Clone, sqlx::FromRow, Builder)]
 #[builder(pattern = "owned")]
-pub struct SqliteOAuthAccount {
+pub struct PostgresOAuthAccount {
     user_id: String,
     provider: String,
     subject: String,
@@ -325,13 +325,13 @@ pub struct SqliteOAuthAccount {
     pub updated_at: DateTime<Utc>,
 }
 
-impl SqliteOAuthAccount {
-    pub fn builder() -> SqliteOAuthAccountBuilder {
-        SqliteOAuthAccountBuilder::default()
+impl PostgresOAuthAccount {
+    pub fn builder() -> PostgresOAuthAccountBuilder {
+        PostgresOAuthAccountBuilder::default()
     }
 
     pub fn new(user_id: UserId, provider: impl Into<String>, subject: impl Into<String>) -> Self {
-        SqliteOAuthAccountBuilder::default()
+        PostgresOAuthAccountBuilder::default()
             .user_id(user_id.into_inner())
             .provider(provider.into())
             .subject(subject.into())
@@ -344,8 +344,8 @@ impl SqliteOAuthAccount {
     }
 }
 
-impl From<SqliteOAuthAccount> for OAuthAccount {
-    fn from(oauth_account: SqliteOAuthAccount) -> Self {
+impl From<PostgresOAuthAccount> for OAuthAccount {
+    fn from(oauth_account: PostgresOAuthAccount) -> Self {
         OAuthAccount::builder()
             .user_id(UserId::new(&oauth_account.user_id))
             .provider(oauth_account.provider)
@@ -357,9 +357,9 @@ impl From<SqliteOAuthAccount> for OAuthAccount {
     }
 }
 
-impl From<OAuthAccount> for SqliteOAuthAccount {
+impl From<OAuthAccount> for PostgresOAuthAccount {
     fn from(oauth_account: OAuthAccount) -> Self {
-        SqliteOAuthAccount::builder()
+        PostgresOAuthAccount::builder()
             .user_id(oauth_account.user_id.into_inner())
             .provider(oauth_account.provider)
             .subject(oauth_account.subject)
@@ -371,14 +371,14 @@ impl From<OAuthAccount> for SqliteOAuthAccount {
 }
 
 #[async_trait]
-impl OAuthStorage for SqliteStorage {
+impl OAuthStorage for PostgresStorage {
     async fn create_oauth_account(
         &self,
         provider: &str,
         subject: &str,
         user_id: &UserId,
     ) -> Result<OAuthAccount, Self::Error> {
-        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
             .bind(user_id.as_ref())
             .bind(provider)
             .bind(subject)
@@ -393,11 +393,11 @@ impl OAuthStorage for SqliteStorage {
                 )
             })?;
 
-        let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
+        let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
-            SELECT user_id, provider, subject, created_at, updated_at
+            SELECT user_id::text, provider, subject, created_at, updated_at
             FROM oauth_accounts
-            WHERE user_id = ?
+            WHERE user_id::text = $1
             "#,
         )
         .bind(user_id.as_ref())
@@ -412,14 +412,15 @@ impl OAuthStorage for SqliteStorage {
     }
 
     async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error> {
-        let nonce: Option<String> = sqlx::query_scalar("SELECT value FROM nonces WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get nonce");
-                Self::Error::Storage("Failed to get nonce".to_string())
-            })?;
+        let nonce: Option<String> =
+            sqlx::query_scalar("SELECT value FROM nonces WHERE id::text = $1")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "Failed to get nonce");
+                    Self::Error::Storage("Failed to get nonce".to_string())
+                })?;
 
         Ok(nonce)
     }
@@ -430,7 +431,7 @@ impl OAuthStorage for SqliteStorage {
         value: &str,
         expires_at: &DateTime<Utc>,
     ) -> Result<(), Self::Error> {
-        sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
+        sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES ($1::text, $2, $3)")
             .bind(id)
             .bind(value)
             .bind(expires_at)
@@ -449,11 +450,11 @@ impl OAuthStorage for SqliteStorage {
         provider: &str,
         subject: &str,
     ) -> Result<Option<OAuthAccount>, Self::Error> {
-        let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
+        let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
-            SELECT user_id, provider, subject, created_at, updated_at
+            SELECT user_id::text, provider, subject, created_at, updated_at
             FROM oauth_accounts
-            WHERE provider = ? AND subject = ?
+            WHERE provider = $1 AND subject = $2
             "#,
         )
         .bind(provider)
@@ -477,11 +478,11 @@ impl OAuthStorage for SqliteStorage {
         provider: &str,
         subject: &str,
     ) -> Result<Option<User>, Self::Error> {
-        let user = sqlx::query_as::<_, SqliteUser>(
+        let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at
+            SELECT id::text, email, name, email_verified_at, created_at, updated_at
             FROM users
-            WHERE provider = ? AND subject = ?
+            WHERE provider = $1 AND subject = $2
             "#,
         )
         .bind(provider)
@@ -506,7 +507,7 @@ impl OAuthStorage for SqliteStorage {
         provider: &str,
         subject: &str,
     ) -> Result<(), Self::Error> {
-        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
             .bind(user_id.as_ref())
             .bind(provider)
             .bind(subject)
@@ -524,9 +525,9 @@ impl OAuthStorage for SqliteStorage {
 }
 
 #[async_trait]
-impl EmailPasswordStorage for SqliteStorage {
+impl EmailPasswordStorage for PostgresStorage {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
-        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id::text= $2")
             .bind(hash)
             .bind(user_id.as_ref())
             .execute(&self.pool)
@@ -536,7 +537,7 @@ impl EmailPasswordStorage for SqliteStorage {
     }
 
     async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error> {
-        let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+        let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id::text = $1")
             .bind(user_id.as_ref())
             .fetch_optional(&self.pool)
             .await
@@ -547,27 +548,30 @@ impl EmailPasswordStorage for SqliteStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
+    use super::*;
     use sqlx::types::chrono::Utc;
+    use std::time::Duration;
     use torii_core::session::SessionId;
 
-    use super::*;
+    async fn setup_test_db() -> PostgresStorage {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = PgPool::connect("postgres://postgres:postgres@localhost:5432/postgres")
+            .await
+            .expect("Failed to connect to postgres");
 
-    async fn setup_sqlite_storage() -> Result<SqliteStorage, sqlx::Error> {
-        let pool = SqlitePool::connect("sqlite::memory:").await?;
-        sqlx::migrate!("./migrations").run(&pool).await?;
-        Ok(SqliteStorage::new(pool))
+        let storage = PostgresStorage::new(pool);
+        storage.migrate().await.expect("Failed to run migrations");
+        storage
     }
 
     async fn create_test_user(
-        storage: &SqliteStorage,
-        id: &str,
+        storage: &PostgresStorage,
+        id: &UserId,
     ) -> Result<User, torii_core::Error> {
         storage
             .create_user(
                 &NewUser::builder()
-                    .id(UserId::new(id))
+                    .id(id.clone())
                     .email(format!("test{}@example.com", id))
                     .build()
                     .expect("Failed to build user"),
@@ -576,17 +580,17 @@ mod tests {
     }
 
     async fn create_test_session(
-        storage: &SqliteStorage,
-        session_id: &str,
-        user_id: &str,
+        storage: &PostgresStorage,
+        session_id: &SessionId,
+        user_id: &UserId,
         expires_in: Duration,
     ) -> Result<Session, torii_core::Error> {
         let now = Utc::now();
         storage
             .create_session(
                 &Session::builder()
-                    .id(SessionId::new(session_id))
-                    .user_id(UserId::new(user_id))
+                    .id(session_id.clone())
+                    .user_id(user_id.clone())
                     .user_agent(Some("test".to_string()))
                     .ip_address(Some("127.0.0.1".to_string()))
                     .created_at(now)
@@ -599,76 +603,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sqlite_storage() {
-        let storage = setup_sqlite_storage()
-            .await
-            .expect("Failed to setup storage");
-        let user = create_test_user(&storage, "1")
+    async fn test_postgres_storage() {
+        let storage = setup_test_db().await;
+        let user_id = UserId::new_random();
+        let user = create_test_user(&storage, &user_id)
             .await
             .expect("Failed to create user");
-        assert_eq!(user.email, format!("test1@example.com"));
+        assert_eq!(user.email, format!("test{}@example.com", user_id));
 
         let fetched = storage
-            .get_user(&UserId::new("1"))
+            .get_user(&user_id)
             .await
             .expect("Failed to get user");
         assert_eq!(
             fetched.expect("User should exist").email,
-            format!("test1@example.com")
+            format!("test{}@example.com", user_id)
         );
 
         storage
-            .delete_user(&UserId::new("1"))
+            .delete_user(&user_id)
             .await
             .expect("Failed to delete user");
         let deleted = storage
-            .get_user(&UserId::new("1"))
+            .get_user(&user_id)
             .await
             .expect("Failed to get user");
         assert!(deleted.is_none());
     }
 
     #[tokio::test]
-    async fn test_sqlite_session_storage() {
-        let storage = setup_sqlite_storage()
-            .await
-            .expect("Failed to setup storage");
-        create_test_user(&storage, "1")
+    async fn test_postgres_session_storage() {
+        let storage = setup_test_db().await;
+        let user_id = UserId::new_random();
+        let session_id = SessionId::new_random();
+        create_test_user(&storage, &user_id)
             .await
             .expect("Failed to create user");
 
-        let _session = create_test_session(&storage, "1", "1", Duration::from_secs(1000))
-            .await
-            .expect("Failed to create session");
+        let _session =
+            create_test_session(&storage, &session_id, &user_id, Duration::from_secs(1000))
+                .await
+                .expect("Failed to create session");
 
         let fetched = storage
-            .get_session(&SessionId::new("1"))
+            .get_session(&session_id)
             .await
             .expect("Failed to get session")
             .expect("Session should exist");
-        assert_eq!(fetched.user_id, UserId::new("1"));
+        assert_eq!(fetched.user_id, user_id);
 
         storage
-            .delete_session(&SessionId::new("1"))
+            .delete_session(&session_id)
             .await
             .expect("Failed to delete session");
-        let deleted = storage.get_session(&SessionId::new("1")).await;
+        let deleted = storage.get_session(&session_id).await;
         assert!(deleted.is_err());
     }
 
     #[tokio::test]
-    async fn test_sqlite_session_cleanup() {
-        let storage = setup_sqlite_storage()
-            .await
-            .expect("Failed to setup storage");
-        create_test_user(&storage, "1")
+    async fn test_postgres_session_cleanup() {
+        let storage = setup_test_db().await;
+        let user_id = UserId::new_random();
+        create_test_user(&storage, &user_id)
             .await
             .expect("Failed to create user");
 
         // Create an already expired session by setting expires_at in the past
+        let session_id = SessionId::new_random();
         let expired_session = Session {
-            id: SessionId::new("expired"),
-            user_id: UserId::new("1"),
+            id: SessionId::new_random(),
+            user_id: user_id.clone(),
             user_agent: None,
             ip_address: None,
             created_at: chrono::Utc::now(),
@@ -681,7 +685,7 @@ mod tests {
             .expect("Failed to create expired session");
 
         // Create valid session
-        create_test_session(&storage, "valid", "1", Duration::from_secs(3600))
+        create_test_session(&storage, &session_id, &user_id, Duration::from_secs(3600))
             .await
             .expect("Failed to create valid session");
 
@@ -692,59 +696,63 @@ mod tests {
             .expect("Failed to cleanup sessions");
 
         // Verify expired session was removed
-        let expired_session = storage.get_session(&SessionId::new("expired")).await;
+        let expired_session = storage.get_session(&expired_session.id).await;
         assert!(expired_session.is_err());
 
         // Verify valid session remains
         let valid_session = storage
-            .get_session(&SessionId::new("valid"))
+            .get_session(&session_id)
             .await
-            .expect("Failed to get valid session");
-        assert!(valid_session.is_some());
+            .expect("Failed to get valid session")
+            .expect("Session should exist");
+        assert_eq!(valid_session.user_id, user_id);
     }
 
     #[tokio::test]
     async fn test_delete_sessions_for_user() {
-        let storage = setup_sqlite_storage()
-            .await
-            .expect("Failed to setup storage");
+        let storage = setup_test_db().await;
 
         // Create test users
-        create_test_user(&storage, "1")
+        let user_id1 = UserId::new_random();
+        create_test_user(&storage, &user_id1)
             .await
             .expect("Failed to create user 1");
-        create_test_user(&storage, "2")
+        let user_id2 = UserId::new_random();
+        create_test_user(&storage, &user_id2)
             .await
             .expect("Failed to create user 2");
 
         // Create sessions for user 1
-        create_test_session(&storage, "session1", "1", Duration::from_secs(3600))
+        let session_id1 = SessionId::new_random();
+        create_test_session(&storage, &session_id1, &user_id1, Duration::from_secs(3600))
             .await
             .expect("Failed to create session 1");
-        create_test_session(&storage, "session2", "1", Duration::from_secs(3600))
+        let session_id2 = SessionId::new_random();
+        create_test_session(&storage, &session_id2, &user_id1, Duration::from_secs(3600))
             .await
             .expect("Failed to create session 2");
 
         // Create session for user 2
-        create_test_session(&storage, "session3", "2", Duration::from_secs(3600))
+        let session_id3 = SessionId::new_random();
+        create_test_session(&storage, &session_id3, &user_id2, Duration::from_secs(3600))
             .await
             .expect("Failed to create session 3");
 
         // Delete all sessions for user 1
         storage
-            .delete_sessions_for_user(&UserId::new("1"))
+            .delete_sessions_for_user(&user_id1)
             .await
             .expect("Failed to delete sessions for user");
 
         // Verify user 1's sessions are deleted
-        let session1 = storage.get_session(&SessionId::new("session1")).await;
+        let session1 = storage.get_session(&session_id1).await;
         assert!(session1.is_err());
-        let session2 = storage.get_session(&SessionId::new("session2")).await;
+        let session2 = storage.get_session(&session_id2).await;
         assert!(session2.is_err());
 
         // Verify user 2's session remains
         let session3 = storage
-            .get_session(&SessionId::new("session3"))
+            .get_session(&session_id3)
             .await
             .expect("Failed to get session 3");
         assert!(session3.is_some());

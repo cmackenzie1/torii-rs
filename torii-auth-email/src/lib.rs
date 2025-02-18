@@ -91,7 +91,7 @@ where
         tracing::info!(
             user.id = %user.id,
             user.email = %user.email,
-            user.name = %user.name,
+            user.name = ?user.name,
             "Created user",
         );
 

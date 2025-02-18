@@ -76,7 +76,8 @@ pub struct User {
     pub id: UserId,
 
     // The name of the user.
-    pub name: String,
+    #[builder(default = "None")]
+    pub name: Option<String>,
 
     // The email of the user.
     pub email: String,
