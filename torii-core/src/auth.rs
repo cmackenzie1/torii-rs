@@ -8,50 +8,36 @@ use crate::{Error, Session, User};
 /// This is used to authenticate a user and create a session.
 #[derive(Debug, Clone)]
 pub enum Credentials {
-    /// Email/password credentials.
-    ///
-    /// This is the default authentication method and is used for most plugins.
-    EmailPassword { email: String, password: String },
-
-    /// OAuth credentials.
-    ///
-    /// This is useful for plugins that need to authenticate with an OAuth provider.
-    OAuth {
-        provider: String,
-        access_token: String,
-        refresh_token: Option<String>,
-    },
-
-    /// Custom credentials from key-value pairs.
-    ///
-    /// This is useful for plugins that need to pass additional information to the authentication process
-    /// without them having to be part of the core plugin system.
-    Custom(HashMap<String, String>),
+    Password { email: String, password: String },
+    OAuth { provider: String, token: String },
+    Token(String),
 }
 
 impl Credentials {
     /// Create new email/password credentials
     pub fn email_password(email: String, password: String) -> Self {
-        Self::EmailPassword { email, password }
+        Self::Password { email, password }
     }
 
     /// Create new OAuth credentials
-    pub fn oauth(
-        provider: impl Into<String>,
-        access_token: impl Into<String>,
-        refresh_token: Option<String>,
-    ) -> Self {
+    pub fn oauth(provider: impl Into<String>, token: impl Into<String>) -> Self {
         Self::OAuth {
             provider: provider.into(),
-            access_token: access_token.into(),
-            refresh_token,
+            token: token.into(),
         }
     }
 
-    /// Create custom credentials from key-value pairs
-    pub fn custom(fields: HashMap<String, String>) -> Self {
-        Self::Custom(fields)
+    /// Create new token credentials
+    pub fn token(token: impl Into<String>) -> Self {
+        Self::Token(token.into())
     }
+}
+
+#[derive(Debug)]
+pub struct AuthResponse {
+    pub user: User,
+    pub session: Session,
+    pub metadata: HashMap<String, String>,
 }
 
 /// A plugin that can be used to authenticate a user.
@@ -70,4 +56,16 @@ pub trait AuthPlugin: Send + Sync + 'static {
 
     /// Handle logout/session termination
     async fn logout(&self, session: &Session) -> Result<(), Error>;
+}
+
+#[async_trait]
+pub trait AuthProvider: Send + Sync {
+    /// Unique identifier for this auth provider
+    fn provider_id(&self) -> &str;
+
+    /// Authenticate a user with the given credentials
+    async fn authenticate(&self, credentials: Credentials) -> Result<AuthResponse, Error>;
+
+    /// Create a new user with the given credentials
+    async fn create_user(&self, credentials: Credentials) -> Result<User, Error>;
 }

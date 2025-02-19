@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
-use derive_builder::Builder;
 use sqlx::PgPool;
 use std::time::Duration;
 use torii_core::session::SessionId;
@@ -206,6 +205,9 @@ pub struct PostgresSession {
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
 }
 
 impl From<PostgresSession> for Session {
@@ -215,6 +217,9 @@ impl From<PostgresSession> for Session {
             .user_id(UserId::new(&session.user_id))
             .user_agent(session.user_agent)
             .ip_address(session.ip_address)
+            .created_at(session.created_at)
+            .updated_at(session.updated_at)
+            .expires_at(session.expires_at)
             .build()
             .unwrap()
     }
@@ -227,6 +232,9 @@ impl From<Session> for PostgresSession {
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+            expires_at: session.expires_at,
         }
     }
 }
@@ -313,16 +321,67 @@ impl SessionStorage for PostgresStorage {
     }
 }
 
-#[derive(Debug, Clone, sqlx::FromRow, Builder)]
-#[builder(pattern = "owned")]
+#[derive(Default)]
+pub struct PostgresOAuthAccountBuilder {
+    user_id: Option<UserId>,
+    provider: Option<String>,
+    subject: Option<String>,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
+}
+
+impl PostgresOAuthAccountBuilder {
+    pub fn user_id(mut self, user_id: UserId) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn provider(mut self, provider: String) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    pub fn subject(mut self, subject: String) -> Self {
+        self.subject = Some(subject);
+        self
+    }
+
+    pub fn created_at(mut self, created_at: DateTime<Utc>) -> Self {
+        self.created_at = Some(created_at);
+        self
+    }
+
+    pub fn updated_at(mut self, updated_at: DateTime<Utc>) -> Self {
+        self.updated_at = Some(updated_at);
+        self
+    }
+
+    pub fn build(self) -> Result<PostgresOAuthAccount, Error> {
+        let now = Utc::now();
+        Ok(PostgresOAuthAccount {
+            user_id: self
+                .user_id
+                .ok_or(Error::ValidationError("User ID is required".to_string()))?
+                .to_string(),
+            provider: self
+                .provider
+                .ok_or(Error::ValidationError("Provider is required".to_string()))?,
+            subject: self
+                .subject
+                .ok_or(Error::ValidationError("Subject is required".to_string()))?,
+            created_at: self.created_at.unwrap_or(now),
+            updated_at: self.updated_at.unwrap_or(now),
+        })
+    }
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PostgresOAuthAccount {
     user_id: String,
     provider: String,
     subject: String,
-    #[builder(default = "Utc::now()")]
     created_at: DateTime<Utc>,
-    #[builder(default = "Utc::now()")]
-    pub updated_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl PostgresOAuthAccount {
@@ -332,7 +391,7 @@ impl PostgresOAuthAccount {
 
     pub fn new(user_id: UserId, provider: impl Into<String>, subject: impl Into<String>) -> Self {
         PostgresOAuthAccountBuilder::default()
-            .user_id(user_id.into_inner())
+            .user_id(user_id)
             .provider(provider.into())
             .subject(subject.into())
             .build()
@@ -360,7 +419,7 @@ impl From<PostgresOAuthAccount> for OAuthAccount {
 impl From<OAuthAccount> for PostgresOAuthAccount {
     fn from(oauth_account: OAuthAccount) -> Self {
         PostgresOAuthAccount::builder()
-            .user_id(oauth_account.user_id.into_inner())
+            .user_id(oauth_account.user_id)
             .provider(oauth_account.provider)
             .subject(oauth_account.subject)
             .created_at(oauth_account.created_at)

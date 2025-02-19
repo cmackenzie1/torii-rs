@@ -13,9 +13,10 @@
 //! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
 //! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
 use chrono::{DateTime, Utc};
-use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::Error;
 
 /// A unique, stable identifier for a specific user
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -69,29 +70,24 @@ impl std::fmt::Display for UserId {
 ///
 /// Many of these fields are optional, as they may not be available from the authentication provider,
 /// or may not be known at the time of authentication.
-#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     // The unique identifier for the user.
-    #[builder(default = "UserId::new_random()")]
     pub id: UserId,
 
     // The name of the user.
-    #[builder(default = "None")]
     pub name: Option<String>,
 
     // The email of the user.
     pub email: String,
 
     // The email verified at timestamp. If the user has not verified their email, this will be None.
-    #[builder(default = "None")]
     pub email_verified_at: Option<DateTime<Utc>>,
 
     // The created at timestamp.
-    #[builder(default = "chrono::Utc::now()")]
     pub created_at: DateTime<Utc>,
 
     // The updated at timestamp.
-    #[builder(default = "chrono::Utc::now()")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -101,7 +97,63 @@ impl User {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[derive(Default)]
+pub struct UserBuilder {
+    id: Option<UserId>,
+    name: Option<String>,
+    email: Option<String>,
+    email_verified_at: Option<DateTime<Utc>>,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
+}
+
+impl UserBuilder {
+    pub fn id(mut self, id: UserId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn email(mut self, email: String) -> Self {
+        self.email = Some(email);
+        self
+    }
+
+    pub fn email_verified_at(mut self, email_verified_at: Option<DateTime<Utc>>) -> Self {
+        self.email_verified_at = email_verified_at;
+        self
+    }
+
+    pub fn created_at(mut self, created_at: DateTime<Utc>) -> Self {
+        self.created_at = Some(created_at);
+        self
+    }
+
+    pub fn updated_at(mut self, updated_at: DateTime<Utc>) -> Self {
+        self.updated_at = Some(updated_at);
+        self
+    }
+
+    pub fn build(self) -> Result<User, Error> {
+        let now = Utc::now();
+        Ok(User {
+            id: self.id.unwrap_or(UserId::new_random()),
+            name: self.name,
+            email: self
+                .email
+                .ok_or(Error::ValidationError("Email is required".to_string()))?,
+            email_verified_at: self.email_verified_at,
+            created_at: self.created_at.unwrap_or(now),
+            updated_at: self.updated_at.unwrap_or(now),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthAccount {
     pub user_id: UserId,
     pub provider: String,
@@ -113,6 +165,59 @@ pub struct OAuthAccount {
 impl OAuthAccount {
     pub fn builder() -> OAuthAccountBuilder {
         OAuthAccountBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct OAuthAccountBuilder {
+    user_id: Option<UserId>,
+    provider: Option<String>,
+    subject: Option<String>,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
+}
+
+impl OAuthAccountBuilder {
+    pub fn user_id(mut self, user_id: UserId) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn provider(mut self, provider: String) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    pub fn subject(mut self, subject: String) -> Self {
+        self.subject = Some(subject);
+        self
+    }
+
+    pub fn created_at(mut self, created_at: DateTime<Utc>) -> Self {
+        self.created_at = Some(created_at);
+        self
+    }
+
+    pub fn updated_at(mut self, updated_at: DateTime<Utc>) -> Self {
+        self.updated_at = Some(updated_at);
+        self
+    }
+
+    pub fn build(self) -> Result<OAuthAccount, Error> {
+        let now = Utc::now();
+        Ok(OAuthAccount {
+            user_id: self
+                .user_id
+                .ok_or(Error::ValidationError("User ID is required".to_string()))?,
+            provider: self
+                .provider
+                .ok_or(Error::ValidationError("Provider is required".to_string()))?,
+            subject: self
+                .subject
+                .ok_or(Error::ValidationError("Subject is required".to_string()))?,
+            created_at: self.created_at.unwrap_or(now),
+            updated_at: self.updated_at.unwrap_or(now),
+        })
     }
 }
 

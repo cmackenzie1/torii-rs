@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
-use derive_builder::Builder;
 use sqlx::SqlitePool;
 use std::time::Duration;
 use torii_core::session::SessionId;
@@ -209,6 +208,9 @@ pub struct SqliteSession {
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
 }
 
 impl From<SqliteSession> for Session {
@@ -218,6 +220,9 @@ impl From<SqliteSession> for Session {
             .user_id(UserId::new(&session.user_id))
             .user_agent(session.user_agent)
             .ip_address(session.ip_address)
+            .created_at(session.created_at)
+            .updated_at(session.updated_at)
+            .expires_at(session.expires_at)
             .build()
             .unwrap()
     }
@@ -230,6 +235,9 @@ impl From<Session> for SqliteSession {
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+            expires_at: session.expires_at,
         }
     }
 }
@@ -313,16 +321,13 @@ impl SessionStorage for SqliteStorage {
     }
 }
 
-#[derive(Debug, Clone, sqlx::FromRow, Builder)]
-#[builder(pattern = "owned")]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SqliteOAuthAccount {
     user_id: String,
     provider: String,
     subject: String,
-    #[builder(default = "Utc::now()")]
     created_at: DateTime<Utc>,
-    #[builder(default = "Utc::now()")]
-    pub updated_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl SqliteOAuthAccount {
@@ -332,7 +337,7 @@ impl SqliteOAuthAccount {
 
     pub fn new(user_id: UserId, provider: impl Into<String>, subject: impl Into<String>) -> Self {
         SqliteOAuthAccountBuilder::default()
-            .user_id(user_id.into_inner())
+            .user_id(user_id)
             .provider(provider.into())
             .subject(subject.into())
             .build()
@@ -360,13 +365,59 @@ impl From<SqliteOAuthAccount> for OAuthAccount {
 impl From<OAuthAccount> for SqliteOAuthAccount {
     fn from(oauth_account: OAuthAccount) -> Self {
         SqliteOAuthAccount::builder()
-            .user_id(oauth_account.user_id.into_inner())
+            .user_id(oauth_account.user_id)
             .provider(oauth_account.provider)
             .subject(oauth_account.subject)
             .created_at(oauth_account.created_at)
             .updated_at(oauth_account.updated_at)
             .build()
             .expect("Default builder should never fail")
+    }
+}
+
+#[derive(Default)]
+pub struct SqliteOAuthAccountBuilder {
+    user_id: Option<UserId>,
+    provider: Option<String>,
+    subject: Option<String>,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
+}
+
+impl SqliteOAuthAccountBuilder {
+    pub fn user_id(mut self, user_id: UserId) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn provider(mut self, provider: impl Into<String>) -> Self {
+        self.provider = Some(provider.into());
+        self
+    }
+
+    pub fn subject(mut self, subject: impl Into<String>) -> Self {
+        self.subject = Some(subject.into());
+        self
+    }
+
+    pub fn created_at(mut self, created_at: DateTime<Utc>) -> Self {
+        self.created_at = Some(created_at);
+        self
+    }
+
+    pub fn updated_at(mut self, updated_at: DateTime<Utc>) -> Self {
+        self.updated_at = Some(updated_at);
+        self
+    }
+
+    pub fn build(self) -> Result<SqliteOAuthAccount, Error> {
+        Ok(SqliteOAuthAccount {
+            user_id: self.user_id.unwrap().into_inner(),
+            provider: self.provider.unwrap(),
+            subject: self.subject.unwrap(),
+            created_at: self.created_at.unwrap_or_default(),
+            updated_at: self.updated_at.unwrap_or_default(),
+        })
     }
 }
 

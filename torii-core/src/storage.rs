@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::{session::SessionId, Error, OAuthAccount, Session, User, UserId};
@@ -136,15 +135,11 @@ impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
-#[builder(pattern = "owned")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewUser {
-    #[builder(default = "UserId::new_random()")]
     pub id: UserId,
     pub email: String,
-    #[builder(default = "None")]
     pub name: Option<String>,
-    #[builder(default = "None")]
     pub email_verified_at: Option<DateTime<Utc>>,
 }
 
@@ -166,5 +161,46 @@ impl NewUser {
             .email(email)
             .build()
             .expect("Default builder should never fail")
+    }
+}
+
+#[derive(Default)]
+pub struct NewUserBuilder {
+    id: Option<UserId>,
+    email: Option<String>,
+    name: Option<String>,
+    email_verified_at: Option<DateTime<Utc>>,
+}
+
+impl NewUserBuilder {
+    pub fn id(mut self, id: UserId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn email(mut self, email: String) -> Self {
+        self.email = Some(email);
+        self
+    }
+
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    pub fn email_verified_at(mut self, email_verified_at: DateTime<Utc>) -> Self {
+        self.email_verified_at = Some(email_verified_at);
+        self
+    }
+
+    pub fn build(self) -> Result<NewUser, Error> {
+        Ok(NewUser {
+            id: self.id.unwrap_or(UserId::new_random()),
+            email: self
+                .email
+                .ok_or(Error::ValidationError("Email is required".to_string()))?,
+            name: self.name,
+            email_verified_at: self.email_verified_at,
+        })
     }
 }

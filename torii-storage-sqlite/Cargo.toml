@@ -9,7 +9,6 @@ license.workspace = true
 torii-core = { path = "../torii-core" }
 async-trait.workspace = true
 chrono.workspace = true
-derive_builder.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
 thiserror.workspace = true
 tracing.workspace = true
