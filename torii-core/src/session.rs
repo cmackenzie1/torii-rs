@@ -93,6 +93,10 @@ impl Session {
     pub fn builder() -> SessionBuilder {
         SessionBuilder::default()
     }
+
+    pub fn is_expired(&self) -> bool {
+        Utc::now() > self.expires_at
+    }
 }
 
 #[derive(Default)]
