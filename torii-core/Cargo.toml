@@ -9,7 +9,6 @@ license.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
-derive_builder.workspace = true
 downcast-rs = "2.0.1"
 futures.workspace = true
 serde.workspace = true

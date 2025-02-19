@@ -37,6 +37,10 @@ pub enum Error {
     // Storage errors
     #[error("Storage error: {0}")]
     Storage(String),
+
+    // Validation errors
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }
 
 impl Error {

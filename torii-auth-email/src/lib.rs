@@ -203,9 +203,7 @@ where
 
     async fn authenticate(&self, credentials: &Credentials) -> Result<(User, Session), Error> {
         match credentials {
-            Credentials::EmailPassword { email, password } => {
-                self.login_user(email, password).await
-            }
+            Credentials::Password { email, password } => self.login_user(email, password).await,
             _ => Err(Error::InvalidCredentials),
         }
     }
