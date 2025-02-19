@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::json;
 use torii_auth_email::EmailPasswordPlugin;
 use torii_core::{session::SessionId, User};
+use torii_storage_sqlite::SqliteStorage;
 use uuid::Uuid;
 
 use crate::{
@@ -164,17 +165,10 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin>("email_password")
+        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin
-        .create_user(
-            state.plugin_manager.storage(),
-            &params.email,
-            &params.password,
-        )
-        .await
-    {
+    match plugin.create_user(&params.email, &params.password).await {
         Ok(_) => (
             StatusCode::OK,
             Json(json!({ "message": "Successfully signed up" })),
@@ -201,17 +195,10 @@ async fn sign_in_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin>("email_password")
+        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin
-        .login_user(
-            state.plugin_manager.storage(),
-            &params.email,
-            &params.password,
-        )
-        .await
-    {
+    match plugin.login_user(&params.email, &params.password).await {
         Ok((_, session)) => {
             let cookie = Cookie::build(("session_id", session.id.to_string()))
                 .path("/")

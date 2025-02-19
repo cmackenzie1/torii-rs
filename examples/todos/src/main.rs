@@ -2,7 +2,7 @@ use dashmap::DashMap;
 use sqlx::{Pool, Sqlite};
 use std::sync::Arc;
 use torii_auth_email::EmailPasswordPlugin;
-use torii_core::plugin::PluginManager;
+use torii_core::{plugin::PluginManager, storage::Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 mod routes;
@@ -44,12 +44,10 @@ async fn main() {
         .await
         .expect("Failed to migrate session storage");
 
+    let storage = Storage::new(user_storage.clone(), session_storage.clone());
+
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(EmailPasswordPlugin::new());
-    plugin_manager
-        .setup()
-        .await
-        .expect("Failed to setup plugin manager");
+    plugin_manager.register(EmailPasswordPlugin::new(storage));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {
