@@ -470,38 +470,39 @@ impl OAuthStorage for PostgresStorage {
         Ok(oauth_account.into())
     }
 
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error> {
-        let nonce: Option<String> =
-            sqlx::query_scalar("SELECT value FROM nonces WHERE id::text = $1")
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "Failed to get nonce");
-                    Self::Error::Storage("Failed to get nonce".to_string())
-                })?;
-
-        Ok(nonce)
-    }
-
-    async fn save_nonce(
+    async fn store_pkce_verifier(
         &self,
-        id: &str,
-        value: &str,
-        expires_at: &DateTime<Utc>,
+        csrf_state: &str,
+        pkce_verifier: &str,
+        expires_in: Duration,
     ) -> Result<(), Self::Error> {
-        sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES ($1::text, $2, $3)")
-            .bind(id)
-            .bind(value)
-            .bind(expires_at)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to save nonce");
-                Self::Error::Storage("Failed to save nonce".to_string())
-            })?;
+        sqlx::query(
+            "INSERT INTO nonces (id, value, expires_at) VALUES ($1::text, $2, $3) RETURNING value",
+        )
+        .bind(csrf_state)
+        .bind(pkce_verifier)
+        .bind(Utc::now() + expires_in)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to get nonce");
+            Self::Error::Storage("Failed to get nonce".to_string())
+        })?;
 
         Ok(())
+    }
+
+    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error> {
+        let nonce = sqlx::query_scalar("SELECT value FROM nonces WHERE id::text = $1")
+            .bind(csrf_state)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to get nonce");
+                Self::Error::Storage("Failed to get nonce".to_string())
+            })?;
+
+        Ok(nonce)
     }
 
     async fn get_oauth_account_by_provider_and_subject(

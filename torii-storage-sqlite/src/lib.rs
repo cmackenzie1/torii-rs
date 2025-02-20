@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
@@ -397,34 +399,35 @@ impl OAuthStorage for SqliteStorage {
         Ok(oauth_account.into())
     }
 
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error> {
-        let nonce: Option<String> = sqlx::query_scalar("SELECT value FROM nonces WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get nonce");
-                Self::Error::Storage("Failed to get nonce".to_string())
-            })?;
+    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error> {
+        let pkce_verifier: Option<String> =
+            sqlx::query_scalar("SELECT value FROM nonces WHERE id = ?")
+                .bind(csrf_state)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "Failed to get pkce verifier");
+                    Self::Error::Storage("Failed to get pkce verifier".to_string())
+                })?;
 
-        Ok(nonce)
+        Ok(pkce_verifier)
     }
 
-    async fn save_nonce(
+    async fn store_pkce_verifier(
         &self,
-        id: &str,
-        value: &str,
-        expires_at: &DateTime<Utc>,
+        csrf_state: &str,
+        pkce_verifier: &str,
+        expires_in: Duration,
     ) -> Result<(), Self::Error> {
         sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
-            .bind(id)
-            .bind(value)
-            .bind(expires_at)
+            .bind(csrf_state)
+            .bind(pkce_verifier)
+            .bind(Utc::now() + expires_in)
             .execute(&self.pool)
             .await
             .map_err(|e| {
-                tracing::error!(error = %e, "Failed to save nonce");
-                Self::Error::Storage("Failed to save nonce".to_string())
+                tracing::error!(error = %e, "Failed to save pkce verifier");
+                Self::Error::Storage("Failed to save pkce verifier".to_string())
             })?;
 
         Ok(())
