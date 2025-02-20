@@ -1,5 +1,9 @@
 # RFC 0001: Plugin Event System
 
+| Date       | Author       | Status         |
+| ---------- | ------------ | -------------- |
+| 2025-02-19 | @cmackenzie1 | ✅ Implemented |
+
 ## Summary
 
 Add an event system to enable loose coupling between plugins while allowing them to react to actions performed by other plugins.
@@ -17,29 +21,15 @@ Currently, plugins operate in isolation and have no way to coordinate or react t
 
 ### Event Types
 
+The following events are currently implemented:
+
 ```rust
-pub enum PluginEvent {
-    UserCreated {
-        user: User,
-        source: String,
-    },
-    UserAuthenticated {
-        user: User,
-        session: Session,
-        source: String,
-    },
-    UserDeleted {
-        user_id: UserId,
-        source: String,
-    },
-    SessionCreated {
-        session: Session,
-        source: String,
-    },
-    SessionRevoked {
-        session_id: String,
-        source: String,
-    },
+pub enum Event {
+    UserCreated(User),
+    UserUpdated(User),
+    UserDeleted(UserId),
+    SessionCreated(UserId, Session),
+    SessionDeleted(UserId, SessionId),
 }
 ```
 
@@ -47,65 +37,63 @@ pub enum PluginEvent {
 
 ```rust
 #[async_trait]
-pub trait EventHandler: Send + Sync {
-    async fn handle_event(&self, event: PluginEvent) -> Result<(), Error>;
+pub trait EventHandler: Send + Sync + 'static {
+    async fn handle_event(&self, event: &Event) -> Result<(), Error>;
 }
 ```
 
-### Plugin Trait Extension
+### Event Bus
 
-The `Plugin` trait will be extended to include event handling capabilities:
+The event bus manages event handlers and event distribution:
 
 ```rust
-#[async_trait]
-pub trait Plugin<U: UserStorage, S: SessionStorage>: EventHandler + Any + Send + Sync + DowncastSync {
-    // Existing methods...
+pub struct EventBus {
+    handlers: Arc<RwLock<Vec<Arc<dyn EventHandler>>>>,
+}
 
-    async fn emit_event(&self, manager: &PluginManager<U, S>, event: PluginEvent)
-        -> Result<(), Error>;
+impl EventBus {
+    pub fn new() -> Self;
+    pub async fn register(&self, handler: Arc<dyn EventHandler>);
+    pub async fn emit(&self, event: &Event) -> Result<(), Error>;
 }
 ```
 
 ## Examples
 
-### Email Password Plugin
+### Implementing an Event Handler
 
 ```rust
-impl EmailPasswordPlugin {
-    pub async fn login_user(...) -> Result<(User, Session), Error> {
-        // ... login logic ...
+struct MyHandler;
 
-        self.emit_event(
-            manager,
-            PluginEvent::UserAuthenticated {
-                user: user.clone(),
-                session: session.clone(),
-                source: self.name().to_string(),
-            },
-        ).await?;
-
-        Ok((user, session))
-    }
-}
-```
-
-### OAuth Plugin
-
-```rust
-impl EventHandler for OAuthPlugin {
-    async fn handle_event(&self, event: PluginEvent) -> Result<(), Error> {
+#[async_trait]
+impl EventHandler for MyHandler {
+    async fn handle_event(&self, event: &Event) -> Result<(), Error> {
         match event {
-            PluginEvent::UserAuthenticated { user, source, .. } => {
-                if source != self.name() {
-                    tracing::info!("User {} authenticated via {}", user.email, source);
-                    // Opportunity to link accounts or update records
-                }
+            Event::UserCreated(user) => {
+                // Handle user creation
                 Ok(())
             }
+            // Handle other events...
             _ => Ok(()),
         }
     }
 }
+
+// Register the handler
+let event_bus = EventBus::new();
+event_bus.register(Arc::new(MyHandler)).await;
+```
+
+### Emitting Events
+
+```rust
+let event_bus = EventBus::new();
+let user = User::builder()
+    .id(UserId::new("test"))
+    .email("test@example.com")
+    .build()?;
+
+event_bus.emit(&Event::UserCreated(user)).await?;
 ```
 
 ## Benefits
@@ -115,69 +103,41 @@ impl EventHandler for OAuthPlugin {
 3. **Observability**: Easy to monitor and log inter-plugin interactions
 4. **Flexibility**: Plugins can choose which events to handle
 5. **Async Support**: All event handling is async-compatible
+6. **Thread Safety**: Event bus is thread-safe using `Arc` and `RwLock`
 
-## Use Cases
+### Current Features
 
-1. **Account Linking**
+- User lifecycle events (created, updated, deleted)
+- Session lifecycle events (created, deleted)
+- Async event handling
+- Error propagation
+- Thread-safe handler management
 
-   - Link OAuth accounts with email accounts
-   - Merge user data from different auth methods
+### Known Limitations
 
-2. **Audit Logging**
+1. Events are not currently persisted
+2. No event filtering mechanism
+3. Events are processed sequentially
+4. No replay capability
+5. No way to unregister handlers
 
-   - Track authentication events across plugins
-   - Monitor security-relevant actions
+## Future Work
 
-3. **Data Consistency**
-
-   - Clean up plugin-specific data when users are deleted
-   - Synchronize user data across plugins
-
-4. **Analytics**
-   - Track authentication patterns
-   - Monitor plugin usage
-
-## Implementation Notes
-
-1. Events are broadcast to all plugins
-2. Event handling errors are collected and reported
-3. Events include source plugin information
-4. All event handling is asynchronous
-5. Events are cloneable and serializable
-
-## Future Considerations
-
-1. Event filtering/routing
-2. Event persistence
-3. Event replay capabilities
-4. Plugin-specific event types
-5. Event versioning
+1. Add event persistence layer
+2. Implement event filtering
+3. Add parallel event processing
+4. Support event replay for recovery
+5. Add handler unregistration
+6. Consider adding more granular events
+7. Add event metadata (timestamp, correlation ID)
 
 ## Questions
 
 1. Should events be persisted?
 2. How to handle event versioning?
-3. Should plugins be able to cancel/modify events?
+3. Should we add handler priorities?
 4. How to handle event ordering?
-
-## Alternatives Considered
-
-1. **Direct Plugin Communication**
-
-   - More tightly coupled
-   - More difficult to maintain
-   - Less flexible
-
-2. **Shared State**
-
-   - More complex
-   - Potential race conditions
-   - Less clear ownership
-
-3. **No Inter-plugin Communication**
-   - Limited functionality
-   - Duplicate implementation
-   - Poor user experience
+5. Should we add handler unregistration?
 
 ## References
 
