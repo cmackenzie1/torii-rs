@@ -41,6 +41,10 @@ pub enum Error {
     // Validation errors
     #[error("Validation error: {0}")]
     ValidationError(String),
+
+    // Event errors
+    #[error("Event bus error: {0}")]
+    EventBus(String),
 }
 
 impl Error {

@@ -10,6 +10,7 @@
 //!
 pub mod auth;
 pub mod error;
+pub mod events;
 pub mod plugin;
 pub mod session;
 pub mod storage;

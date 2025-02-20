@@ -5,7 +5,10 @@ use openidconnect::{
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
     TokenResponse,
 };
-use torii_core::storage::OAuthStorage;
+use torii_core::{
+    events::{Event, EventBus},
+    storage::OAuthStorage,
+};
 use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
 use uuid::Uuid;
 
@@ -49,6 +52,9 @@ pub struct OAuthPlugin {
 
     /// The redirect uri.
     redirect_uri: String,
+
+    /// The event bus.
+    event_bus: Option<EventBus>,
 }
 
 pub struct OAuthPluginBuilder {
@@ -58,6 +64,7 @@ pub struct OAuthPluginBuilder {
     redirect_uri: String,
     issuer_url: String,
     scopes: Vec<String>,
+    event_bus: Option<EventBus>,
 }
 
 impl OAuthPluginBuilder {
@@ -69,6 +76,7 @@ impl OAuthPluginBuilder {
             redirect_uri: String::new(),
             issuer_url: String::new(),
             scopes: vec!["email".to_string(), "profile".to_string()],
+            event_bus: None,
         }
     }
 
@@ -97,6 +105,11 @@ impl OAuthPluginBuilder {
         self
     }
 
+    pub fn event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = Some(event_bus);
+        self
+    }
+
     pub fn build(self) -> OAuthPlugin {
         OAuthPlugin {
             provider: self.provider,
@@ -105,6 +118,7 @@ impl OAuthPluginBuilder {
             redirect_uri: self.redirect_uri,
             issuer_url: self.issuer_url,
             scopes: self.scopes,
+            event_bus: self.event_bus,
         }
     }
 }
@@ -156,7 +170,13 @@ impl OAuthPlugin {
             redirect_uri,
             issuer_url,
             scopes,
+            event_bus: None,
         }
+    }
+
+    pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     pub fn google(client_id: String, client_secret: String, redirect_uri: String) -> Self {
@@ -321,6 +341,8 @@ impl OAuthPlugin {
             "Successfully created session for authenticated user"
         );
 
+        self.emit_event(&Event::UserCreated(user.clone())).await?;
+
         Ok(user)
     }
 
@@ -440,7 +462,20 @@ impl OAuthPlugin {
             .await
             .map_err(|_| Error::InternalServerError)?;
 
+        self.emit_event(&Event::SessionCreated(
+            session.user_id.clone(),
+            session.clone(),
+        ))
+        .await?;
+
         Ok((user, session))
+    }
+
+    async fn emit_event(&self, event: &Event) -> Result<(), Error> {
+        if let Some(event_bus) = &self.event_bus {
+            event_bus.emit(event).await?;
+        }
+        Ok(())
     }
 }
 

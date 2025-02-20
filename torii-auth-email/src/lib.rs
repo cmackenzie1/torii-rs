@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::auth::{AuthPlugin, Credentials};
+use torii_core::events::{Event, EventBus};
 use torii_core::storage::{EmailPasswordStorage, Storage};
 use torii_core::Plugin;
 use torii_core::{
@@ -27,6 +28,7 @@ where
     S: SessionStorage<Error = Error>,
 {
     storage: Storage<U, S>,
+    event_bus: Option<EventBus>,
 }
 
 impl<U, S> EmailPasswordPlugin<U, S>
@@ -35,7 +37,15 @@ where
     S: SessionStorage<Error = Error>,
 {
     pub fn new(storage: Storage<U, S>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            event_bus: None,
+        }
+    }
+
+    pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 }
 
@@ -95,6 +105,8 @@ where
             "Created user",
         );
 
+        self.emit_event(&Event::UserCreated(user.clone())).await?;
+
         Ok(user)
     }
 
@@ -107,6 +119,14 @@ where
         if !is_valid_password(new_password) {
             return Err(Error::WeakPassword);
         }
+
+        let user = self
+            .storage
+            .user_storage()
+            .get_user(user_id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?
+            .ok_or(Error::UserNotFound)?;
 
         let stored_hash = self
             .storage
@@ -140,6 +160,8 @@ where
             user.id = %user_id,
             "Changed user password",
         );
+
+        self.emit_event(&Event::UserUpdated(user)).await?;
 
         Ok(())
     }
@@ -175,7 +197,17 @@ where
             .await
             .map_err(|e| Error::Storage(e.to_string()))?;
 
+        self.emit_event(&Event::SessionCreated(user.id.clone(), session.clone()))
+            .await?;
+
         Ok((user, session))
+    }
+
+    async fn emit_event(&self, event: &Event) -> Result<(), Error> {
+        if let Some(event_bus) = &self.event_bus {
+            event_bus.emit(event).await?;
+        }
+        Ok(())
     }
 }
 
@@ -233,8 +265,11 @@ where
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
-    use std::sync::Arc;
-    use torii_core::PluginManager;
+    use std::sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    };
+    use torii_core::{events::EventHandler, PluginManager};
     use torii_storage_sqlite::SqliteStorage;
 
     async fn setup_plugin() -> Result<(PluginManager<SqliteStorage, SqliteStorage>,), Error> {
@@ -458,5 +493,86 @@ mod tests {
         assert!(matches!(result, Err(Error::InvalidCredentials)));
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_event_handler_emitting() -> Result<(), Error> {
+        let _ = tracing_subscriber::fmt().try_init();
+        // Setup test environment
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create pool");
+        let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+        let session_storage = Arc::new(SqliteStorage::new(pool));
+
+        user_storage.migrate().await.unwrap();
+        session_storage.migrate().await.unwrap();
+
+        let storage = Storage::new(user_storage.clone(), session_storage.clone());
+        let mut manager = PluginManager::new(user_storage, session_storage);
+
+        // Setup event bus and plugin
+        let event_bus = EventBus::new();
+        let plugin = EmailPasswordPlugin::new(storage).with_event_bus(event_bus.clone());
+        manager.register(plugin);
+
+        // Setup event handler
+        let called = Arc::new(AtomicBool::new(false));
+        let count = Arc::new(AtomicUsize::new(0));
+        let handler = TestEventHandler {
+            called: called.clone(),
+            call_count: count.clone(),
+        };
+        event_bus.register(Arc::new(handler)).await;
+
+        let plugin = manager
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .expect("Plugin should exist");
+
+        // Test user creation event
+        let user = plugin.create_user("test@example.com", "password").await?;
+        assert!(
+            called.load(Ordering::SeqCst),
+            "Handler was not called for user creation"
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+
+        // Test user update event (password change)
+        called.store(false, Ordering::SeqCst);
+        plugin
+            .change_password(&user.id, "password", "new-password")
+            .await?;
+        assert!(
+            called.load(Ordering::SeqCst),
+            "Handler was not called for password change"
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+
+        // Test session creation event
+        called.store(false, Ordering::SeqCst);
+        plugin
+            .login_user("test@example.com", "new-password")
+            .await?;
+        assert!(
+            called.load(Ordering::SeqCst),
+            "Handler was not called for login"
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+
+        Ok(())
+    }
+
+    struct TestEventHandler {
+        called: Arc<AtomicBool>,
+        call_count: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl EventHandler for TestEventHandler {
+        async fn handle(&self, _event: &Event) -> Result<(), Error> {
+            self.called.store(true, Ordering::SeqCst);
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
     }
 }
