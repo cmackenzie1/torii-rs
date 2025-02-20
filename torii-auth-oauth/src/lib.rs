@@ -1,19 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
-use chrono::{Duration, Utc};
-use openidconnect::{
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
-    AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, RedirectUrl, Scope,
-    TokenResponse,
+use oauth2::{
+    basic::BasicClient, reqwest, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
+
 use torii_core::{
     events::{Event, EventBus},
     storage::OAuthStorage,
     AuthPlugin, AuthResponse, Credentials,
 };
 use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
-use uuid::Uuid;
 
 /// The core oauth plugin struct, responsible for handling oauth authentication flow.
 ///
@@ -39,26 +37,29 @@ use uuid::Uuid;
 ///     "http://localhost:8080/callback".to_string(),
 /// );
 /// ```
-pub struct OAuthPlugin<U: OAuthStorage, S: SessionStorage> {
+#[derive(Clone)]
+pub struct OAuthConfig {
     /// The provider name. i.e. "google"
     pub provider: String,
-    /// The issuer URL for the oauth provider
-    pub issuer_url: String,
     /// The scopes to request from the provider
     pub scopes: Vec<String>,
-
     /// The client id.
-    client_id: String,
-
+    pub client_id: String,
     /// The client secret.
-    client_secret: String,
-
+    pub client_secret: String,
     /// The redirect uri.
-    redirect_uri: String,
+    pub redirect_uri: String,
+    /// The authorization url.
+    pub auth_url: String,
+    /// The token url.
+    pub token_url: String,
+}
 
+pub struct OAuthPlugin<U: OAuthStorage, S: SessionStorage> {
+    /// The plugin configuration
+    config: OAuthConfig,
     /// The storage instance.
     storage: Storage<U, S>,
-
     /// The event bus.
     event_bus: Option<EventBus>,
 }
@@ -69,7 +70,7 @@ where
     S: SessionStorage,
 {
     fn name(&self) -> String {
-        self.provider.clone()
+        self.config.provider.clone()
     }
 }
 
@@ -78,7 +79,8 @@ pub struct OAuthPluginBuilder<U: OAuthStorage, S: SessionStorage> {
     client_id: String,
     client_secret: String,
     redirect_uri: String,
-    issuer_url: String,
+    auth_url: String,
+    token_url: String,
     scopes: Vec<String>,
     event_bus: Option<EventBus>,
     storage: Storage<U, S>,
@@ -95,7 +97,8 @@ where
             client_id: String::new(),
             client_secret: String::new(),
             redirect_uri: String::new(),
-            issuer_url: String::new(),
+            auth_url: String::new(),
+            token_url: String::new(),
             scopes: vec!["email".to_string(), "profile".to_string()],
             event_bus: None,
             storage,
@@ -117,13 +120,23 @@ where
         self
     }
 
-    pub fn issuer_url(mut self, issuer_url: impl Into<String>) -> Self {
-        self.issuer_url = issuer_url.into();
+    pub fn auth_url(mut self, auth_url: impl Into<String>) -> Self {
+        self.auth_url = auth_url.into();
+        self
+    }
+
+    pub fn token_url(mut self, token_url: impl Into<String>) -> Self {
+        self.token_url = token_url.into();
         self
     }
 
     pub fn add_scope(mut self, scope: impl Into<String>) -> Self {
         self.scopes.push(scope.into());
+        self
+    }
+
+    pub fn add_scopes(mut self, scopes: impl Into<Vec<String>>) -> Self {
+        self.scopes.extend(scopes.into());
         self
     }
 
@@ -134,12 +147,15 @@ where
 
     pub fn build(self) -> OAuthPlugin<U, S> {
         OAuthPlugin {
-            provider: self.provider,
-            client_id: self.client_id,
-            client_secret: self.client_secret,
-            redirect_uri: self.redirect_uri,
-            issuer_url: self.issuer_url,
-            scopes: self.scopes,
+            config: OAuthConfig {
+                provider: self.provider,
+                client_id: self.client_id,
+                client_secret: self.client_secret,
+                redirect_uri: self.redirect_uri,
+                auth_url: self.auth_url,
+                token_url: self.token_url,
+                scopes: self.scopes,
+            },
             event_bus: self.event_bus,
             storage: self.storage,
         }
@@ -153,9 +169,6 @@ where
 pub struct AuthFlowBegin {
     /// The CSRF state. This value is used to prevent CSRF attacks and may be stored in a cookie.
     pub csrf_state: String,
-
-    /// The nonce key. This value is used to prevent replay attacks and may be stored in a cookie.
-    pub nonce_key: String,
 
     /// The authorization uri. This is the uri that the user will be redirected to begin the authorization flow with the external provider.
     pub authorization_uri: String,
@@ -182,22 +195,9 @@ where
         OAuthPluginBuilder::new(provider, storage)
     }
 
-    pub fn new(
-        provider: String,
-        client_id: String,
-        client_secret: String,
-        redirect_uri: String,
-        issuer_url: String,
-        scopes: Vec<String>,
-        storage: Storage<U, S>,
-    ) -> Self {
+    pub fn new(config: OAuthConfig, storage: Storage<U, S>) -> Self {
         Self {
-            provider,
-            client_id,
-            client_secret,
-            redirect_uri,
-            issuer_url,
-            scopes,
+            config,
             event_bus: None,
             storage,
         }
@@ -218,7 +218,8 @@ where
             .client_id(client_id)
             .client_secret(client_secret)
             .redirect_uri(redirect_uri)
-            .issuer_url("https://accounts.google.com")
+            .auth_url("https://accounts.google.com/o/oauth2/v2/auth")
+            .token_url("https://www.googleapis.com/oauth2/v3/token")
             .build()
     }
 }
@@ -231,74 +232,59 @@ where
     /// Begin the authentication process by generating a new CSRF state and redirecting the user to the provider's authorization URL.
     ///
     /// This method is the first step in the oauth authorization code flow. It will:
-    /// 1. Generate a CSRF token and nonce for security
-    /// 2. Store the nonce in the database for later verification
-    /// 3. Generate the authorization URL to redirect the user to
-    ///
-    /// # Arguments
-    /// * `pool` - The database connection pool for storing the nonce
-    /// * `redirect_uri` - The URI where the provider should redirect back to after authentication
+    /// 1. Generate a CSRF token for security
+    /// 2. Generate the authorization URL to redirect the user to
     ///
     /// # Returns
     /// Returns an `AuthFlowBegin` containing:
     /// * The CSRF state to prevent cross-site request forgery
-    /// * A nonce key for preventing replay attacks
     /// * The authorization URI to redirect the user to
     ///
     /// # Errors
     /// Returns an error if:
     /// * The provider metadata discovery fails
-    /// * The nonce cannot be stored in the database
     /// * The HTTP client cannot be created
-    pub async fn begin_auth(&self, redirect_uri: String) -> Result<AuthFlowBegin, Error> {
-        let http_client = openidconnect::reqwest::ClientBuilder::new()
-            .build()
-            .map_err(|_| Error::InternalServerError)?;
+    pub async fn begin_auth(&self) -> Result<AuthFlowBegin, Error> {
+        // Create an OAuth2 client by specifying the client ID, client secret, authorization URL and
+        // token URL.
+        let client = BasicClient::new(ClientId::new(self.config.client_id.clone()))
+            .set_client_secret(ClientSecret::new(self.config.client_secret.clone()))
+            .set_auth_uri(AuthUrl::new(self.config.auth_url.clone()).expect("Invalid auth URL"))
+            .set_token_uri(TokenUrl::new(self.config.token_url.clone()).expect("Invalid token URL"))
+            // Set the URL the user will be redirected to after the authorization process.
+            .set_redirect_uri(
+                RedirectUrl::new(self.config.redirect_uri.clone()).expect("Invalid redirect URI"),
+            );
 
-        let provider_metadata = CoreProviderMetadata::discover_async(
-            IssuerUrl::new(self.issuer_url.clone()).unwrap(),
-            &http_client,
-        )
-        .await
-        .map_err(|_| Error::InternalServerError)?;
+        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-        let oauth_client = CoreClient::from_provider_metadata(
-            provider_metadata,
-            ClientId::new(self.client_id.clone()),
-            Some(ClientSecret::new(self.client_secret.clone())),
-        )
-        .set_redirect_uri(RedirectUrl::new(redirect_uri).unwrap());
-
-        let (auth_url, csrf_token, nonce) = oauth_client
-            .authorize_url(
-                CoreAuthenticationFlow::AuthorizationCode,
-                CsrfToken::new_random,
-                Nonce::new_random,
-            )
+        // Generate the full authorization URL.
+        let (auth_url, csrf_token) = client
+            .authorize_url(CsrfToken::new_random)
             // Set the desired scopes.
-            .add_scope(Scope::new("email".to_string()))
-            .add_scope(Scope::new("profile".to_string()))
+            .add_scopes(
+                self.config
+                    .scopes
+                    .iter()
+                    .map(|s| Scope::new(s.clone()))
+                    .collect::<Vec<_>>(),
+            )
+            // Set the PKCE code challenge.
+            .set_pkce_challenge(pkce_challenge)
             .url();
 
-        tracing::info!(
-            redirect_uri = auth_url.to_string(),
-            "Redirecting to provider"
-        );
-
-        // Store nonce in database
-        let nonce_key = Uuid::new_v4().to_string();
-        let expires_at = Utc::now() + Duration::hours(1);
         self.storage
             .user_storage()
-            .save_nonce(&nonce_key, &nonce.secret().to_string(), &expires_at)
+            .store_pkce_verifier(
+                &csrf_token.secret().to_string(),
+                &pkce_verifier.secret().to_string(),
+                Duration::from_secs(60 * 5),
+            )
             .await
             .map_err(|_| Error::InternalServerError)?;
 
-        tracing::info!(nonce_key = nonce_key.clone(), "Stored nonce in database");
-
         Ok(AuthFlowBegin {
             csrf_state: csrf_token.secret().to_string(),
-            nonce_key: nonce_key.to_string(),
             authorization_uri: auth_url.to_string(),
         })
     }
@@ -317,7 +303,7 @@ where
         let oauth_account = self
             .storage
             .user_storage()
-            .get_oauth_account_by_provider_and_subject(&self.provider, &subject)
+            .get_oauth_account_by_provider_and_subject(&self.config.provider, &subject)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
@@ -355,22 +341,15 @@ where
         // Create link between user and provider
         self.storage
             .user_storage()
-            .create_oauth_account(&self.provider, &subject, &user.id)
+            .create_oauth_account(&self.config.provider, &subject, &user.id)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
         tracing::info!(
             user_id = ?user.id,
-            provider = ?self.provider,
+            provider = ?self.config.provider,
             subject = ?subject,
             "Successfully created link between user and provider"
-        );
-
-        tracing::info!(
-            user_id = ?user.id,
-            provider = ?self.provider,
-            subject = ?subject,
-            "Successfully created session for authenticated user"
         );
 
         self.emit_event(&Event::UserCreated(user.clone())).await?;
@@ -396,93 +375,70 @@ where
     pub async fn callback(
         &self,
         code: String,
-        nonce_key: String,
+        csrf_state: String,
     ) -> Result<(User, Session), Error> {
-        // Create http client for async requests
-        // TODO: move to builder
-        let http_client = openidconnect::reqwest::ClientBuilder::new()
+        // Create an OAuth2 client by specifying the client ID, client secret, authorization URL and
+        // token URL.
+        let client = BasicClient::new(ClientId::new(self.config.client_id.clone()))
+            .set_client_secret(ClientSecret::new(self.config.client_secret.clone()))
+            .set_auth_uri(AuthUrl::new(self.config.auth_url.clone()).expect("Invalid auth URL"))
+            .set_token_uri(TokenUrl::new(self.config.token_url.clone()).expect("Invalid token URL"))
+            // Set the URL the user will be redirected to after the authorization process.
+            .set_redirect_uri(
+                RedirectUrl::new(self.config.redirect_uri.clone()).expect("Invalid redirect URI"),
+            );
+
+        let http_client = reqwest::ClientBuilder::new()
+            // Following redirects opens the client up to SSRF vulnerabilities.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| Error::InternalServerError)?;
+            .expect("Client should build");
 
-        // Discover endpoints using async discover
-        // TODO: Move to builder / init
-        let provider_metadata = CoreProviderMetadata::discover_async(
-            IssuerUrl::new("https://accounts.google.com".to_string()).unwrap(),
-            &http_client,
-        )
-        .await
-        .map_err(|_| Error::InternalServerError)?;
-
-        // Create client from provider metadata
-        // TODO: Move to builder / init
-        let oauth_client = CoreClient::from_provider_metadata(
-            provider_metadata,
-            ClientId::new(self.client_id.clone()),
-            Some(ClientSecret::new(self.client_secret.clone())),
-        )
-        .set_redirect_uri(RedirectUrl::new(self.redirect_uri.clone()).unwrap());
-
-        // Exchange code for token response
-        let token_response = oauth_client
-            .exchange_code(AuthorizationCode::new(code))
-            .map_err(|_| Error::InternalServerError)?
-            .request_async(&http_client)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = ?e,
-                    "Error exchanging code for token response"
-                );
-                Error::InternalServerError
-            })?;
-
-        tracing::info!("Successfully exchanged code for token response");
-
-        // Get id token from token response
-        let id_token = token_response.id_token().ok_or(Error::InvalidCredentials)?;
-
-        tracing::info!("Successfully got id token from token response");
-
-        // Get nonce from database
-        tracing::info!(
-            nonce_key = ?nonce_key,
-            "Attempting to get nonce from database"
-        );
-        let nonce = self
+        let pkce_verifier = self
             .storage
             .user_storage()
-            .get_nonce(&nonce_key)
+            .get_pkce_verifier(&csrf_state)
+            .await
+            .map_err(|_| Error::InternalServerError)?
+            .ok_or(Error::InvalidCredentials)?;
+
+        // Now you can trade it for an access token.
+        let token_result = client
+            .exchange_code(AuthorizationCode::new(code))
+            // Set the PKCE code verifier.
+            .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier))
+            .request_async(&http_client)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
-        let nonce = match nonce {
-            Some(nonce) => nonce.to_string(),
-            None => return Err(Error::InvalidCredentials),
-        };
+        tracing::info!(
+            token = ?token_result,
+            "Token result"
+        );
 
-        // Verify id token
-        let id_token_verifier = oauth_client.id_token_verifier();
-        let claims = id_token
-            .claims(&id_token_verifier, &Nonce::new(nonce))
-            .map_err(|_| Error::InvalidCredentials)?;
+        let access_token = token_result.access_token();
 
-        tracing::info!(claims = ?claims, "Verified id token");
+        // Get user info from Google's userinfo endpoint
+        let user_info_response = http_client
+            .get("https://www.googleapis.com/oauth2/v2/userinfo")
+            .bearer_auth(access_token.secret())
+            .send()
+            .await
+            .map_err(|_| Error::InternalServerError)?
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| Error::InternalServerError)?;
 
-        let subject = claims.subject().to_string();
-        let email = claims.email().ok_or(Error::InvalidCredentials)?.to_string();
-        let name = claims
-            .name()
-            .ok_or(Error::InvalidCredentials)?
-            .get(None)
-            .ok_or(Error::InvalidCredentials)?
+        tracing::info!(user_info_response = ?user_info_response, "User info response");
+        let email = user_info_response["email"]
+            .as_str()
+            .ok_or(Error::InternalServerError)?
             .to_string();
 
-        tracing::info!(
-            subject = ?subject,
-            email = ?email,
-            name = ?name,
-            "User claims"
-        );
+        let subject = user_info_response["id"]
+            .as_str()
+            .ok_or(Error::InternalServerError)?
+            .to_string();
 
         let user = self
             .get_or_create_user(email, subject)
@@ -520,7 +476,7 @@ where
     S: SessionStorage,
 {
     fn auth_method(&self) -> &str {
-        &self.provider
+        &self.config.provider
     }
 
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
@@ -530,7 +486,7 @@ where
                 token,
                 nonce_key,
             } => {
-                if provider != &self.provider {
+                if provider != &self.config.provider {
                     return Err(Error::InvalidCredentials);
                 }
 

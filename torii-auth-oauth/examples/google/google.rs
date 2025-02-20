@@ -31,18 +31,10 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (Cookie
         .plugin_manager
         .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
         .unwrap();
-    let auth_flow = plugin
-        .begin_auth("http://localhost:4000/auth/google/callback".to_string())
-        .await
-        .unwrap();
+    let auth_flow = plugin.begin_auth().await.unwrap();
 
     let jar = jar.add(
         Cookie::build(("csrf_state", auth_flow.csrf_state))
-            .path("/")
-            .http_only(true),
-    );
-    let jar = jar.add(
-        Cookie::build(("nonce_key", auth_flow.nonce_key))
             .path("/")
             .http_only(true),
     );
@@ -56,7 +48,6 @@ async fn callback_handler(
     Query(params): Query<QueryParams>,
     jar: CookieJar,
 ) -> impl IntoResponse {
-    let nonce_key = jar.get("nonce_key").unwrap().value();
     let csrf_state = jar.get("csrf_state").unwrap().value();
 
     if csrf_state != params.state {
@@ -69,7 +60,7 @@ async fn callback_handler(
         .unwrap();
 
     let (user, session) = plugin
-        .callback(params.code.to_string(), nonce_key.to_string())
+        .callback(params.code.to_string(), csrf_state.to_string())
         .await
         .unwrap();
 

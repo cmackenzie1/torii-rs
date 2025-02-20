@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -92,16 +92,16 @@ pub trait OAuthStorage: UserStorage {
         subject: &str,
     ) -> Result<(), Self::Error>;
 
-    /// Retrieve a stored nonce by ID
-    async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error>;
-
-    /// Store a nonce with an expiration time
-    async fn save_nonce(
+    /// Store a PKCE verifier with an expiration time
+    async fn store_pkce_verifier(
         &self,
-        id: &str,
-        value: &str,
-        expires_at: &DateTime<Utc>,
-    ) -> Result<(), Self::Error>;
+        csrf_state: &str,
+        pkce_verifier: &str,
+        expires_in: Duration,
+    ) -> Result<(), Error>;
+
+    /// Retrieve a stored PKCE verifier by CSRF state
+    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error>;
 }
 
 #[derive(Debug, Clone)]
