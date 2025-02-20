@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
     user_id TEXT NOT NULL,
     provider TEXT NOT NULL,
     subject TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY(user_id) REFERENCES users(id),
     UNIQUE(user_id, provider, subject)
 );
@@ -14,5 +14,5 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
 CREATE TABLE IF NOT EXISTS nonces (
     id TEXT PRIMARY KEY,
     value TEXT NOT NULL,
-    expires_at DATETIME NOT NULL
+    expires_at INTEGER NOT NULL
 );

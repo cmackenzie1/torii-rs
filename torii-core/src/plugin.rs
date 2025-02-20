@@ -156,7 +156,6 @@ impl Default for SessionCleanupConfig {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{session::SessionId, Error, NewUser, Session, User, UserId};
 
     use super::*;
