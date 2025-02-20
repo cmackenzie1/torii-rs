@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use sqlx::SqlitePool;
-use std::time::Duration;
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
 use torii_core::user::OAuthAccount;
@@ -35,9 +34,9 @@ pub struct SqliteUser {
     id: String,
     email: String,
     name: Option<String>,
-    email_verified_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    email_verified_at: Option<i64>,
+    created_at: i64,
+    updated_at: i64,
 }
 
 impl From<SqliteUser> for User {
@@ -46,9 +45,11 @@ impl From<SqliteUser> for User {
             .id(UserId::new(&user.id))
             .email(user.email)
             .name(user.name)
-            .email_verified_at(user.email_verified_at)
-            .created_at(user.created_at)
-            .updated_at(user.updated_at)
+            .email_verified_at(user.email_verified_at.map(|timestamp| {
+                DateTime::from_timestamp(timestamp, 0).expect("Invalid timestamp")
+            }))
+            .created_at(DateTime::from_timestamp(user.created_at, 0).expect("Invalid timestamp"))
+            .updated_at(DateTime::from_timestamp(user.updated_at, 0).expect("Invalid timestamp"))
             .build()
             .unwrap()
     }
@@ -60,9 +61,11 @@ impl From<User> for SqliteUser {
             id: user.id.into_inner(),
             email: user.email,
             name: user.name,
-            email_verified_at: user.email_verified_at,
-            created_at: user.created_at,
-            updated_at: user.updated_at,
+            email_verified_at: user
+                .email_verified_at
+                .map(|timestamp| timestamp.timestamp()),
+            created_at: user.created_at.timestamp(),
+            updated_at: user.updated_at.timestamp(),
         }
     }
 }
@@ -72,22 +75,23 @@ impl UserStorage for SqliteStorage {
     type Error = torii_core::Error;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error> {
-        sqlx::query("INSERT INTO users (id, email) VALUES (?, ?)")
-            .bind(user.id.as_ref())
-            .bind(&user.email)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to create user");
-                Self::Error::Storage("Failed to create user".to_string())
-            })?;
+        let user = sqlx::query_as::<_, SqliteUser>(
+            r#"
+            INSERT INTO users (id, email, name, email_verified_at, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id, email, name, email_verified_at, created_at, updated_at
+            "#,
+        )
+        .bind(user.id.as_ref())
+        .bind(&user.email)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to create user");
+            Self::Error::Storage("Failed to create user".to_string())
+        })?;
 
-        let user = self.get_user(&user.id).await?;
-        if let Some(user) = user {
-            Ok(user)
-        } else {
-            Err(Self::Error::Storage("Failed to create user".to_string()))
-        }
+        Ok(user.into())
     }
 
     async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
@@ -160,7 +164,7 @@ impl UserStorage for SqliteStorage {
     }
 
     async fn update_user(&self, user: &User) -> Result<User, Self::Error> {
-        sqlx::query_as::<_, SqliteUser>(
+        let user = sqlx::query_as::<_, SqliteUser>(
             r#"
             UPDATE users 
             SET email = ?, name = ?, email_verified_at = ?, updated_at = ? 
@@ -180,12 +184,7 @@ impl UserStorage for SqliteStorage {
             Self::Error::Storage("Failed to update user".to_string())
         })?;
 
-        let user = self.get_user(&user.id).await?;
-        if let Some(user) = user {
-            Ok(user)
-        } else {
-            Err(Self::Error::Storage("Failed to update user".to_string()))
-        }
+        Ok(user.into())
     }
 
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
@@ -208,9 +207,9 @@ pub struct SqliteSession {
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    created_at: i64,
+    updated_at: i64,
+    expires_at: i64,
 }
 
 impl From<SqliteSession> for Session {
@@ -220,9 +219,9 @@ impl From<SqliteSession> for Session {
             .user_id(UserId::new(&session.user_id))
             .user_agent(session.user_agent)
             .ip_address(session.ip_address)
-            .created_at(session.created_at)
-            .updated_at(session.updated_at)
-            .expires_at(session.expires_at)
+            .created_at(DateTime::from_timestamp(session.created_at, 0).expect("Invalid timestamp"))
+            .updated_at(DateTime::from_timestamp(session.updated_at, 0).expect("Invalid timestamp"))
+            .expires_at(DateTime::from_timestamp(session.expires_at, 0).expect("Invalid timestamp"))
             .build()
             .unwrap()
     }
@@ -235,9 +234,9 @@ impl From<Session> for SqliteSession {
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
-            created_at: session.created_at,
-            updated_at: session.updated_at,
-            expires_at: session.expires_at,
+            created_at: session.created_at.timestamp(),
+            updated_at: session.updated_at.timestamp(),
+            expires_at: session.expires_at.timestamp(),
         }
     }
 }
@@ -247,19 +246,28 @@ impl SessionStorage for SqliteStorage {
     type Error = torii_core::Error;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
-        sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        let session = sqlx::query_as::<_, SqliteSession>(
+            r#"
+            INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            RETURNING id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
+            "#,
+        )
             .bind(session.id.as_ref())
             .bind(session.user_id.as_ref())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
-            .bind(session.created_at)
-            .bind(session.updated_at)
-            .bind(session.expires_at)
-            .execute(&self.pool)
+            .bind(session.created_at.timestamp())
+            .bind(session.updated_at.timestamp())
+            .bind(session.expires_at.timestamp())
+            .fetch_one(&self.pool)
             .await
-            .map_err(|_| Self::Error::Storage("Failed to create session".to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to create session");
+                Self::Error::Storage("Failed to create session".to_string())
+            })?;
 
-        Ok(self.get_session(&session.id).await?.unwrap())
+        Ok(session.into())
     }
 
     async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
@@ -296,7 +304,7 @@ impl SessionStorage for SqliteStorage {
 
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE expires_at < ?")
-            .bind(Utc::now())
+            .bind(Utc::now().timestamp())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -326,27 +334,8 @@ pub struct SqliteOAuthAccount {
     user_id: String,
     provider: String,
     subject: String,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
-
-impl SqliteOAuthAccount {
-    pub fn builder() -> SqliteOAuthAccountBuilder {
-        SqliteOAuthAccountBuilder::default()
-    }
-
-    pub fn new(user_id: UserId, provider: impl Into<String>, subject: impl Into<String>) -> Self {
-        SqliteOAuthAccountBuilder::default()
-            .user_id(user_id)
-            .provider(provider.into())
-            .subject(subject.into())
-            .build()
-            .expect("Default builder should never fail")
-    }
-
-    pub fn is_expired(&self, ttl: Duration) -> bool {
-        Utc::now() > self.created_at + ttl
-    }
+    created_at: i64,
+    updated_at: i64,
 }
 
 impl From<SqliteOAuthAccount> for OAuthAccount {
@@ -355,69 +344,26 @@ impl From<SqliteOAuthAccount> for OAuthAccount {
             .user_id(UserId::new(&oauth_account.user_id))
             .provider(oauth_account.provider)
             .subject(oauth_account.subject)
-            .created_at(oauth_account.created_at)
-            .updated_at(oauth_account.updated_at)
+            .created_at(
+                DateTime::from_timestamp(oauth_account.created_at, 0).expect("Invalid timestamp"),
+            )
+            .updated_at(
+                DateTime::from_timestamp(oauth_account.updated_at, 0).expect("Invalid timestamp"),
+            )
             .build()
-            .expect("Default builder should never fail")
+            .unwrap()
     }
 }
 
 impl From<OAuthAccount> for SqliteOAuthAccount {
     fn from(oauth_account: OAuthAccount) -> Self {
-        SqliteOAuthAccount::builder()
-            .user_id(oauth_account.user_id)
-            .provider(oauth_account.provider)
-            .subject(oauth_account.subject)
-            .created_at(oauth_account.created_at)
-            .updated_at(oauth_account.updated_at)
-            .build()
-            .expect("Default builder should never fail")
-    }
-}
-
-#[derive(Default)]
-pub struct SqliteOAuthAccountBuilder {
-    user_id: Option<UserId>,
-    provider: Option<String>,
-    subject: Option<String>,
-    created_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
-}
-
-impl SqliteOAuthAccountBuilder {
-    pub fn user_id(mut self, user_id: UserId) -> Self {
-        self.user_id = Some(user_id);
-        self
-    }
-
-    pub fn provider(mut self, provider: impl Into<String>) -> Self {
-        self.provider = Some(provider.into());
-        self
-    }
-
-    pub fn subject(mut self, subject: impl Into<String>) -> Self {
-        self.subject = Some(subject.into());
-        self
-    }
-
-    pub fn created_at(mut self, created_at: DateTime<Utc>) -> Self {
-        self.created_at = Some(created_at);
-        self
-    }
-
-    pub fn updated_at(mut self, updated_at: DateTime<Utc>) -> Self {
-        self.updated_at = Some(updated_at);
-        self
-    }
-
-    pub fn build(self) -> Result<SqliteOAuthAccount, Error> {
-        Ok(SqliteOAuthAccount {
-            user_id: self.user_id.unwrap().into_inner(),
-            provider: self.provider.unwrap(),
-            subject: self.subject.unwrap(),
-            created_at: self.created_at.unwrap_or_default(),
-            updated_at: self.updated_at.unwrap_or_default(),
-        })
+        SqliteOAuthAccount {
+            user_id: oauth_account.user_id.into_inner(),
+            provider: oauth_account.provider,
+            subject: oauth_account.subject,
+            created_at: oauth_account.created_at.timestamp(),
+            updated_at: oauth_account.updated_at.timestamp(),
+        }
     }
 }
 
@@ -429,34 +375,23 @@ impl OAuthStorage for SqliteStorage {
         subject: &str,
         user_id: &UserId,
     ) -> Result<OAuthAccount, Self::Error> {
-        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(user_id.as_ref())
-            .bind(provider)
-            .bind(subject)
-            .bind(Utc::now())
-            .bind(Utc::now())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to create oauth account");
-                Self::Error::Storage(
-                    "Failed to create oauth account".to_string(),
-                )
-            })?;
-
         let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
             r#"
-            SELECT user_id, provider, subject, created_at, updated_at
-            FROM oauth_accounts
-            WHERE user_id = ?
+            INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?)
+            RETURNING user_id, provider, subject, created_at, updated_at
             "#,
         )
         .bind(user_id.as_ref())
+        .bind(provider)
+        .bind(subject)
+        .bind(Utc::now().timestamp())
+        .bind(Utc::now().timestamp())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get oauth account");
-            Self::Error::Storage("Failed to get oauth account".to_string())
+            tracing::error!(error = %e, "Failed to create oauth account");
+            Self::Error::Storage("Failed to create oauth account".to_string())
         })?;
 
         Ok(oauth_account.into())
