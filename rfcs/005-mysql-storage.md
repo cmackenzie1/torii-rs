@@ -1,6 +1,8 @@
-# RFC 0005: MySQL Storage Provider
+# RFC 005: MySQL Storage Provider
 
-**Status**: Draft - Not thoroughly reviewed
+| Date       | Author       | Status   |
+| ---------- | ------------ | -------- |
+| 2025-02-19 | @cmackenzie1 | 📝 Draft |
 
 ## Summary
 

@@ -1,6 +1,8 @@
-# RFC 0008: DynamoDB Storage Provider
+# RFC 008: DynamoDB Storage Provider
 
-**Status**: Draft - Not thoroughly reviewed
+| Date       | Author       | Status   |
+| ---------- | ------------ | -------- |
+| 2025-02-19 | @cmackenzie1 | 📝 Draft |
 
 ## Summary
 

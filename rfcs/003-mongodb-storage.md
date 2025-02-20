@@ -1,6 +1,8 @@
-# RFC 0003: MongoDB Storage Provider
+# RFC 003: MongoDB Storage Provider
 
-**Status**: Draft - Not thoroughly reviewed
+| Date       | Author       | Status   |
+| ---------- | ------------ | -------- |
+| 2025-02-19 | @cmackenzie1 | 📝 Draft |
 
 ## Summary
 
