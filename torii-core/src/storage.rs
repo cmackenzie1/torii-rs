@@ -44,15 +44,25 @@ pub trait SessionStorage: Send + Sync + 'static {
 }
 
 /// Storage methods specific to email/password authentication
+///
+/// This trait extends the base `UserStorage` trait with methods needed for
+/// storing and retrieving password hashes.
 #[async_trait]
 pub trait EmailPasswordStorage: UserStorage {
+    /// Store a password hash for a user
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Self::Error>;
+
+    /// Retrieve a user's password hash
     async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Self::Error>;
 }
 
 /// Storage methods specific to OAuth authentication
+///
+/// This trait extends the base `UserStorage` trait with methods needed for
+/// OAuth account management and nonce storage.
 #[async_trait]
 pub trait OAuthStorage: UserStorage {
+    /// Create a new OAuth account linked to a user
     async fn create_oauth_account(
         &self,
         provider: &str,
@@ -60,18 +70,21 @@ pub trait OAuthStorage: UserStorage {
         user_id: &UserId,
     ) -> Result<OAuthAccount, Self::Error>;
 
+    /// Find a user by their OAuth provider and subject
     async fn get_user_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
     ) -> Result<Option<User>, Self::Error>;
 
+    /// Find an OAuth account by provider and subject
     async fn get_oauth_account_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
     ) -> Result<Option<OAuthAccount>, Self::Error>;
 
+    /// Link an existing user to an OAuth account
     async fn link_oauth_account(
         &self,
         user_id: &UserId,
@@ -79,7 +92,10 @@ pub trait OAuthStorage: UserStorage {
         subject: &str,
     ) -> Result<(), Self::Error>;
 
+    /// Retrieve a stored nonce by ID
     async fn get_nonce(&self, id: &str) -> Result<Option<String>, Self::Error>;
+
+    /// Store a nonce with an expiration time
     async fn save_nonce(
         &self,
         id: &str,

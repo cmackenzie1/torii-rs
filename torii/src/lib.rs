@@ -36,6 +36,27 @@ use torii_core::storage::{EmailPasswordStorage, Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 /// Builder for configuring and creating a Torii instance
+///
+/// The builder allows configuring various authentication methods and storage backends
+/// before creating the final Torii instance.
+///
+/// # Example
+/// ```rust,no_run
+/// use torii::{ToriiBuilder, SqliteStorage};
+///
+/// let storage = SqliteStorage::new("torii.db").await?;
+/// let torii = ToriiBuilder::new(storage, storage)
+///     .with_email_auth()
+///     .with_oauth_provider(
+///         "google",
+///         "client_id",
+///         "client_secret",
+///         "http://localhost:8080/callback",
+///         "https://accounts.google.com",
+///         &["openid", "email"]
+///     )
+///     .build();
+/// ```
 pub struct ToriiBuilder<U: UserStorage, S: SessionStorage> {
     manager: PluginManager<U, S>,
 }
@@ -132,17 +153,15 @@ where
     }
 }
 
-/// Main Torii authentication instance that can be used to create users and sessions
+/// Main Torii authentication instance
 ///
-/// # Example
-/// ```
-/// let torii = ToriiBuilder::new(user_storage, session_storage)
-///     .with_email_auth()
-///     .setup_sqlite()
-///     .await?;
+/// This struct provides the main interface for authentication operations like:
+/// - Creating and managing users
+/// - Handling authentication
+/// - Managing sessions
+/// - Configuring authentication providers
 ///
-/// let user = torii.create_user_with_email_password("test@example.com", "password").await?;
-/// ```
+/// It is created using the [`ToriiBuilder`].
 pub struct Torii<U: UserStorage, S: SessionStorage> {
     manager: PluginManager<U, S>,
 }

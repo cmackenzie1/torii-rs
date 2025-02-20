@@ -2,6 +2,7 @@ use clap::Parser;
 use sqlx::SqlitePool;
 use torii_storage_sqlite::SqliteStorage;
 
+/// Command line interface for Torii
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -17,10 +18,12 @@ struct Cli {
     #[arg(long)]
     db_url: String,
 
+    /// Command to execute
     #[command(subcommand)]
     command: Commands,
 }
 
+/// Available CLI commands
 #[derive(clap::Subcommand)]
 enum Commands {
     /// Run database migrations
