@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 /// The core oauth plugin struct, responsible for handling oauth authentication flow.
 ///
-/// See the [`oauthPlugin`] struct for the core plugin struct.
+/// See the [`OAuthPlugin`] struct for the core plugin struct.
 ///
 /// See the [`AuthFlowBegin`] and [`AuthFlowCallback`] structs for the core authentication flow.
 ///
@@ -125,7 +125,7 @@ impl OAuthPluginBuilder {
 
 /// The start of the oauth authentication flow for authorization code grant. This is the first step in the flow and is used to start the flow by redirecting the user to the provider's authorization URL.
 ///
-/// See the [`oauthPlugin::begin_auth`] method for the core authentication flow.
+/// See the [`OAuthPlugin::begin_auth`] method for the core authentication flow.
 #[derive(Debug)]
 pub struct AuthFlowBegin {
     /// The CSRF state. This value is used to prevent CSRF attacks and may be stored in a cookie.
