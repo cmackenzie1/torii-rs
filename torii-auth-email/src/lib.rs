@@ -574,7 +574,7 @@ mod tests {
 
     #[async_trait]
     impl EventHandler for TestEventHandler {
-        async fn handle(&self, _event: &Event) -> Result<(), Error> {
+        async fn handle_event(&self, _event: &Event) -> Result<(), Error> {
             self.called.store(true, Ordering::SeqCst);
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(())

@@ -48,7 +48,7 @@ pub enum Event {
 /// ```
 #[async_trait]
 pub trait EventHandler: Send + Sync + 'static {
-    async fn handle(&self, event: &Event) -> Result<(), Error>;
+    async fn handle_event(&self, event: &Event) -> Result<(), Error>;
 }
 
 /// Event bus that can emit events and register event handlers
@@ -65,7 +65,7 @@ pub trait EventHandler: Send + Sync + 'static {
 ///
 /// #[async_trait]
 /// impl EventHandler for MyHandler {
-///     async fn handle(&self, event: &Event) -> Result<(), Error> {
+///     async fn handle_event(&self, event: &Event) -> Result<(), Error> {
 ///         // Handle the event...
 ///         Ok(())
 ///     }
@@ -112,7 +112,7 @@ impl EventBus {
     ///
     /// #[async_trait]
     /// impl EventHandler for MyHandler {
-    ///     async fn handle(&self, event: &Event) -> Result<(), Error> {
+    ///     async fn handle_event(&self, event: &Event) -> Result<(), Error> {
     ///         // Handle the event...
     ///         Ok(())
     ///     }
@@ -136,7 +136,7 @@ impl EventBus {
     /// ```
     pub async fn emit(&self, event: &Event) -> Result<(), Error> {
         for handler in self.handlers.read().await.iter() {
-            handler.handle(event).await?;
+            handler.handle_event(event).await?;
         }
 
         Ok(())
@@ -156,7 +156,7 @@ mod tests {
 
     #[async_trait]
     impl EventHandler for TestEventHandler {
-        async fn handle(&self, _event: &Event) -> Result<(), Error> {
+        async fn handle_event(&self, _event: &Event) -> Result<(), Error> {
             self.called.store(true, Ordering::SeqCst);
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -167,7 +167,7 @@ mod tests {
 
     #[async_trait]
     impl EventHandler for ErroringEventHandler {
-        async fn handle(&self, _event: &Event) -> Result<(), Error> {
+        async fn handle_event(&self, _event: &Event) -> Result<(), Error> {
             Err(Error::EventBus("Test error".into()))
         }
     }
