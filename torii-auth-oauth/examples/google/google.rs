@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::get,
     Json, Router,
@@ -9,8 +10,8 @@ use axum::{
 use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
-use torii_auth_oauth::{AuthFlowCallback, OAuthPlugin};
-use torii_core::plugin::PluginManager;
+use torii_auth_oauth::OAuthPlugin;
+use torii_core::{plugin::PluginManager, storage::Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Debug, Deserialize)]
@@ -28,13 +29,10 @@ struct AppState {
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
     let plugin = state
         .plugin_manager
-        .get_plugin::<OAuthPlugin>("google")
+        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
         .unwrap();
     let auth_flow = plugin
-        .begin_auth(
-            &*state.plugin_manager.storage(),
-            "http://localhost:4000/auth/google/callback".to_string(),
-        )
+        .begin_auth("http://localhost:4000/auth/google/callback".to_string())
         .await
         .unwrap();
 
@@ -59,20 +57,19 @@ async fn callback_handler(
     jar: CookieJar,
 ) -> impl IntoResponse {
     let nonce_key = jar.get("nonce_key").unwrap().value();
+    let csrf_state = jar.get("csrf_state").unwrap().value();
+
+    if csrf_state != params.state {
+        return (StatusCode::BAD_REQUEST, "CSRF state mismatch").into_response();
+    }
 
     let plugin = state
         .plugin_manager
-        .get_plugin::<OAuthPlugin>("google")
+        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
         .unwrap();
+
     let (user, session) = plugin
-        .callback(
-            &*state.plugin_manager.storage(),
-            &AuthFlowCallback {
-                csrf_state: params.state,
-                nonce_key: nonce_key.to_string(),
-                code: params.code,
-            },
-        )
+        .callback(params.code.to_string(), nonce_key.to_string())
         .await
         .unwrap();
 
@@ -83,7 +80,7 @@ async fn callback_handler(
             .http_only(true),
     );
 
-    (jar, Json(user))
+    (jar, Json(user)).into_response()
 }
 
 #[tokio::main]
@@ -99,11 +96,14 @@ async fn main() {
     user_storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
+    let storage = Storage::new(user_storage.clone(), session_storage.clone());
+
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(OAuthPlugin::google(
+    plugin_manager.register_auth_plugin(OAuthPlugin::google(
         std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
         std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback".to_string(),
+        storage,
     ));
 
     let app = Router::new()

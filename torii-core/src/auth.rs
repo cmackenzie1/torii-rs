@@ -1,15 +1,23 @@
 use async_trait::async_trait;
+use downcast_rs::{impl_downcast, DowncastSync};
 use std::collections::HashMap;
 
-use crate::{Error, Session, User};
+use crate::{Error, Plugin, Session, User};
 
 /// The credentials used to authenticate a user.
 ///
 /// This is used to authenticate a user and create a session.
 #[derive(Debug, Clone)]
 pub enum Credentials {
-    Password { email: String, password: String },
-    OAuth { provider: String, token: String },
+    Password {
+        email: String,
+        password: String,
+    },
+    OAuth {
+        provider: String,
+        token: String,
+        nonce_key: String,
+    },
     Token(String),
 }
 
@@ -20,10 +28,15 @@ impl Credentials {
     }
 
     /// Create new OAuth credentials
-    pub fn oauth(provider: impl Into<String>, token: impl Into<String>) -> Self {
+    pub fn oauth(
+        provider: impl Into<String>,
+        token: impl Into<String>,
+        nonce_key: impl Into<String>,
+    ) -> Self {
         Self::OAuth {
             provider: provider.into(),
             token: token.into(),
+            nonce_key: nonce_key.into(),
         }
     }
 
@@ -44,12 +57,12 @@ pub struct AuthResponse {
 ///
 /// This is used to authenticate a user and create a session.
 #[async_trait]
-pub trait AuthPlugin: Send + Sync + 'static {
+pub trait AuthPlugin: Plugin + Send + Sync + 'static + DowncastSync {
     /// Unique identifier for this auth method
     fn auth_method(&self) -> &str;
 
     /// Authenticate a user and create a session
-    async fn authenticate(&self, credentials: &Credentials) -> Result<(User, Session), Error>;
+    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error>;
 
     /// Validate an existing session
     async fn validate_session(&self, session: &Session) -> Result<bool, Error>;
@@ -57,15 +70,4 @@ pub trait AuthPlugin: Send + Sync + 'static {
     /// Handle logout/session termination
     async fn logout(&self, session: &Session) -> Result<(), Error>;
 }
-
-#[async_trait]
-pub trait AuthProvider: Send + Sync {
-    /// Unique identifier for this auth provider
-    fn provider_id(&self) -> &str;
-
-    /// Authenticate a user with the given credentials
-    async fn authenticate(&self, credentials: Credentials) -> Result<AuthResponse, Error>;
-
-    /// Create a new user with the given credentials
-    async fn create_user(&self, credentials: Credentials) -> Result<User, Error>;
-}
+impl_downcast!(sync AuthPlugin);

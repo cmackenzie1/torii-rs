@@ -35,6 +35,9 @@ use torii_core::storage::{EmailPasswordStorage, Storage};
 #[cfg(feature = "sqlite")]
 use torii_storage_sqlite::SqliteStorage;
 
+#[cfg(feature = "oauth-auth")]
+use torii_core::storage::OAuthStorage;
+
 /// Builder for configuring and creating a Torii instance
 ///
 /// The builder allows configuring various authentication methods and storage backends
@@ -100,7 +103,7 @@ where
             self.manager.storage().session_storage(),
         );
         self.manager
-            .register(torii_auth_email::EmailPasswordPlugin::new(storage));
+            .register_auth_plugin(torii_auth_email::EmailPasswordPlugin::new(storage));
         self
     }
 
@@ -134,15 +137,25 @@ where
         redirect_uri: &str,
         issuer_url: &str,
         scopes: &[&str],
-    ) -> Self {
-        self.manager.register(torii_auth_oauth::OAuthPlugin::new(
-            provider.to_string(),
-            client_id.to_string(),
-            client_secret.to_string(),
-            redirect_uri.to_string(),
-            issuer_url.to_string(),
-            scopes.iter().map(|s| s.to_string()).collect(),
-        ));
+    ) -> Self
+    where
+        U: OAuthStorage,
+        S: SessionStorage,
+    {
+        let storage = Storage::new(
+            self.manager.storage().user_storage(),
+            self.manager.storage().session_storage(),
+        );
+        self.manager
+            .register_auth_plugin(torii_auth_oauth::OAuthPlugin::new(
+                provider.to_string(),
+                client_id.to_string(),
+                client_secret.to_string(),
+                redirect_uri.to_string(),
+                issuer_url.to_string(),
+                scopes.iter().map(|s| s.to_string()).collect(),
+                storage,
+            ));
         self
     }
 
@@ -201,7 +214,7 @@ impl Torii<SqliteStorage, SqliteStorage> {
     ) -> Result<User, Error> {
         let plugin: Arc<torii_auth_email::EmailPasswordPlugin<SqliteStorage, SqliteStorage>> = self
             .manager
-            .get_plugin::<torii_auth_email::EmailPasswordPlugin<SqliteStorage, SqliteStorage>>(
+            .get_auth_plugin::<torii_auth_email::EmailPasswordPlugin<SqliteStorage, SqliteStorage>>(
                 "email_password",
             )
             .ok_or(Error::UnsupportedAuthMethod("email_password".to_string()))?;
@@ -262,15 +275,13 @@ impl Torii<SqliteStorage, SqliteStorage> {
     ) -> Result<User, Error> {
         let plugin = self
             .manager
-            .get_plugin::<torii_auth_oauth::OAuthPlugin>(provider)
+            .get_auth_plugin::<torii_auth_oauth::OAuthPlugin<SqliteStorage, SqliteStorage>>(
+                provider,
+            )
             .ok_or(Error::UnsupportedAuthMethod(provider.to_string()))?;
 
         let user = plugin
-            .get_or_create_user(
-                self.manager.storage(),
-                email.to_string(),
-                subject.to_string(),
-            )
+            .get_or_create_user(email.to_string(), subject.to_string())
             .await?;
 
         Ok(user)

@@ -47,7 +47,7 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(EmailPasswordPlugin::new(storage));
+    plugin_manager.register_auth_plugin(EmailPasswordPlugin::new(storage));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

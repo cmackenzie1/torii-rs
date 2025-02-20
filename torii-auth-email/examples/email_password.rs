@@ -68,7 +68,7 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin.create_user(&params.email, &params.password).await {
@@ -98,12 +98,12 @@ async fn sign_in_form_handler(
 ) -> impl IntoResponse {
     let plugin: Arc<EmailPasswordPlugin<_, _>> = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin.login_user(&params.email, &params.password).await {
-        Ok((_, session)) => {
-            let cookie = Cookie::build(("session_id", session.id.to_string()))
+        Ok(auth_response) => {
+            let cookie = Cookie::build(("session_id", auth_response.session.id.to_string()))
                 .path("/")
                 .http_only(true)
                 .secure(false) // TODO: Set to true in production
@@ -231,7 +231,7 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register(EmailPasswordPlugin::new(storage));
+    plugin_manager.register_auth_plugin(EmailPasswordPlugin::new(storage));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

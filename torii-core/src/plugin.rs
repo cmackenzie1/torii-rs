@@ -5,37 +5,24 @@
 //! See [`Plugin`] trait for the required methods for a plugin.
 //!
 //! See [`PluginManager`] for the plugin manager which is responsible for managing the plugins.
-use async_trait::async_trait;
 use dashmap::DashMap;
-use downcast_rs::{impl_downcast, DowncastSync};
+use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{any::Any, collections::HashMap};
 
 use crate::{
     auth::AuthPlugin,
-    storage::{SessionStorage, Storage, StoragePlugin, UserStorage},
+    storage::{SessionStorage, Storage, UserStorage},
 };
 
-#[async_trait]
-pub trait Plugin: Any + Send + Sync + DowncastSync {
+pub trait Plugin: Any + Send + Sync {
     /// The unique name of the plugin instance.
-    /// For oauth plugins, this should be the provider name (e.g. "google", "github")
     fn name(&self) -> String;
-
-    /// Get the dependencies of this plugin.
-    /// Returns a list of plugin names that must be initialized before this one.
-    fn dependencies(&self) -> Vec<&'static str> {
-        Vec::new()
-    }
 }
-impl_downcast!(sync Plugin);
 
 /// Manages a collection of plugins.
 pub struct PluginManager<U: UserStorage, S: SessionStorage> {
     auth_plugins: DashMap<String, Arc<dyn AuthPlugin>>,
-    storage_plugins: DashMap<String, Arc<dyn StoragePlugin<Config = HashMap<String, String>>>>,
-    plugins: DashMap<String, Arc<dyn Plugin>>,
     storage: Storage<U, S>,
 }
 
@@ -51,8 +38,6 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
             auth_plugins: DashMap::new(),
-            storage_plugins: DashMap::new(),
-            plugins: DashMap::new(),
             storage: Storage::new(user_storage, session_storage),
         }
     }
@@ -69,10 +54,10 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     ///
-    /// let plugin = plugin_manager.get_plugin::<MyPlugin>("my_plugin");
+    /// let plugin = plugin_manager.get_auth_plugin::<MyPlugin>("my_plugin");
     /// ```
-    pub fn get_plugin<T: Plugin + 'static>(&self, name: &str) -> Option<Arc<T>> {
-        let plugin = self.plugins.get(name)?;
+    pub fn get_auth_plugin<T: AuthPlugin + 'static>(&self, name: &str) -> Option<Arc<T>> {
+        let plugin = self.auth_plugins.get(name)?;
         plugin.value().clone().downcast_arc::<T>().ok()
     }
 
@@ -88,25 +73,11 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     /// ```
-    pub fn register<T: Plugin + 'static>(&mut self, plugin: T) {
+    pub fn register_auth_plugin<T: AuthPlugin + 'static>(&mut self, plugin: T) {
         let name = plugin.name();
         let plugin = Arc::new(plugin);
-        self.plugins.insert(name.clone(), plugin.clone());
+        self.auth_plugins.insert(name.clone(), plugin.clone());
         tracing::info!(plugin.name = name, "Registered plugin");
-    }
-
-    pub fn register_auth(&mut self, plugin: impl AuthPlugin) {
-        self.auth_plugins
-            .insert(plugin.auth_method().to_string(), Arc::new(plugin));
-    }
-
-    pub fn register_storage(
-        &mut self,
-        name: &str,
-        plugin: impl StoragePlugin<Config = HashMap<String, String>>,
-    ) {
-        self.storage_plugins
-            .insert(name.to_string(), Arc::new(plugin));
     }
 
     pub fn storage(&self) -> &Storage<U, S> {
@@ -156,17 +127,39 @@ impl Default for SessionCleanupConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::{session::SessionId, Error, NewUser, Session, User, UserId};
+    use async_trait::async_trait;
+
+    use crate::{
+        session::SessionId, AuthResponse, Credentials, Error, NewUser, Session, User, UserId,
+    };
 
     use super::*;
 
     #[derive(Debug, Clone)]
     struct TestPlugin;
 
-    #[async_trait]
     impl Plugin for TestPlugin {
         fn name(&self) -> String {
             "test".to_string()
+        }
+    }
+
+    #[async_trait]
+    impl AuthPlugin for TestPlugin {
+        fn auth_method(&self) -> &str {
+            "test"
+        }
+
+        async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthResponse, Error> {
+            todo!()
+        }
+
+        async fn validate_session(&self, _session: &Session) -> Result<bool, Error> {
+            todo!()
+        }
+
+        async fn logout(&self, _session: &Session) -> Result<(), Error> {
+            todo!()
         }
     }
 
@@ -288,8 +281,10 @@ mod tests {
     async fn test_plugin_manager() {
         let (user_storage, session_storage) = setup_test_storage();
         let mut plugin_manager = PluginManager::new(user_storage, session_storage);
-        plugin_manager.register(TestPlugin::new());
-        let plugin = plugin_manager.get_plugin::<TestPlugin>("test").unwrap();
+        plugin_manager.register_auth_plugin(TestPlugin::new());
+        let plugin = plugin_manager
+            .get_auth_plugin::<TestPlugin>("test")
+            .unwrap();
         assert_eq!(plugin.name(), "test");
     }
 

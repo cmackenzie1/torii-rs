@@ -16,6 +16,7 @@ pub mod session;
 pub mod storage;
 pub mod user;
 
+pub use auth::{AuthPlugin, AuthResponse, Credentials};
 pub use error::Error;
 pub use plugin::{Plugin, PluginManager};
 pub use session::Session;
