@@ -1,4 +1,4 @@
-# RFC 0001: Plugin Event System
+# RFC 001: Plugin Event System
 
 | Date       | Author       | Status         |
 | ---------- | ------------ | -------------- |

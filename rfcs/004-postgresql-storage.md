@@ -1,4 +1,4 @@
-# RFC 0004: PostgreSQL Storage Provider
+# RFC 004: PostgreSQL Storage Provider
 
 | Date       | Author       | Status         |
 | ---------- | ------------ | -------------- |

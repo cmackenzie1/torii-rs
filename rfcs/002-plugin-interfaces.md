@@ -1,4 +1,4 @@
-# RFC 0002: Separate Core Plugin Interfaces
+# RFC 002: Separate Core Plugin Interfaces
 
 | Date       | Author       | Status         |
 | ---------- | ------------ | -------------- |
