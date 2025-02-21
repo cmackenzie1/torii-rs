@@ -36,7 +36,7 @@ use torii_core::storage::{EmailPasswordStorage, Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 #[cfg(feature = "oauth-auth")]
-use torii_core::storage::OAuthStorage;
+use {torii_auth_oauth::providers::Provider, torii_core::storage::OAuthStorage};
 
 /// Builder for configuring and creating a Torii instance
 ///
@@ -130,16 +130,7 @@ where
     /// * `Self` - The builder instance
     #[cfg(feature = "oauth-auth")]
     #[allow(clippy::too_many_arguments)]
-    pub fn with_oauth_provider(
-        mut self,
-        provider: &str,
-        client_id: &str,
-        client_secret: &str,
-        redirect_uri: &str,
-        auth_url: &str,
-        token_url: &str,
-        scopes: &[&str],
-    ) -> Self
+    pub fn with_oauth_provider(mut self, provider: Provider) -> Self
     where
         U: OAuthStorage,
         S: SessionStorage,
@@ -149,14 +140,7 @@ where
             self.manager.storage().session_storage(),
         );
         self.manager.register_auth_plugin(
-            torii_auth_oauth::OAuthPlugin::builder(provider, storage)
-                .client_id(client_id.to_string())
-                .client_secret(client_secret.to_string())
-                .redirect_uri(redirect_uri.to_string())
-                .auth_url(auth_url.to_string())
-                .token_url(token_url.to_string())
-                .add_scopes(scopes.iter().map(|s| s.to_string()).collect::<Vec<_>>())
-                .build(),
+            torii_auth_oauth::OAuthPlugin::builder(provider, storage).build(),
         );
         self
     }
@@ -331,15 +315,11 @@ mod tests {
             Arc::new(SqliteStorage::new(pool.clone())),
         )
         .with_email_auth()
-        .with_oauth_provider(
-            "google",
-            "client_id",
-            "client_secret",
-            "redirect_uri",
-            "https://accounts.google.com/o/oauth2/v2/auth",
-            "https://www.googleapis.com/oauth2/v3/token",
-            &["email", "profile"],
-        )
+        .with_oauth_provider(torii_auth_oauth::providers::Provider::google(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "redirect_uri".to_string(),
+        ))
         .build();
 
         torii

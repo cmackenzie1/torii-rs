@@ -59,7 +59,7 @@ pub struct AuthResponse {
 #[async_trait]
 pub trait AuthPlugin: Plugin + Send + Sync + 'static + DowncastSync {
     /// Unique identifier for this auth method
-    fn auth_method(&self) -> &str;
+    fn auth_method(&self) -> String;
 
     /// Authenticate a user and create a session
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error>;

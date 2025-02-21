@@ -146,8 +146,8 @@ mod tests {
 
     #[async_trait]
     impl AuthPlugin for TestPlugin {
-        fn auth_method(&self) -> &str {
-            "test"
+        fn auth_method(&self) -> String {
+            "test".to_string()
         }
 
         async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthResponse, Error> {

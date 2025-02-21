@@ -28,3 +28,7 @@ tracing-subscriber.workspace = true
 [[example]]
 name = "google"
 path = "examples/google/google.rs"
+
+[[example]]
+name = "github"
+path = "examples/github/github.rs"

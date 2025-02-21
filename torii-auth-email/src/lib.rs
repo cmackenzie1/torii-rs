@@ -234,8 +234,8 @@ where
     U: EmailPasswordStorage,
     S: SessionStorage<Error = Error>,
 {
-    fn auth_method(&self) -> &str {
-        "email_password"
+    fn auth_method(&self) -> String {
+        "email_password".to_string()
     }
 
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {

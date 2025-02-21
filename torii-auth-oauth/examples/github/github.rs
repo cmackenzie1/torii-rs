@@ -29,7 +29,7 @@ struct AppState {
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
+        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("github")
         .unwrap();
 
     let auth_url = plugin.get_authorization_url().await.unwrap();
@@ -57,7 +57,7 @@ async fn callback_handler(
 
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
+        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("github")
         .unwrap();
 
     let (user, session) = plugin
@@ -78,7 +78,7 @@ async fn callback_handler(
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-    let pool = Pool::<Sqlite>::connect("sqlite:./google.db?mode=rwc")
+    let pool = Pool::<Sqlite>::connect("sqlite:./github.db?mode=rwc")
         .await
         .unwrap();
 
@@ -91,17 +91,17 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_auth_plugin(OAuthPlugin::google(
-        std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
-        std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
-        "http://localhost:4000/auth/google/callback".to_string(),
+    plugin_manager.register_auth_plugin(OAuthPlugin::github(
+        std::env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID must be set"),
+        std::env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET must be set"),
+        "http://localhost:4000/auth/github/callback".to_string(),
         storage,
     ));
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
-        .route("/auth/google/login", get(login_handler))
-        .route("/auth/google/callback", get(callback_handler))
+        .route("/auth/github/login", get(login_handler))
+        .route("/auth/github/callback", get(callback_handler))
         .with_state(AppState {
             plugin_manager: Arc::new(plugin_manager),
         });
@@ -113,7 +113,7 @@ async fn main() {
     });
 
     println!(
-        "Please open the following URL in your browser: http://localhost:4000/auth/google/login"
+        "Please open the following URL in your browser: http://localhost:4000/auth/github/login"
     );
 
     println!("Press Enter or Ctrl+C to exit...");

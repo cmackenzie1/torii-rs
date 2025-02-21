@@ -1,11 +1,11 @@
+pub mod providers;
+
 use std::{collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
-use oauth2::{
-    basic::BasicClient, reqwest, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
-};
+use oauth2::TokenResponse;
 
+use providers::{Provider, UserInfo};
 use torii_core::{
     events::{Event, EventBus},
     storage::OAuthStorage,
@@ -13,51 +13,37 @@ use torii_core::{
 };
 use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
 
-/// The core oauth plugin struct, responsible for handling oauth authentication flow.
-///
-/// See the [`OAuthPlugin`] struct for the core plugin struct.
-///
-/// See the [`AuthFlowBegin`] and [`AuthFlowCallback`] structs for the core authentication flow.
-///
-/// # Examples
-/// ```rust
-/// // Using the builder pattern
-/// use std::env;
-/// use torii_auth_oauth::OAuthPlugin;
-/// let plugin = OAuthPlugin::builder("google")
-///     .client_id(env::var("GOOGLE_CLIENT_ID")?)
-///     .client_secret(env::var("GOOGLE_CLIENT_SECRET")?)
-///     .redirect_uri("http://localhost:8080/callback")
-///     .build();
-///
-/// // Using preset for Google
-/// let plugin = OAuthPlugin::google(
-///     env::var("GOOGLE_CLIENT_ID")?,
-///     env::var("GOOGLE_CLIENT_SECRET")?,
-///     "http://localhost:8080/callback".to_string(),
-/// );
-/// ```
-#[derive(Clone)]
-pub struct OAuthConfig {
-    /// The provider name. i.e. "google"
-    pub provider: String,
-    /// The scopes to request from the provider
-    pub scopes: Vec<String>,
-    /// The client id.
-    pub client_id: String,
-    /// The client secret.
-    pub client_secret: String,
-    /// The redirect uri.
-    pub redirect_uri: String,
-    /// The authorization url.
-    pub auth_url: String,
-    /// The token url.
-    pub token_url: String,
+pub struct AuthorizationUrl {
+    url: String,
+    csrf_state: String,
+    pkce_verifier: String,
+}
+
+impl AuthorizationUrl {
+    pub fn new(url: String, csrf_state: String, pkce_verifier: String) -> Self {
+        Self {
+            url,
+            csrf_state,
+            pkce_verifier,
+        }
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn csrf_state(&self) -> &str {
+        &self.csrf_state
+    }
+
+    pub fn pkce_verifier(&self) -> &str {
+        &self.pkce_verifier
+    }
 }
 
 pub struct OAuthPlugin<U: OAuthStorage, S: SessionStorage> {
-    /// The plugin configuration
-    config: OAuthConfig,
+    /// The provider.
+    provider: Provider,
     /// The storage instance.
     storage: Storage<U, S>,
     /// The event bus.
@@ -70,18 +56,13 @@ where
     S: SessionStorage,
 {
     fn name(&self) -> String {
-        self.config.provider.clone()
+        self.provider.name()
     }
 }
 
 pub struct OAuthPluginBuilder<U: OAuthStorage, S: SessionStorage> {
-    provider: String,
-    client_id: String,
-    client_secret: String,
-    redirect_uri: String,
-    auth_url: String,
-    token_url: String,
-    scopes: Vec<String>,
+    provider: Provider,
+
     event_bus: Option<EventBus>,
     storage: Storage<U, S>,
 }
@@ -91,53 +72,12 @@ where
     U: OAuthStorage,
     S: SessionStorage,
 {
-    pub fn new(provider: &str, storage: Storage<U, S>) -> Self {
+    pub fn new(provider: Provider, storage: Storage<U, S>) -> Self {
         Self {
-            provider: provider.to_string(),
-            client_id: String::new(),
-            client_secret: String::new(),
-            redirect_uri: String::new(),
-            auth_url: String::new(),
-            token_url: String::new(),
-            scopes: vec!["email".to_string(), "profile".to_string()],
+            provider,
             event_bus: None,
             storage,
         }
-    }
-
-    pub fn client_id(mut self, client_id: impl Into<String>) -> Self {
-        self.client_id = client_id.into();
-        self
-    }
-
-    pub fn client_secret(mut self, client_secret: impl Into<String>) -> Self {
-        self.client_secret = client_secret.into();
-        self
-    }
-
-    pub fn redirect_uri(mut self, redirect_uri: impl Into<String>) -> Self {
-        self.redirect_uri = redirect_uri.into();
-        self
-    }
-
-    pub fn auth_url(mut self, auth_url: impl Into<String>) -> Self {
-        self.auth_url = auth_url.into();
-        self
-    }
-
-    pub fn token_url(mut self, token_url: impl Into<String>) -> Self {
-        self.token_url = token_url.into();
-        self
-    }
-
-    pub fn add_scope(mut self, scope: impl Into<String>) -> Self {
-        self.scopes.push(scope.into());
-        self
-    }
-
-    pub fn add_scopes(mut self, scopes: impl Into<Vec<String>>) -> Self {
-        self.scopes.extend(scopes.into());
-        self
     }
 
     pub fn event_bus(mut self, event_bus: EventBus) -> Self {
@@ -147,15 +87,7 @@ where
 
     pub fn build(self) -> OAuthPlugin<U, S> {
         OAuthPlugin {
-            config: OAuthConfig {
-                provider: self.provider,
-                client_id: self.client_id,
-                client_secret: self.client_secret,
-                redirect_uri: self.redirect_uri,
-                auth_url: self.auth_url,
-                token_url: self.token_url,
-                scopes: self.scopes,
-            },
+            provider: self.provider,
             event_bus: self.event_bus,
             storage: self.storage,
         }
@@ -191,13 +123,13 @@ where
     U: OAuthStorage,
     S: SessionStorage,
 {
-    pub fn builder(provider: &str, storage: Storage<U, S>) -> OAuthPluginBuilder<U, S> {
+    pub fn builder(provider: Provider, storage: Storage<U, S>) -> OAuthPluginBuilder<U, S> {
         OAuthPluginBuilder::new(provider, storage)
     }
 
-    pub fn new(config: OAuthConfig, storage: Storage<U, S>) -> Self {
+    pub fn new(provider: Provider, storage: Storage<U, S>) -> Self {
         Self {
-            config,
+            provider,
             event_bus: None,
             storage,
         }
@@ -214,13 +146,24 @@ where
         redirect_uri: String,
         storage: Storage<U, S>,
     ) -> Self {
-        OAuthPluginBuilder::new("google", storage)
-            .client_id(client_id)
-            .client_secret(client_secret)
-            .redirect_uri(redirect_uri)
-            .auth_url("https://accounts.google.com/o/oauth2/v2/auth")
-            .token_url("https://www.googleapis.com/oauth2/v3/token")
-            .build()
+        OAuthPluginBuilder::new(
+            Provider::google(client_id, client_secret, redirect_uri),
+            storage,
+        )
+        .build()
+    }
+
+    pub fn github(
+        client_id: String,
+        client_secret: String,
+        redirect_uri: String,
+        storage: Storage<U, S>,
+    ) -> Self {
+        OAuthPluginBuilder::new(
+            Provider::github(client_id, client_secret, redirect_uri),
+            storage,
+        )
+        .build()
     }
 }
 
@@ -244,49 +187,20 @@ where
     /// Returns an error if:
     /// * The provider metadata discovery fails
     /// * The HTTP client cannot be created
-    pub async fn begin_auth(&self) -> Result<AuthFlowBegin, Error> {
-        // Create an OAuth2 client by specifying the client ID, client secret, authorization URL and
-        // token URL.
-        let client = BasicClient::new(ClientId::new(self.config.client_id.clone()))
-            .set_client_secret(ClientSecret::new(self.config.client_secret.clone()))
-            .set_auth_uri(AuthUrl::new(self.config.auth_url.clone()).expect("Invalid auth URL"))
-            .set_token_uri(TokenUrl::new(self.config.token_url.clone()).expect("Invalid token URL"))
-            // Set the URL the user will be redirected to after the authorization process.
-            .set_redirect_uri(
-                RedirectUrl::new(self.config.redirect_uri.clone()).expect("Invalid redirect URI"),
-            );
-
-        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-        // Generate the full authorization URL.
-        let (auth_url, csrf_token) = client
-            .authorize_url(CsrfToken::new_random)
-            // Set the desired scopes.
-            .add_scopes(
-                self.config
-                    .scopes
-                    .iter()
-                    .map(|s| Scope::new(s.clone()))
-                    .collect::<Vec<_>>(),
-            )
-            // Set the PKCE code challenge.
-            .set_pkce_challenge(pkce_challenge)
-            .url();
+    pub async fn get_authorization_url(&self) -> Result<AuthorizationUrl, Error> {
+        let authorization_url = self.provider.get_authorization_url()?;
 
         self.storage
             .user_storage()
             .store_pkce_verifier(
-                &csrf_token.secret().to_string(),
-                &pkce_verifier.secret().to_string(),
+                &authorization_url.csrf_state,
+                &authorization_url.pkce_verifier,
                 Duration::from_secs(60 * 5),
             )
             .await
             .map_err(|_| Error::InternalServerError)?;
 
-        Ok(AuthFlowBegin {
-            csrf_state: csrf_token.secret().to_string(),
-            authorization_uri: auth_url.to_string(),
-        })
+        Ok(authorization_url)
     }
 
     /// Creates or retrieves an existing user based on oauth account information
@@ -303,7 +217,7 @@ where
         let oauth_account = self
             .storage
             .user_storage()
-            .get_oauth_account_by_provider_and_subject(&self.config.provider, &subject)
+            .get_oauth_account_by_provider_and_subject(&self.provider.name(), &subject)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
@@ -341,13 +255,13 @@ where
         // Create link between user and provider
         self.storage
             .user_storage()
-            .create_oauth_account(&self.config.provider, &subject, &user.id)
+            .create_oauth_account(&self.provider.name(), &subject, &user.id)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
         tracing::info!(
             user_id = ?user.id,
-            provider = ?self.config.provider,
+            provider = ?self.provider.name(),
             subject = ?subject,
             "Successfully created link between user and provider"
         );
@@ -372,28 +286,11 @@ where
     ///
     /// # Returns
     /// Returns a [`User`] struct containing the user's information.
-    pub async fn callback(
+    pub async fn exchange_code(
         &self,
         code: String,
         csrf_state: String,
     ) -> Result<(User, Session), Error> {
-        // Create an OAuth2 client by specifying the client ID, client secret, authorization URL and
-        // token URL.
-        let client = BasicClient::new(ClientId::new(self.config.client_id.clone()))
-            .set_client_secret(ClientSecret::new(self.config.client_secret.clone()))
-            .set_auth_uri(AuthUrl::new(self.config.auth_url.clone()).expect("Invalid auth URL"))
-            .set_token_uri(TokenUrl::new(self.config.token_url.clone()).expect("Invalid token URL"))
-            // Set the URL the user will be redirected to after the authorization process.
-            .set_redirect_uri(
-                RedirectUrl::new(self.config.redirect_uri.clone()).expect("Invalid redirect URI"),
-            );
-
-        let http_client = reqwest::ClientBuilder::new()
-            // Following redirects opens the client up to SSRF vulnerabilities.
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("Client should build");
-
         let pkce_verifier = self
             .storage
             .user_storage()
@@ -402,43 +299,48 @@ where
             .map_err(|_| Error::InternalServerError)?
             .ok_or(Error::InvalidCredentials)?;
 
-        // Now you can trade it for an access token.
-        let token_result = client
-            .exchange_code(AuthorizationCode::new(code))
-            // Set the PKCE code verifier.
-            .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier))
-            .request_async(&http_client)
-            .await
-            .map_err(|_| Error::InternalServerError)?;
-
-        tracing::info!(
-            token = ?token_result,
-            "Token result"
+        tracing::debug!(
+            pkce_verifier = ?pkce_verifier,
+            csrf_state = ?csrf_state,
+            "Exchanging code for token"
         );
 
-        let access_token = token_result.access_token();
+        let token_response = self.provider.exchange_code(code, pkce_verifier).await?;
 
-        // Get user info from Google's userinfo endpoint
-        let user_info_response = http_client
-            .get("https://www.googleapis.com/oauth2/v2/userinfo")
-            .bearer_auth(access_token.secret())
-            .send()
-            .await
-            .map_err(|_| Error::InternalServerError)?
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|_| Error::InternalServerError)?;
+        let access_token = token_response.access_token();
 
-        tracing::info!(user_info_response = ?user_info_response, "User info response");
-        let email = user_info_response["email"]
-            .as_str()
-            .ok_or(Error::InternalServerError)?
-            .to_string();
+        tracing::debug!(
+            access_token = ?access_token,
+            "Getting user info"
+        );
 
-        let subject = user_info_response["id"]
-            .as_str()
-            .ok_or(Error::InternalServerError)?
-            .to_string();
+        let user_info = self
+            .provider
+            .get_user_info(access_token.secret().to_string())
+            .await?;
+
+        tracing::debug!(
+            user_info = ?user_info,
+            "Got user info"
+        );
+
+        let email = match &user_info {
+            UserInfo::Google(user_info) => user_info.email.clone(),
+            UserInfo::Github(user_info) => {
+                user_info.email.clone().expect("No email found for user")
+            }
+        };
+
+        let subject = match &user_info {
+            UserInfo::Google(user_info) => user_info.sub.clone(),
+            UserInfo::Github(user_info) => user_info.id.to_string(),
+        };
+
+        tracing::debug!(
+            email = ?email,
+            subject = ?subject,
+            "Getting or creating user"
+        );
 
         let user = self
             .get_or_create_user(email, subject)
@@ -451,6 +353,11 @@ where
             .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
             .await
             .map_err(|_| Error::InternalServerError)?;
+
+        tracing::debug!(
+            session = ?session,
+            "Created session"
+        );
 
         self.emit_event(&Event::SessionCreated(
             session.user_id.clone(),
@@ -475,8 +382,8 @@ where
     U: OAuthStorage,
     S: SessionStorage,
 {
-    fn auth_method(&self) -> &str {
-        &self.config.provider
+    fn auth_method(&self) -> String {
+        self.provider.name()
     }
 
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
@@ -486,12 +393,12 @@ where
                 token,
                 nonce_key,
             } => {
-                if provider != &self.config.provider {
+                if provider != &self.provider.name() {
                     return Err(Error::InvalidCredentials);
                 }
 
                 let (user, session) = self
-                    .callback(token.to_string(), nonce_key.to_string())
+                    .exchange_code(token.to_string(), nonce_key.to_string())
                     .await?;
 
                 Ok(AuthResponse {
