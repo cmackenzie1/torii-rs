@@ -77,6 +77,7 @@ impl UserStorage for SqliteStorage {
     type Error = torii_core::Error;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error> {
+        let now = Utc::now();
         let user = sqlx::query_as::<_, SqliteUser>(
             r#"
             INSERT INTO users (id, email, name, email_verified_at, created_at, updated_at) 
@@ -86,6 +87,10 @@ impl UserStorage for SqliteStorage {
         )
         .bind(user.id.as_ref())
         .bind(&user.email)
+        .bind(&user.name)
+        .bind(user.email_verified_at)
+        .bind(now.timestamp())
+        .bind(now.timestamp())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -166,6 +171,7 @@ impl UserStorage for SqliteStorage {
     }
 
     async fn update_user(&self, user: &User) -> Result<User, Self::Error> {
+        let now = Utc::now();
         let user = sqlx::query_as::<_, SqliteUser>(
             r#"
             UPDATE users 
@@ -177,7 +183,7 @@ impl UserStorage for SqliteStorage {
         .bind(&user.email)
         .bind(&user.name)
         .bind(user.email_verified_at)
-        .bind(user.updated_at)
+        .bind(now.timestamp())
         .bind(user.id.as_ref())
         .fetch_one(&self.pool)
         .await
@@ -377,6 +383,7 @@ impl OAuthStorage for SqliteStorage {
         subject: &str,
         user_id: &UserId,
     ) -> Result<OAuthAccount, Self::Error> {
+        let now = Utc::now();
         let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
             r#"
             INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) 
@@ -387,8 +394,8 @@ impl OAuthStorage for SqliteStorage {
         .bind(user_id.as_ref())
         .bind(provider)
         .bind(subject)
-        .bind(Utc::now().timestamp())
-        .bind(Utc::now().timestamp())
+        .bind(now.timestamp())
+        .bind(now.timestamp())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -495,12 +502,13 @@ impl OAuthStorage for SqliteStorage {
         provider: &str,
         subject: &str,
     ) -> Result<(), Self::Error> {
+        let now = Utc::now();
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
             .bind(user_id.as_ref())
             .bind(provider)
             .bind(subject)
-            .bind(Utc::now())
-            .bind(Utc::now())
+            .bind(now.timestamp())
+            .bind(now.timestamp())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -737,5 +745,48 @@ mod tests {
             .await
             .expect("Failed to get session 3");
         assert!(session3.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_timestamps_are_set_correctly() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+
+        // Create test user
+        let user = create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user");
+
+        // Verify user timestamps are set
+        assert!(user.created_at <= Utc::now());
+        assert!(user.updated_at <= Utc::now());
+        assert_eq!(user.created_at, user.updated_at);
+
+        // Create test session
+        let session = create_test_session(&storage, "session1", "1", Duration::from_secs(3600))
+            .await
+            .expect("Failed to create session");
+
+        // Verify session timestamps are set
+        assert!(session.created_at <= Utc::now());
+        assert!(session.updated_at <= Utc::now());
+        assert_eq!(session.created_at, session.updated_at);
+        assert!(session.expires_at > Utc::now());
+
+        // Update user
+
+        tokio::time::sleep(Duration::from_secs(1)).await; // Need to sleep for at least 1 second to ensure the updated_at is different
+
+        let mut updated_user = user.clone();
+        updated_user.name = Some("Test User".to_string());
+        let updated_user = storage
+            .update_user(&updated_user)
+            .await
+            .expect("Failed to update user");
+
+        // Verify updated timestamps
+        assert_eq!(updated_user.created_at, user.created_at);
+        assert!(updated_user.updated_at > user.updated_at);
     }
 }
