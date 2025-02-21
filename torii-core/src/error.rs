@@ -45,6 +45,10 @@ pub enum Error {
     // Event errors
     #[error("Event bus error: {0}")]
     EventBus(String),
+
+    // Migration errors
+    #[error("Migration error: {0}")]
+    Migration(String),
 }
 
 impl Error {

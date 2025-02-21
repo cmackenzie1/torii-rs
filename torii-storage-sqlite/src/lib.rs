@@ -1,8 +1,14 @@
+mod migrations;
+
 use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
+use migrations::CreateOAuthAccountsTable;
+use migrations::CreateSessionsTable;
+use migrations::CreateUsersTable;
+use migrations::SqliteMigrationManager;
 use sqlx::SqlitePool;
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
@@ -12,6 +18,8 @@ use torii_core::{
     storage::{NewUser, SessionStorage, UserStorage},
     Session, User, UserId,
 };
+use torii_migration::Migration;
+use torii_migration::MigrationManager;
 
 pub struct SqliteStorage {
     pool: SqlitePool,
@@ -22,11 +30,23 @@ impl SqliteStorage {
         Self { pool }
     }
 
-    pub async fn migrate(&self) -> Result<(), sqlx::Error> {
-        let migrations = sqlx::migrate!("./migrations");
-        tracing::debug!("Applying migrations: {:?}", migrations);
-        migrations.run(&self.pool).await?;
-        tracing::debug!("Applied latest migrations");
+    pub async fn migrate(&self) -> Result<(), Error> {
+        let manager = SqliteMigrationManager::new(self.pool.clone());
+        manager.initialize().await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to initialize migrations");
+            Error::Storage("Failed to initialize migrations".to_string())
+        })?;
+
+        let migrations: Vec<Box<dyn Migration<_>>> = vec![
+            Box::new(CreateUsersTable),
+            Box::new(CreateSessionsTable),
+            Box::new(CreateOAuthAccountsTable),
+        ];
+        manager.up(&migrations).await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to run migrations");
+            Error::Storage("Failed to run migrations".to_string())
+        })?;
+
         Ok(())
     }
 }
@@ -88,7 +108,10 @@ impl UserStorage for SqliteStorage {
         .bind(user.id.as_ref())
         .bind(&user.email)
         .bind(&user.name)
-        .bind(user.email_verified_at)
+        .bind(
+            user.email_verified_at
+                .map(|timestamp| timestamp.timestamp()),
+        )
         .bind(now.timestamp())
         .bind(now.timestamp())
         .fetch_one(&self.pool)
@@ -182,7 +205,10 @@ impl UserStorage for SqliteStorage {
         )
         .bind(&user.email)
         .bind(&user.name)
-        .bind(user.email_verified_at)
+        .bind(
+            user.email_verified_at
+                .map(|timestamp| timestamp.timestamp()),
+        )
         .bind(now.timestamp())
         .bind(user.id.as_ref())
         .fetch_one(&self.pool)
@@ -546,14 +572,35 @@ impl EmailPasswordStorage for SqliteStorage {
 mod tests {
     use std::time::Duration;
 
-    use sqlx::types::chrono::Utc;
+    use sqlx::{types::chrono::Utc, Sqlite};
     use torii_core::session::SessionId;
+    use torii_migration::{Migration, MigrationManager};
+
+    use crate::migrations::{
+        CreateOAuthAccountsTable, CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
+    };
 
     use super::*;
 
     async fn setup_sqlite_storage() -> Result<SqliteStorage, sqlx::Error> {
+        let _ = tracing_subscriber::fmt().try_init();
         let pool = SqlitePool::connect("sqlite::memory:").await?;
-        sqlx::migrate!("./migrations").run(&pool).await?;
+        let manager = SqliteMigrationManager::new(pool.clone());
+        manager
+            .initialize()
+            .await
+            .expect("Failed to initialize migrations");
+
+        let migrations: Vec<Box<dyn Migration<Sqlite>>> = vec![
+            Box::new(CreateUsersTable),
+            Box::new(CreateSessionsTable),
+            Box::new(CreateOAuthAccountsTable),
+        ];
+        manager
+            .up(&migrations)
+            .await
+            .expect("Failed to run migrations");
+
         Ok(SqliteStorage::new(pool))
     }
 

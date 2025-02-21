@@ -6,7 +6,7 @@ members = [
     "torii-core",
     "torii-storage-sqlite",
     "torii-storage-postgres",
-    "examples/todos",
+    "examples/todos", "torii-migration",
 ]
 resolver = "2"
 
