@@ -10,6 +10,7 @@ use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::auth::{AuthPlugin, AuthResponse, Credentials};
 use torii_core::events::{Event, EventBus};
+use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, Storage};
 use torii_core::Plugin;
 use torii_core::{
@@ -151,11 +152,7 @@ where
             .map_err(|e| Error::Storage(e.to_string()))?;
 
         // Delete all existing sessions for this user for security
-        self.storage
-            .session_storage()
-            .delete_sessions_for_user(user_id)
-            .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+        self.delete_sessions_for_user(user_id).await?;
 
         tracing::info!(
             user.id = %user_id,
@@ -187,19 +184,7 @@ where
 
         verify_password(password, &hash.unwrap()).map_err(|_| Error::InvalidCredentials)?;
 
-        let session = Session::builder()
-            .user_id(user.id.clone())
-            .build()
-            .expect("Valid session");
-
-        let session = self
-            .storage
-            .create_session(&session)
-            .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
-
-        self.emit_event(&Event::SessionCreated(user.id.clone(), session.clone()))
-            .await?;
+        let session = self.create_session(&user.id).await?;
 
         Ok(AuthResponse {
             user,
@@ -212,6 +197,53 @@ where
         if let Some(event_bus) = &self.event_bus {
             event_bus.emit(event).await?;
         }
+        Ok(())
+    }
+
+    async fn create_session(&self, user_id: &UserId) -> Result<Session, Error> {
+        let session = self
+            .storage
+            .create_session(&Session::builder().user_id(user_id.clone()).build().unwrap())
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        self.emit_event(&Event::SessionCreated(user_id.clone(), session.clone()))
+            .await?;
+
+        Ok(session)
+    }
+
+    async fn delete_session(&self, user_id: &UserId, session_id: &SessionId) -> Result<(), Error> {
+        let session = self
+            .storage
+            .session_storage()
+            .get_session(session_id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?
+            .ok_or(Error::SessionNotFound)?;
+
+        self.storage
+            .session_storage()
+            .delete_session(session_id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        self.emit_event(&Event::SessionDeleted(user_id.clone(), session.id))
+            .await?;
+
+        Ok(())
+    }
+
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
+        self.storage
+            .session_storage()
+            .delete_sessions_for_user(user_id)
+            .await
+            .map_err(|e| Error::Storage(e.to_string()))?;
+
+        self.emit_event(&Event::SessionsCleared(user_id.clone()))
+            .await?;
+
         Ok(())
     }
 }
@@ -238,6 +270,21 @@ where
         "email_password".to_string()
     }
 
+    async fn register(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
+        match credentials {
+            Credentials::Password { email, password } => {
+                let user = self.create_user(email, password).await?;
+                let session = self.create_session(&user.id).await?;
+                Ok(AuthResponse {
+                    user,
+                    session,
+                    metadata: HashMap::new(),
+                })
+            }
+            _ => Err(Error::InvalidCredentials),
+        }
+    }
+
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
         match credentials {
             Credentials::Password { email, password } => self.login_user(email, password).await,
@@ -256,11 +303,7 @@ where
     }
 
     async fn logout(&self, session: &Session) -> Result<(), Error> {
-        self.storage
-            .session_storage()
-            .delete_session(&session.id)
-            .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+        self.delete_session(&session.user_id, &session.id).await?;
 
         Ok(())
     }
@@ -503,30 +546,33 @@ mod tests {
     #[tokio::test]
     async fn test_event_handler_emitting() -> Result<(), Error> {
         let _ = tracing_subscriber::fmt().try_init();
-        // Setup test environment
+
+        // Create in-memory SQLite database and storage
         let pool = SqlitePool::connect("sqlite::memory:")
             .await
             .expect("Failed to create pool");
         let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
         let session_storage = Arc::new(SqliteStorage::new(pool));
 
+        // Initialize database schema
         user_storage.migrate().await.unwrap();
         session_storage.migrate().await.unwrap();
 
+        // Create plugin manager and event bus
         let storage = Storage::new(user_storage.clone(), session_storage.clone());
         let mut manager = PluginManager::new(user_storage, session_storage);
-
-        // Setup event bus and plugin
         let event_bus = EventBus::new();
+
+        // Register plugin with event bus
         let plugin = EmailPasswordPlugin::new(storage).with_event_bus(event_bus.clone());
         manager.register_auth_plugin(plugin);
 
-        // Setup event handler
-        let called = Arc::new(AtomicBool::new(false));
-        let count = Arc::new(AtomicUsize::new(0));
+        // Create test event handler that tracks when events are emitted
+        let event_was_emitted = Arc::new(AtomicBool::new(false));
+        let event_count = Arc::new(AtomicUsize::new(0));
         let handler = TestEventHandler {
-            called: called.clone(),
-            call_count: count.clone(),
+            called: event_was_emitted.clone(),
+            call_count: event_count.clone(),
         };
         event_bus.register(Arc::new(handler)).await;
 
@@ -534,35 +580,35 @@ mod tests {
             .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist");
 
-        // Test user creation event
+        // Test 1: Creating a user should emit an event
         let user = plugin.create_user("test@example.com", "password").await?;
         assert!(
-            called.load(Ordering::SeqCst),
-            "Handler was not called for user creation"
+            event_was_emitted.load(Ordering::SeqCst),
+            "No event emitted when creating user"
         );
-        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert_eq!(event_count.load(Ordering::SeqCst), 1);
 
-        // Test user update event (password change)
-        called.store(false, Ordering::SeqCst);
+        // Test 2: Changing password should emit 2 events, one for the user update and one for the session deletion
+        event_was_emitted.store(false, Ordering::SeqCst);
         plugin
             .change_password(&user.id, "password", "new-password")
             .await?;
         assert!(
-            called.load(Ordering::SeqCst),
-            "Handler was not called for password change"
+            event_was_emitted.load(Ordering::SeqCst),
+            "No event emitted when changing password"
         );
-        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert_eq!(event_count.load(Ordering::SeqCst), 3);
 
-        // Test session creation event
-        called.store(false, Ordering::SeqCst);
+        // Test 3: Logging in should emit 1 event
+        event_was_emitted.store(false, Ordering::SeqCst);
         plugin
             .login_user("test@example.com", "new-password")
             .await?;
         assert!(
-            called.load(Ordering::SeqCst),
-            "Handler was not called for login"
+            event_was_emitted.load(Ordering::SeqCst),
+            "No event emitted when logging in"
         );
-        assert_eq!(count.load(Ordering::SeqCst), 3);
+        assert_eq!(event_count.load(Ordering::SeqCst), 4);
 
         Ok(())
     }

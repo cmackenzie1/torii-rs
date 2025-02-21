@@ -61,6 +61,9 @@ pub trait AuthPlugin: Plugin + Send + Sync + 'static + DowncastSync {
     /// Unique identifier for this auth method
     fn auth_method(&self) -> String;
 
+    /// Register a new user with this authentication method
+    async fn register(&self, credentials: &Credentials) -> Result<AuthResponse, Error>;
+
     /// Authenticate a user and create a session
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error>;
 

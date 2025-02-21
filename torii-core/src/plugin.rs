@@ -150,6 +150,10 @@ mod tests {
             "test".to_string()
         }
 
+        async fn register(&self, _credentials: &Credentials) -> Result<AuthResponse, Error> {
+            todo!()
+        }
+
         async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthResponse, Error> {
             todo!()
         }

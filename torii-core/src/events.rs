@@ -20,6 +20,7 @@ pub enum Event {
     UserDeleted(UserId),
     SessionCreated(UserId, Session),
     SessionDeleted(UserId, SessionId),
+    SessionsCleared(UserId),
 }
 
 /// A trait for handling events emitted by the event bus

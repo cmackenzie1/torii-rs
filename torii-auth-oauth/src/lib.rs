@@ -386,6 +386,31 @@ where
         self.provider.name()
     }
 
+    async fn register(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
+        match credentials {
+            Credentials::OAuth {
+                provider,
+                token,
+                nonce_key,
+            } => {
+                if provider != &self.provider.name() {
+                    return Err(Error::InvalidCredentials);
+                }
+
+                let (user, session) = self
+                    .exchange_code(token.to_string(), nonce_key.to_string())
+                    .await?;
+
+                Ok(AuthResponse {
+                    user,
+                    session,
+                    metadata: HashMap::new(),
+                })
+            }
+            _ => return Err(Error::InvalidCredentials),
+        }
+    }
+
     async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
         match credentials {
             Credentials::OAuth {
