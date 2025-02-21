@@ -1,16 +1,24 @@
+mod migrations;
+
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
+use migrations::CreateOAuthAccountsTable;
+use migrations::CreateSessionsTable;
+use migrations::CreateUsersTable;
+use migrations::PostgresMigrationManager;
 use sqlx::PgPool;
 use std::time::Duration;
+use torii_core::Error;
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
 use torii_core::user::OAuthAccount;
-use torii_core::Error;
 use torii_core::{
-    storage::{NewUser, SessionStorage, UserStorage},
     Session, User, UserId,
+    storage::{NewUser, SessionStorage, UserStorage},
 };
+use torii_migration::Migration;
+use torii_migration::MigrationManager;
 
 #[derive(Debug)]
 pub struct PostgresStorage {
@@ -22,11 +30,23 @@ impl PostgresStorage {
         Self { pool }
     }
 
-    pub async fn migrate(&self) -> Result<(), sqlx::Error> {
-        let migrations = sqlx::migrate!("./migrations");
-        tracing::debug!("Applying migrations: {:?}", migrations);
-        migrations.run(&self.pool).await?;
-        tracing::debug!("Applied latest migrations");
+    pub async fn migrate(&self) -> Result<(), Error> {
+        let manager = PostgresMigrationManager::new(self.pool.clone());
+        manager.initialize().await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to initialize migrations");
+            Error::Storage("Failed to initialize migrations".to_string())
+        })?;
+
+        let migrations: Vec<Box<dyn Migration<_>>> = vec![
+            Box::new(CreateUsersTable),
+            Box::new(CreateSessionsTable),
+            Box::new(CreateOAuthAccountsTable),
+        ];
+        manager.up(&migrations).await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to run migrations");
+            Error::Storage("Failed to run migrations".to_string())
+        })?;
+
         Ok(())
     }
 }

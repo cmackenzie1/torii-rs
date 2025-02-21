@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::{session::SessionId, Error, Session, User, UserId};
+use crate::{Error, Session, User, UserId, session::SessionId};
 
 /// Represents events that can be emitted by the event bus
 ///

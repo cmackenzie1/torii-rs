@@ -7,11 +7,11 @@ use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
 use torii_core::{
+    AuthPlugin, AuthResponse, Credentials,
     events::{Event, EventBus},
     storage::OAuthStorage,
-    AuthPlugin, AuthResponse, Credentials,
 };
-use torii_core::{storage::Storage, Error, NewUser, Plugin, Session, SessionStorage, User, UserId};
+use torii_core::{Error, NewUser, Plugin, Session, SessionStorage, User, UserId, storage::Storage};
 
 pub struct AuthorizationUrl {
     url: String,

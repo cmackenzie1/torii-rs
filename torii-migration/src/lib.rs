@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use sqlx::Database;
 use thiserror::Error;
 
@@ -31,7 +32,7 @@ pub trait Migration<DB: Database>: Send + Sync {
 pub struct MigrationRecord {
     pub version: i64,
     pub name: String,
-    pub applied_at: i64, // unix timestamp since no database can agree on a datetime type
+    pub applied_at: DateTime<Utc>,
 }
 
 #[async_trait]

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{session::SessionId, Error, OAuthAccount, Session, User, UserId};
+use crate::{Error, OAuthAccount, Session, User, UserId, session::SessionId};
 
 #[async_trait]
 pub trait StoragePlugin: Send + Sync + 'static {

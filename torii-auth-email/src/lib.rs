@@ -8,14 +8,14 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
+use torii_core::Plugin;
 use torii_core::auth::{AuthPlugin, AuthResponse, Credentials};
 use torii_core::events::{Event, EventBus};
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, Storage};
-use torii_core::Plugin;
 use torii_core::{
-    storage::{NewUser, SessionStorage},
     Error, Session, User, UserId,
+    storage::{NewUser, SessionStorage},
 };
 
 /// Email/password authentication plugin
@@ -314,10 +314,10 @@ mod tests {
     use super::*;
     use sqlx::SqlitePool;
     use std::sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     };
-    use torii_core::{events::EventHandler, PluginManager};
+    use torii_core::{PluginManager, events::EventHandler};
     use torii_storage_sqlite::SqliteStorage;
 
     async fn setup_plugin() -> Result<(PluginManager<SqliteStorage, SqliteStorage>,), Error> {

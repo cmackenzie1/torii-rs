@@ -10,13 +10,13 @@ use migrations::CreateSessionsTable;
 use migrations::CreateUsersTable;
 use migrations::SqliteMigrationManager;
 use sqlx::SqlitePool;
+use torii_core::Error;
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
 use torii_core::user::OAuthAccount;
-use torii_core::Error;
 use torii_core::{
-    storage::{NewUser, SessionStorage, UserStorage},
     Session, User, UserId,
+    storage::{NewUser, SessionStorage, UserStorage},
 };
 use torii_migration::Migration;
 use torii_migration::MigrationManager;
@@ -572,7 +572,7 @@ impl EmailPasswordStorage for SqliteStorage {
 mod tests {
     use std::time::Duration;
 
-    use sqlx::{types::chrono::Utc, Sqlite};
+    use sqlx::{Sqlite, types::chrono::Utc};
     use torii_core::session::SessionId;
     use torii_migration::{Migration, MigrationManager};
 
