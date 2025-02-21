@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use axum::{
+    Json, Router,
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::get,
-    Json, Router,
 };
-use axum_extra::extract::{cookie::Cookie, CookieJar};
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 use torii_auth_oauth::OAuthPlugin;

@@ -130,7 +130,7 @@ mod tests {
     use async_trait::async_trait;
 
     use crate::{
-        session::SessionId, AuthResponse, Credentials, Error, NewUser, Session, User, UserId,
+        AuthResponse, Credentials, Error, NewUser, Session, User, UserId, session::SessionId,
     };
 
     use super::*;
@@ -340,15 +340,19 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Verify expired session was removed but valid session remains
-        assert!(session_storage
-            .get_session(&SessionId::new("expired"))
-            .await
-            .expect("Failed to get session")
-            .is_none());
-        assert!(session_storage
-            .get_session(&SessionId::new("valid"))
-            .await
-            .expect("Failed to get session")
-            .is_some());
+        assert!(
+            session_storage
+                .get_session(&SessionId::new("expired"))
+                .await
+                .expect("Failed to get session")
+                .is_none()
+        );
+        assert!(
+            session_storage
+                .get_session(&SessionId::new("valid"))
+                .await
+                .expect("Failed to get session")
+                .is_some()
+        );
     }
 }

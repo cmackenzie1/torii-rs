@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use downcast_rs::{impl_downcast, DowncastSync};
+use downcast_rs::{DowncastSync, impl_downcast};
 use std::collections::HashMap;
 
 use crate::{Error, Plugin, Session, User};

@@ -1,7 +1,7 @@
 use oauth2::{
-    basic::{BasicClient, BasicTokenType},
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EmptyExtraTokenFields,
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, StandardTokenResponse, TokenUrl,
+    basic::{BasicClient, BasicTokenType},
 };
 use serde::Deserialize;
 use torii_core::Error;

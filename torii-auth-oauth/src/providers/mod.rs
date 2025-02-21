@@ -1,4 +1,4 @@
-use oauth2::{basic::BasicTokenType, EmptyExtraTokenFields, StandardTokenResponse};
+use oauth2::{EmptyExtraTokenFields, StandardTokenResponse, basic::BasicTokenType};
 use torii_core::Error;
 
 use crate::AuthorizationUrl;

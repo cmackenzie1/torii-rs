@@ -13,7 +13,7 @@
 //! | `created_at` | `DateTime`       | The timestamp when the session was created.            |
 //! | `updated_at` | `DateTime`       | The timestamp when the session was last updated.       |
 //! | `expires_at` | `DateTime`       | The timestamp when the session will expire.            |
-use crate::{user::UserId, Error};
+use crate::{Error, user::UserId};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
