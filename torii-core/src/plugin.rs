@@ -130,7 +130,7 @@ mod tests {
     use async_trait::async_trait;
 
     use crate::{
-        AuthResponse, Credentials, Error, NewUser, Session, User, UserId, session::SessionId,
+        Credentials, Error, NewUser, Session, User, UserId, auth::AuthStage, session::SessionId,
     };
 
     use super::*;
@@ -150,11 +150,11 @@ mod tests {
             "test".to_string()
         }
 
-        async fn register(&self, _credentials: &Credentials) -> Result<AuthResponse, Error> {
+        async fn register(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
             todo!()
         }
 
-        async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthResponse, Error> {
+        async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
             todo!()
         }
 

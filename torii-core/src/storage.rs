@@ -220,3 +220,40 @@ impl NewUserBuilder {
         })
     }
 }
+
+/// Storage methods specific to passkey authentication
+///
+/// This trait extends the base `UserStorage` trait with methods needed for
+/// storing and retrieving passkey credentials for a user.
+#[async_trait]
+pub trait PasskeyStorage: UserStorage {
+    /// Add a passkey credential for a user
+    async fn add_passkey_credential(
+        &self,
+        user_id: &UserId,
+        credential: &str,
+    ) -> Result<(), Self::Error>;
+
+    /// Get all passkey credentials for a user
+    async fn get_passkey_credentials(&self, user_id: &UserId) -> Result<Vec<String>, Self::Error>;
+
+    /// Delete a passkey credential for a user
+    async fn delete_passkey_credential(
+        &self,
+        user_id: &UserId,
+        credential: &str,
+    ) -> Result<(), Self::Error>;
+
+    /// Set a passkey challenge for a user
+    async fn set_passkey_challenge(
+        &self,
+        challenge_id: &str,
+        challenge: &str,
+    ) -> Result<(), Self::Error>;
+
+    /// Get a passkey challenge for a user
+    async fn get_passkey_challenge(
+        &self,
+        challenge_id: &str,
+    ) -> Result<Option<String>, Self::Error>;
+}

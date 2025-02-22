@@ -1,13 +1,19 @@
 [workspace]
 members = [
+    # Core
     "torii",
+    "torii-core",
+    # Auth plugins
     "torii-auth-email",
     "torii-auth-oauth",
-    "torii-core",
+    "torii-auth-passkey",
+    # SQL Storage plugins
     "torii-storage-sqlite",
     "torii-storage-postgres",
-    "examples/todos",
+    # Migration
     "torii-migration",
+    # Examples
+    "examples/todos",
 ]
 resolver = "3"
 

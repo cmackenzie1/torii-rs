@@ -12,6 +12,7 @@ dashmap.workspace = true
 downcast-rs = "2.0.1"
 futures.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true

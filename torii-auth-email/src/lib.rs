@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::Plugin;
-use torii_core::auth::{AuthPlugin, AuthResponse, Credentials};
+use torii_core::auth::{AuthPlugin, AuthResponse, AuthStage, Credentials};
 use torii_core::events::{Event, EventBus};
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, Storage};
@@ -164,7 +164,7 @@ where
         Ok(())
     }
 
-    pub async fn login_user(&self, email: &str, password: &str) -> Result<AuthResponse, Error> {
+    pub async fn login_user(&self, email: &str, password: &str) -> Result<AuthStage, Error> {
         let user_storage = self.storage.user_storage();
 
         let user = user_storage
@@ -186,11 +186,12 @@ where
 
         let session = self.create_session(&user.id).await?;
 
-        Ok(AuthResponse {
+        Ok(AuthStage::Complete(AuthResponse {
             user,
-            session,
+            session: Some(session),
             metadata: HashMap::new(),
-        })
+            passkey_challenge: None,
+        }))
     }
 
     async fn emit_event(&self, event: &Event) -> Result<(), Error> {
@@ -270,24 +271,28 @@ where
         "email_password".to_string()
     }
 
-    async fn register(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
+    async fn register(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
         match credentials {
             Credentials::Password { email, password } => {
                 let user = self.create_user(email, password).await?;
                 let session = self.create_session(&user.id).await?;
-                Ok(AuthResponse {
+                Ok(AuthStage::Complete(AuthResponse {
                     user,
-                    session,
+                    session: Some(session),
                     metadata: HashMap::new(),
-                })
+                    passkey_challenge: None,
+                }))
             }
             _ => Err(Error::InvalidCredentials),
         }
     }
 
-    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
+    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
         match credentials {
-            Credentials::Password { email, password } => self.login_user(email, password).await,
+            Credentials::Password { email, password } => {
+                let auth_stage = self.login_user(email, password).await?;
+                Ok(auth_stage)
+            }
             _ => Err(Error::InvalidCredentials),
         }
     }
@@ -388,11 +393,18 @@ mod tests {
             .await?;
         assert_eq!(user.email, "test@example.com");
 
-        let auth_response = manager
+        let auth_stage = manager
             .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .login_user("test@example.com", "password")
+            .authenticate(&Credentials::Password {
+                email: "test@example.com".to_string(),
+                password: "password".to_string(),
+            })
             .await?;
+        let auth_response = match auth_stage {
+            AuthStage::Complete(auth_response) => auth_response,
+            _ => panic!("Expected complete auth stage"),
+        };
         assert_eq!(auth_response.user.email, "test@example.com");
 
         Ok(())

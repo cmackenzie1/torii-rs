@@ -17,7 +17,10 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_email::EmailPasswordPlugin;
-use torii_core::{plugin::PluginManager, session::SessionId, storage::Storage};
+use torii_core::{
+    AuthPlugin, Credentials, auth::AuthStage, plugin::PluginManager, session::SessionId,
+    storage::Storage,
+};
 use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic email/password authentication system using Torii.
@@ -71,16 +74,19 @@ async fn sign_up_form_handler(
         .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin.create_user(&params.email, &params.password).await {
-        Ok(_) => (
+    match plugin
+        .register(&Credentials::email_password(params.email, params.password))
+        .await
+    {
+        Ok(AuthStage::Complete(_)) => (
             StatusCode::OK,
             Json(json!({ "message": "Successfully signed up" })),
         )
             .into_response(),
-        Err(e) => (
+        _ => (
             StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": format!("Sign up failed: {}", e)
+                "error": format!("Sign up failed")
             })),
         )
             .into_response(),
@@ -101,13 +107,17 @@ async fn sign_in_form_handler(
         .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin.login_user(&params.email, &params.password).await {
-        Ok(auth_response) => {
-            let cookie = Cookie::build(("session_id", auth_response.session.id.to_string()))
-                .path("/")
-                .http_only(true)
-                .secure(false) // TODO: Set to true in production
-                .same_site(SameSite::Lax);
+    match plugin
+        .authenticate(&Credentials::email_password(params.email, params.password))
+        .await
+    {
+        Ok(AuthStage::Complete(auth_response)) => {
+            let cookie =
+                Cookie::build(("session_id", auth_response.session.unwrap().id.to_string()))
+                    .path("/")
+                    .http_only(true)
+                    .secure(false) // TODO: Set to true in production
+                    .same_site(SameSite::Lax);
             (
                 StatusCode::OK,
                 [(header::SET_COOKIE, cookie.to_string())],
@@ -115,10 +125,10 @@ async fn sign_in_form_handler(
             )
                 .into_response()
         }
-        Err(e) => (
+        _ => (
             StatusCode::UNAUTHORIZED,
             Json(json!({
-                "error": format!("Authentication failed: {}", e)
+                "error": format!("Authentication failed")
             })),
         )
             .into_response(),
