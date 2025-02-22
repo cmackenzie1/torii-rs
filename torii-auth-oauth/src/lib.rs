@@ -6,8 +6,10 @@ use async_trait::async_trait;
 use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
+use serde_json::json;
 use torii_core::{
     AuthPlugin, AuthResponse, Credentials,
+    auth::{AuthChallenge, AuthStage},
     events::{Event, EventBus},
     storage::OAuthStorage,
 };
@@ -386,32 +388,55 @@ where
         self.provider.name()
     }
 
-    async fn register(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
+    async fn register(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
         match credentials {
+            // Start registration with redirect
+            Credentials::OAuth { provider, .. } if provider == &self.provider.name() => {
+                let auth_url = self.get_authorization_url().await?;
+
+                let mut metadata = HashMap::new();
+                metadata.insert("csrf_state".to_string(), auth_url.csrf_state().to_string());
+                metadata.insert(
+                    "pkce_verifier".to_string(),
+                    auth_url.pkce_verifier().to_string(),
+                );
+
+                Ok(AuthStage::Challenge(AuthChallenge {
+                    challenge_type: "oauth_redirect".to_string(),
+                    challenge: json!({
+                        "authorization_url": auth_url.url()
+                    }),
+                    metadata,
+                }))
+            }
+
+            // Complete registration with code
             Credentials::OAuth {
                 provider,
-                token,
-                nonce_key,
+                token: code,
+                nonce_key: csrf_state,
             } => {
                 if provider != &self.provider.name() {
                     return Err(Error::InvalidCredentials);
                 }
 
                 let (user, session) = self
-                    .exchange_code(token.to_string(), nonce_key.to_string())
+                    .exchange_code(code.to_string(), csrf_state.to_string())
                     .await?;
 
-                Ok(AuthResponse {
+                Ok(AuthStage::Complete(AuthResponse {
                     user,
-                    session,
+                    session: Some(session),
                     metadata: HashMap::new(),
-                })
+                    passkey_challenge: None,
+                }))
             }
+
             _ => return Err(Error::InvalidCredentials),
         }
     }
 
-    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResponse, Error> {
+    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
         match credentials {
             Credentials::OAuth {
                 provider,
@@ -426,11 +451,12 @@ where
                     .exchange_code(token.to_string(), nonce_key.to_string())
                     .await?;
 
-                Ok(AuthResponse {
+                Ok(AuthStage::Complete(AuthResponse {
                     user,
-                    session,
+                    session: Some(session),
                     metadata: HashMap::new(),
-                })
+                    passkey_challenge: None,
+                }))
             }
             _ => return Err(Error::InvalidCredentials),
         }

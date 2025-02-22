@@ -14,7 +14,7 @@ use axum_extra::extract::{
 use serde::Deserialize;
 use serde_json::json;
 use torii_auth_email::EmailPasswordPlugin;
-use torii_core::{session::SessionId, User};
+use torii_core::{auth::AuthStage, session::SessionId, User};
 use torii_storage_sqlite::SqliteStorage;
 use uuid::Uuid;
 
@@ -200,17 +200,22 @@ async fn sign_in_form_handler(
 
     match plugin.login_user(&params.email, &params.password).await {
         Ok(auth_response) => {
-            let cookie = Cookie::build(("session_id", auth_response.session.id.to_string()))
-                .path("/")
-                .http_only(true)
-                .secure(false) // TODO: Set to true in production
-                .same_site(SameSite::Lax);
-            (
-                StatusCode::OK,
-                [(header::SET_COOKIE, cookie.to_string())],
-                Json(json!({ "message": "Successfully signed in" })),
-            )
-                .into_response()
+            if let AuthStage::Complete(auth_response) = auth_response {
+                let cookie =
+                    Cookie::build(("session_id", auth_response.session.unwrap().id.to_string()))
+                        .path("/")
+                        .http_only(true)
+                        .secure(false) // TODO: Set to true in production
+                        .same_site(SameSite::Lax);
+                (
+                    StatusCode::OK,
+                    [(header::SET_COOKIE, cookie.to_string())],
+                    Json(json!({ "message": "Successfully signed in" })),
+                )
+                    .into_response()
+            } else {
+                Redirect::to("/sign-in").into_response()
+            }
         }
         Err(e) => (
             StatusCode::UNAUTHORIZED,
