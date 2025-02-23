@@ -273,6 +273,95 @@ impl Migration<Sqlite> for CreateOAuthAccountsTable {
     }
 }
 
+pub struct CreatePasskeysTable;
+
+#[async_trait]
+impl Migration<Sqlite> for CreatePasskeysTable {
+    fn version(&self) -> i64 {
+        4
+    }
+
+    fn name(&self) -> &str {
+        "CreatePasskeysTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS passkeys (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch()),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );"#,
+        )
+        .execute(conn)
+        .await
+        .map_err(MigrationError::Database)?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP TABLE IF EXISTS passkeys")
+            .execute(conn)
+            .await
+            .map_err(MigrationError::Database)?;
+        Ok(())
+    }
+}
+
+pub struct CreatePasskeyChallengesTable;
+
+#[async_trait]
+impl Migration<Sqlite> for CreatePasskeyChallengesTable {
+    fn version(&self) -> i64 {
+        5
+    }
+
+    fn name(&self) -> &str {
+        "CreatePasskeyChallengesTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS passkey_challenges (
+                id TEXT PRIMARY KEY,
+                challenge TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch())
+            );"#,
+        )
+        .execute(conn)
+        .await
+        .map_err(MigrationError::Database)?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP TABLE IF EXISTS passkey_challenges")
+            .execute(conn)
+            .await
+            .map_err(MigrationError::Database)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,18 +388,20 @@ mod tests {
             Box::new(CreateUsersTable),
             Box::new(CreateSessionsTable),
             Box::new(CreateOAuthAccountsTable),
+            Box::new(CreatePasskeysTable),
+            Box::new(CreatePasskeyChallengesTable),
         ];
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(3).await?;
+        let applied = manager.is_applied(5).await?;
         assert!(applied, "Migration should be applied");
 
         // Test down migrations
         manager.down(&migrations).await?;
 
         // Verify migration was rolled back
-        let applied = manager.is_applied(3).await?;
+        let applied = manager.is_applied(5).await?;
         assert!(!applied, "Migration should be rolled back");
 
         Ok(())
@@ -333,8 +424,20 @@ mod tests {
             Box::new(CreateUsersTable),
             Box::new(CreateSessionsTable),
             Box::new(CreateOAuthAccountsTable),
+            Box::new(CreatePasskeysTable),
+            Box::new(CreatePasskeyChallengesTable),
         ];
         manager.up(&migrations).await?;
+
+        // Test down migrations
+        manager.down(&migrations).await?;
+
+        // Test up migrations again
+        manager.up(&migrations).await?;
+
+        // Verify migration was applied
+        let applied = manager.is_applied(5).await?;
+        assert!(applied, "Migration should be applied");
 
         Ok(())
     }

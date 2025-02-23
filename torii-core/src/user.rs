@@ -34,6 +34,10 @@ impl UserId {
     pub fn into_inner(self) -> String {
         self.0
     }
+
+    pub fn as_uuid(&self) -> Uuid {
+        Uuid::parse_str(&self.0).unwrap()
+    }
 }
 
 impl Default for UserId {

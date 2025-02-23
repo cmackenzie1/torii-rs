@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -97,7 +97,7 @@ pub trait OAuthStorage: UserStorage {
         &self,
         csrf_state: &str,
         pkce_verifier: &str,
-        expires_in: Duration,
+        expires_in: chrono::Duration,
     ) -> Result<(), Error>;
 
     /// Retrieve a stored PKCE verifier by CSRF state
@@ -228,30 +228,25 @@ impl NewUserBuilder {
 #[async_trait]
 pub trait PasskeyStorage: UserStorage {
     /// Add a passkey credential for a user
-    async fn add_passkey_credential(
+    async fn add_passkey(
         &self,
         user_id: &UserId,
-        credential: &str,
+        credential_id: &str,
+        passkey_json: &str,
     ) -> Result<(), Self::Error>;
 
-    /// Get all passkey credentials for a user
-    async fn get_passkey_credentials(&self, user_id: &UserId) -> Result<Vec<String>, Self::Error>;
-
-    /// Delete a passkey credential for a user
-    async fn delete_passkey_credential(
-        &self,
-        user_id: &UserId,
-        credential: &str,
-    ) -> Result<(), Self::Error>;
+    /// Get all passkeys for a user
+    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, Self::Error>;
 
     /// Set a passkey challenge for a user
     async fn set_passkey_challenge(
         &self,
         challenge_id: &str,
         challenge: &str,
+        expires_in: chrono::Duration,
     ) -> Result<(), Self::Error>;
 
-    /// Get a passkey challenge for a user
+    /// Get a passkey challenge
     async fn get_passkey_challenge(
         &self,
         challenge_id: &str,

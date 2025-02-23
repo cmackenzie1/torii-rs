@@ -1,7 +1,6 @@
 use crate::{SqliteStorage, SqliteUser};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::time::Duration;
 use torii_core::storage::OAuthStorage;
 use torii_core::{OAuthAccount, User, UserId};
 
@@ -157,12 +156,12 @@ impl OAuthStorage for SqliteStorage {
         &self,
         csrf_state: &str,
         pkce_verifier: &str,
-        expires_in: Duration,
+        expires_in: chrono::Duration,
     ) -> Result<(), Self::Error> {
         sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
             .bind(csrf_state)
             .bind(pkce_verifier)
-            .bind(Utc::now() + expires_in)
+            .bind((Utc::now() + expires_in).timestamp())
             .execute(&self.pool)
             .await
             .map_err(|e| {

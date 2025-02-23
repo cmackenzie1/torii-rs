@@ -1,14 +1,40 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use torii_core::auth::{AuthChallenge, AuthStage};
+use serde::{Deserialize, Serialize};
+use torii_core::auth::AuthStage;
 use torii_core::storage::{PasskeyStorage, SessionStorage, Storage};
-use torii_core::{AuthPlugin, AuthResponse, Credentials, Error, NewUser, Plugin, Session, UserId};
+use torii_core::{AuthPlugin, AuthResponse, Credentials, Error, Plugin, Session, UserId};
 use webauthn_rs::prelude::*;
 
 pub struct PasskeyPlugin<U: PasskeyStorage, S: SessionStorage> {
     webauthn: Webauthn,
     storage: Storage<U, S>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PasskeyChallenge {
+    user_id: UserId,
+    challenge_id: String,
+    challenge: serde_json::Value,
+}
+
+impl PasskeyChallenge {
+    pub fn new(user_id: UserId, challenge_id: String, challenge: serde_json::Value) -> Self {
+        Self {
+            user_id,
+            challenge_id,
+            challenge,
+        }
+    }
+
+    pub fn challenge_id(&self) -> &String {
+        &self.challenge_id
+    }
+
+    pub fn challenge(&self) -> &serde_json::Value {
+        &self.challenge
+    }
 }
 
 impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
@@ -21,94 +47,102 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
     }
 
     /// Start a passkey registration and return the challenge to the client.
-    /// The challenge is stored in the database for verification, and no user is created.
-    pub async fn start_registration(&self, email: &str) -> Result<AuthStage, Error> {
+    /// The challenge is stored in the database for verification.
+    /// Returns a tuple of the challenge
+    pub async fn start_registration(&self, email: &str) -> Result<PasskeyChallenge, Error> {
         let challenge_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let user_id = UserId::new_random();
         // CCR is sent to the client, SKR is stored in the database for verification
         let (ccr, skr) = self
             .webauthn
-            .start_passkey_registration(user_id, email, email, None)
+            .start_passkey_registration(user_id.as_uuid(), email, email, None)
             .expect("Failed to start registration.");
 
         self.storage
             .user_storage()
             .set_passkey_challenge(
                 &challenge_id.to_string(),
-                &serde_json::to_string(&skr).unwrap(),
+                &serde_json::to_string(&skr).unwrap_or_else(|e| {
+                    tracing::error!("Failed to serialize challenge: {:?}", e);
+                    "".to_string()
+                }),
+                chrono::Duration::minutes(5),
             )
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|e| {
+                tracing::error!("Failed to set passkey challenge: {:?}", e);
+                Error::InternalServerError
+            })?;
 
-        Ok(AuthStage::Challenge(AuthChallenge {
-            challenge_type: "passkey_registration".to_string(),
-            challenge: serde_json::to_value(&ccr).unwrap(),
-            metadata: HashMap::from([
-                ("challenge_id".to_string(), challenge_id.to_string()),
-                ("user_id".to_string(), user_id.to_string()),
-            ]),
-        }))
+        Ok(PasskeyChallenge::new(
+            user_id,
+            challenge_id.to_string(),
+            serde_json::to_value(&ccr).unwrap_or_else(|e| {
+                tracing::error!("Failed to serialize challenge: {:?}", e);
+                serde_json::Value::Null
+            }),
+        ))
     }
 
     /// Complete a passkey registration and create a user in the user storage.
     pub async fn complete_registration(
         &self,
         email: &str,
-        challenge_response: Option<serde_json::Value>,
-        metadata: &HashMap<String, String>,
+        challenge_id: &str,
+        challenge_response: &serde_json::Value,
     ) -> Result<AuthStage, Error> {
-        let challenge_id = metadata
-            .get("challenge_id")
-            .ok_or(Error::InvalidCredentials)?
-            .to_string();
+        let challenge_response: RegisterPublicKeyCredential =
+            serde_json::from_value::<RegisterPublicKeyCredential>(challenge_response.clone())
+                .map_err(|e| {
+                    tracing::error!("Failed to deserialize challenge response: {:?}", e);
+                    Error::InternalServerError
+                })?;
 
         let passkey_challenge = self
             .storage
             .user_storage()
-            .get_passkey_challenge(&challenge_id)
+            .get_passkey_challenge(challenge_id)
             .await
-            .map_err(|_| Error::InternalServerError)?
+            .map_err(|e| {
+                tracing::error!("Failed to get passkey challenge: {:?}", e);
+                Error::InternalServerError
+            })?
             .ok_or(Error::InvalidCredentials)?;
 
-        let passkey_challenge = serde_json::from_str::<PasskeyRegistration>(&passkey_challenge)
-            .map_err(|_| Error::InternalServerError)?;
+        let passkey_challenge: PasskeyRegistration =
+            serde_json::from_str::<PasskeyRegistration>(&passkey_challenge).map_err(|e| {
+                tracing::error!("Failed to deserialize passkey challenge: {:?}", e);
+                Error::InternalServerError
+            })?;
 
-        let challenge_response =
-            serde_json::from_value::<RegisterPublicKeyCredential>(challenge_response.unwrap())
-                .map_err(|_| Error::InternalServerError)?;
-
-        let passkey_challenge = self
+        // TODO: Assert credential ID has not been used before for any other account
+        let passkey = self
             .webauthn
             .finish_passkey_registration(&challenge_response, &passkey_challenge)
             .expect("Failed to complete registration.");
 
-        let user_id = UserId::new(
-            &metadata
-                .get("user_id")
-                .ok_or(Error::InvalidCredentials)?
-                .to_string(),
-        );
-
         let user = self
             .storage
             .user_storage()
-            .create_user(&NewUser {
-                id: user_id.clone(),
-                email: email.to_string(),
-                name: None,
-                email_verified_at: None,
-            })
+            .get_or_create_user_by_email(email)
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|e| {
+                tracing::error!("Failed to get or create user by email: {:?}", e);
+                Error::InternalServerError
+            })?;
 
         self.storage
             .user_storage()
-            .add_passkey_credential(
-                &user_id,
-                &serde_json::to_string(&passkey_challenge).unwrap(),
+            .add_passkey(
+                &user.id,
+                &serde_json::to_string(&passkey.cred_id()).unwrap(),
+                &serde_json::to_string(&passkey).unwrap(),
             )
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|e| {
+                tracing::error!("Failed to add passkey: {:?}", e);
+                Error::InternalServerError
+            })?;
 
         Ok(AuthStage::Complete(AuthResponse {
             user,
@@ -118,19 +152,19 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         }))
     }
 
-    pub async fn start_login(&self, email: &str) -> Result<AuthStage, Error> {
+    pub async fn start_login(&self, email: &str) -> Result<PasskeyChallenge, Error> {
         let user = self
             .storage
             .user_storage()
             .get_user_by_email(email)
             .await
             .map_err(|_| Error::InternalServerError)?
-            .ok_or(Error::InvalidCredentials)?;
+            .ok_or(Error::UserNotFound)?;
 
         let passkey_credentials = self
             .storage
             .user_storage()
-            .get_passkey_credentials(&user.id)
+            .get_passkeys(&user.id)
             .await
             .map_err(|_| Error::InternalServerError)?;
 
@@ -150,30 +184,31 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
             .set_passkey_challenge(
                 &challenge_id.to_string(),
                 &serde_json::to_string(&rak).unwrap(),
+                chrono::Duration::minutes(5),
             )
             .await
             .map_err(|_| Error::InternalServerError)?;
 
-        Ok(AuthStage::Challenge(AuthChallenge {
-            challenge_type: "passkey_login".to_string(),
-            challenge: serde_json::to_value(&rcr).unwrap(),
-            metadata: HashMap::from([
-                ("challenge_id".to_string(), challenge_id.to_string()),
-                ("user_id".to_string(), user.id.to_string()),
-            ]),
-        }))
+        Ok(PasskeyChallenge::new(
+            user.id,
+            challenge_id.to_string(),
+            serde_json::to_value(&rcr).unwrap(),
+        ))
     }
 
     pub async fn complete_login(
         &self,
         email: &str,
-        public_key: Option<serde_json::Value>,
-        metadata: &HashMap<String, String>,
+        challenge_id: String,
+        challenge_response: String,
     ) -> Result<AuthStage, Error> {
-        let challenge_id = metadata
-            .get("challenge_id")
-            .ok_or(Error::InvalidCredentials)?
-            .to_string();
+        let user = self
+            .storage
+            .user_storage()
+            .get_user_by_email(email)
+            .await
+            .map_err(|_| Error::InternalServerError)?
+            .ok_or(Error::InvalidCredentials)?;
 
         let passkey_challenge = self
             .storage
@@ -186,21 +221,12 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         let passkey_challenge = serde_json::from_str::<PasskeyAuthentication>(&passkey_challenge)
             .map_err(|_| Error::InternalServerError)?;
 
-        let public_key = serde_json::from_value::<PublicKeyCredential>(public_key.unwrap())
+        let challenge_response = serde_json::from_str::<PublicKeyCredential>(&challenge_response)
             .map_err(|_| Error::InternalServerError)?;
-
-        // TODO: There is no correlation between user and the passkeys right now
-        let user = self
-            .storage
-            .user_storage()
-            .get_user_by_email(email)
-            .await
-            .map_err(|_| Error::InternalServerError)?
-            .ok_or(Error::InvalidCredentials)?;
 
         match self
             .webauthn
-            .finish_passkey_authentication(&public_key, &passkey_challenge)
+            .finish_passkey_authentication(&challenge_response, &passkey_challenge)
         {
             Ok(_) => {
                 Ok(AuthStage::Complete(AuthResponse {
@@ -230,40 +256,12 @@ impl<U: PasskeyStorage, S: SessionStorage> AuthPlugin for PasskeyPlugin<U, S> {
         "passkey".to_string()
     }
 
-    async fn register(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
-        match credentials {
-            Credentials::Passkey { stage, email, .. } if stage == "start_registration" => {
-                self.start_registration(email).await
-            }
-            Credentials::Passkey {
-                stage,
-                email,
-                challenge_response,
-                metadata,
-            } if stage == "complete_registration" => {
-                self.complete_registration(email, challenge_response.clone(), metadata)
-                    .await
-            }
-            _ => Err(Error::InvalidCredentials),
-        }
+    async fn register(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
+        todo!()
     }
 
-    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
-        match credentials {
-            Credentials::Passkey { stage, email, .. } if stage == "start_login" => {
-                self.start_login(email).await
-            }
-            Credentials::Passkey {
-                stage,
-                email,
-                challenge_response,
-                metadata,
-            } if stage == "complete_login" => {
-                self.complete_login(email, challenge_response.clone(), metadata)
-                    .await
-            }
-            _ => Err(Error::InvalidCredentials),
-        }
+    async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
+        todo!()
     }
 
     async fn validate_session(&self, _session: &Session) -> Result<bool, Error> {
@@ -272,5 +270,41 @@ impl<U: PasskeyStorage, S: SessionStorage> AuthPlugin for PasskeyPlugin<U, S> {
 
     async fn logout(&self, _session: &Session) -> Result<(), Error> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use sqlx::SqlitePool;
+    use torii_storage_sqlite::SqliteStorage;
+
+    use super::*;
+
+    async fn setup_storage() -> Storage<SqliteStorage, SqliteStorage> {
+        let _ = tracing_subscriber::fmt::try_init();
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+
+        let user_storage = SqliteStorage::new(pool.clone());
+        let session_storage = SqliteStorage::new(pool.clone());
+
+        user_storage.migrate().await.unwrap();
+        session_storage.migrate().await.unwrap();
+
+        Storage::new(Arc::new(user_storage), Arc::new(session_storage))
+    }
+
+    #[tokio::test]
+    async fn test_start_registration() {
+        let storage = setup_storage().await;
+        let plugin = PasskeyPlugin::new("localhost", "http://localhost:4000", storage);
+
+        let challenge = plugin.start_registration("test@test.com").await.unwrap();
+        println!(
+            "challenge: {:?}",
+            serde_json::to_string(challenge.challenge()).unwrap()
+        );
+        assert_ne!(challenge.challenge_id(), "");
     }
 }
