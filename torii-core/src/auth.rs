@@ -70,6 +70,32 @@ pub struct AuthChallenge {
     pub metadata: HashMap<String, String>,
 }
 
+impl AuthChallenge {
+    pub fn new(
+        challenge_type: String,
+        challenge: serde_json::Value,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            challenge_type,
+            challenge,
+            metadata,
+        }
+    }
+
+    pub fn challenge_type(&self) -> &str {
+        &self.challenge_type
+    }
+
+    pub fn challenge(&self) -> &serde_json::Value {
+        &self.challenge
+    }
+
+    pub fn metadata(&self) -> &HashMap<String, String> {
+        &self.metadata
+    }
+}
+
 #[derive(Debug)]
 pub enum AuthStage {
     /// The initial stage of authentication

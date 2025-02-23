@@ -15,17 +15,17 @@ pub type Result<T> = std::result::Result<T, MigrationError>;
 
 #[async_trait]
 pub trait Migration<DB: Database>: Send + Sync {
-    /// Execute the migration
-    async fn up<'a>(&'a self, conn: &'a mut <DB as Database>::Connection) -> Result<()>;
-
-    /// Rollback the migration
-    async fn down<'a>(&'a self, conn: &'a mut <DB as Database>::Connection) -> Result<()>;
-
     /// Unique version number for ordering migrations
     fn version(&self) -> i64;
 
     /// Human readable name of the migration
     fn name(&self) -> &str;
+
+    /// Execute the migration
+    async fn up<'a>(&'a self, conn: &'a mut <DB as Database>::Connection) -> Result<()>;
+
+    /// Rollback the migration
+    async fn down<'a>(&'a self, conn: &'a mut <DB as Database>::Connection) -> Result<()>;
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

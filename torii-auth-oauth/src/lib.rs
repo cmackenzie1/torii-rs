@@ -1,6 +1,6 @@
 pub mod providers;
 
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use oauth2::TokenResponse;
@@ -197,7 +197,7 @@ where
             .store_pkce_verifier(
                 &authorization_url.csrf_state,
                 &authorization_url.pkce_verifier,
-                Duration::from_secs(60 * 5),
+                chrono::Duration::minutes(5),
             )
             .await
             .map_err(|_| Error::InternalServerError)?;

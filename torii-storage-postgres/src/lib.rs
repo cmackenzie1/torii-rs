@@ -494,7 +494,7 @@ impl OAuthStorage for PostgresStorage {
         &self,
         csrf_state: &str,
         pkce_verifier: &str,
-        expires_in: Duration,
+        expires_in: chrono::Duration,
     ) -> Result<(), Self::Error> {
         sqlx::query(
             "INSERT INTO nonces (id, value, expires_at) VALUES ($1::text, $2, $3) RETURNING value",
