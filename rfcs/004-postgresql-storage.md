@@ -55,10 +55,12 @@ CREATE TABLE oauth_accounts (
     UNIQUE(user_id, provider, subject)
 );
 
-CREATE TABLE nonces (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    value TEXT NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL
+CREATE TABLE oauth_state (
+    csrf_state TEXT PRIMARY KEY,
+    pkce_verifier TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 

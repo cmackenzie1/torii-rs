@@ -249,8 +249,22 @@ impl Migration<Sqlite> for CreateOAuthAccountsTable {
                 UNIQUE(user_id, provider, subject)
             );"#,
         )
-        .execute(conn)
+        .execute(&mut *conn)
         .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS oauth_state (
+                csrf_state TEXT PRIMARY KEY,
+                pkce_verifier TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch())
+            );"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+
         Ok(())
     }
 

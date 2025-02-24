@@ -108,9 +108,6 @@ pub struct AuthFlowCallback {
     /// The CSRF state. This value is used to prevent CSRF attacks and must match the CSRF state in the [`AuthFlowBegin`] struct.
     pub csrf_state: String,
 
-    /// The nonce key. This value is used to prevent replay attacks and must match the nonce key in the [`AuthFlowBegin`] struct.
-    pub nonce_key: String,
-
     /// The authorization code. This value is used to exchange for an access token and user information.
     pub code: String,
 }
@@ -272,17 +269,17 @@ where
     ///
     /// This method is the second step in the oauth authorization code flow. It will:
     /// 1. Exchange the authorization code for an access token and user information
-    /// 2. Verify the nonce
-    /// 3. Verify the id token
-    /// 4. Create a new user if they don't exist
-    /// 5. Create a link between the user and the provider
+    /// 2. Create a new user if they don't exist
+    /// 3. Create a link between the user and the provider
     ///
     /// # Arguments
-    /// * `pool` - The database connection pool for storing the nonce
-    /// * `auth_flow` - The callback data containing the CSRF state, nonce key, and authorization code
+    /// * `code` - The authorization code
+    /// * `csrf_state` - The CSRF state
     ///
     /// # Returns
-    /// Returns a [`User`] struct containing the user's information.
+    /// Returns a tuple containing:
+    /// * A [`User`] struct containing the user's information
+    /// * A [`Session`] struct containing the session information
     pub async fn exchange_code(
         &self,
         code: String,

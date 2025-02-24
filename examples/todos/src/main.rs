@@ -32,17 +32,27 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    let torii = Torii::new(
-        Arc::new(SqliteStorage::new(pool.clone())),
-        Arc::new(SqliteStorage::new(pool.clone())),
-    )
-    .with_email_password_plugin()
-    .with_oauth_provider(Provider::google(
-        std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is not set"),
-        std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is not set"),
-        std::env::var("GOOGLE_REDIRECT_URI").expect("GOOGLE_REDIRECT_URI is not set"),
-    ))
-    .with_passkey_plugin("rp_id", "rp_origin");
+    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+
+    // TODO: Move this into a torii init function
+    user_storage
+        .migrate()
+        .await
+        .expect("Failed to migrate user storage");
+    session_storage
+        .migrate()
+        .await
+        .expect("Failed to migrate session storage");
+
+    let torii = Torii::new(user_storage, session_storage)
+        .with_email_password_plugin()
+        .with_oauth_provider(Provider::google(
+            std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is not set"),
+            std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is not set"),
+            std::env::var("GOOGLE_REDIRECT_URI").expect("GOOGLE_REDIRECT_URI is not set"),
+        ))
+        .with_passkey_plugin("rp_id", "rp_origin");
 
     let app_state = AppState {
         torii: Arc::new(torii),

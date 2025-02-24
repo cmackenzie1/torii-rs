@@ -61,7 +61,7 @@ pub trait EmailPasswordStorage: UserStorage {
 /// Storage methods specific to OAuth authentication
 ///
 /// This trait extends the base `UserStorage` trait with methods needed for
-/// OAuth account management and nonce storage.
+/// OAuth account management and PKCE verifier storage.
 #[async_trait]
 pub trait OAuthStorage: UserStorage {
     /// Create a new OAuth account linked to a user

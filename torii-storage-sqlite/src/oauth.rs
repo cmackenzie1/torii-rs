@@ -159,23 +159,25 @@ impl OAuthStorage for SqliteStorage {
         pkce_verifier: &str,
         expires_in: chrono::Duration,
     ) -> Result<(), Self::Error> {
-        sqlx::query("INSERT INTO nonces (id, value, expires_at) VALUES (?, ?, ?)")
-            .bind(csrf_state)
-            .bind(pkce_verifier)
-            .bind((Utc::now() + expires_in).timestamp())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to save pkce verifier");
-                StorageError::Database("Failed to save pkce verifier".to_string())
-            })?;
+        sqlx::query(
+            "INSERT INTO oauth_state (csrf_state, pkce_verifier, expires_at) VALUES (?, ?, ?)",
+        )
+        .bind(csrf_state)
+        .bind(pkce_verifier)
+        .bind((Utc::now() + expires_in).timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to save pkce verifier");
+            StorageError::Database("Failed to save pkce verifier".to_string())
+        })?;
 
         Ok(())
     }
 
     async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error> {
         let pkce_verifier: Option<String> =
-            sqlx::query_scalar("SELECT value FROM nonces WHERE id = ?")
+            sqlx::query_scalar("SELECT pkce_verifier FROM oauth_state WHERE csrf_state = ?")
                 .bind(csrf_state)
                 .fetch_optional(&self.pool)
                 .await

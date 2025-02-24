@@ -498,7 +498,7 @@ impl OAuthStorage for PostgresStorage {
         expires_in: chrono::Duration,
     ) -> Result<(), Self::Error> {
         sqlx::query(
-            "INSERT INTO nonces (id, value, expires_at) VALUES ($1::text, $2, $3) RETURNING value",
+            "INSERT INTO oauth_state (csrf_state, pkce_verifier, expires_at) VALUES ($1::text, $2, $3) RETURNING value",
         )
         .bind(csrf_state)
         .bind(pkce_verifier)
@@ -506,24 +506,25 @@ impl OAuthStorage for PostgresStorage {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get nonce");
-            StorageError::Database("Failed to get nonce".to_string())
+            tracing::error!(error = %e, "Failed to store pkce verifier");
+            StorageError::Database("Failed to store pkce verifier".to_string())
         })?;
 
         Ok(())
     }
 
     async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error> {
-        let nonce = sqlx::query_scalar("SELECT value FROM nonces WHERE id::text = $1")
-            .bind(csrf_state)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get nonce");
-                StorageError::Database("Failed to get nonce".to_string())
-            })?;
+        let pkce_verifier =
+            sqlx::query_scalar("SELECT pkce_verifier FROM oauth_state WHERE csrf_state = $1")
+                .bind(csrf_state)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "Failed to get pkce verifier");
+                    StorageError::Database("Failed to get pkce verifier".to_string())
+                })?;
 
-        Ok(nonce)
+        Ok(pkce_verifier)
     }
 
     async fn get_oauth_account_by_provider_and_subject(
