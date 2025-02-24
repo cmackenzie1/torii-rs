@@ -8,7 +8,6 @@
 //!
 //! See [`User`] for the core user struct, [`Session`] for the core session struct, and [`Plugin`] for the plugin system.
 //!
-pub mod auth;
 pub mod error;
 pub mod events;
 pub mod plugin;
@@ -16,7 +15,6 @@ pub mod session;
 pub mod storage;
 pub mod user;
 
-pub use auth::{AuthPlugin, AuthResponse, Credentials};
 pub use error::Error;
 pub use plugin::{Plugin, PluginManager};
 pub use session::Session;

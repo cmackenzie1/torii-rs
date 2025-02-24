@@ -3,13 +3,9 @@
 //! Username is set to the provided email address.
 //!
 //! Password is hashed using the `password_auth` crate using argon2.
-use std::collections::HashMap;
-
-use async_trait::async_trait;
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::Plugin;
-use torii_core::auth::{AuthPlugin, AuthResponse, AuthStage, Credentials};
 use torii_core::events::{Event, EventBus};
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, Storage};
@@ -28,7 +24,7 @@ use torii_core::{
 pub struct EmailPasswordPlugin<U, S>
 where
     U: EmailPasswordStorage,
-    S: SessionStorage<Error = Error>,
+    S: SessionStorage,
 {
     storage: Storage<U, S>,
     event_bus: Option<EventBus>,
@@ -37,7 +33,7 @@ where
 impl<U, S> EmailPasswordPlugin<U, S>
 where
     U: EmailPasswordStorage,
-    S: SessionStorage<Error = Error>,
+    S: SessionStorage,
 {
     pub fn new(storage: Storage<U, S>) -> Self {
         Self {
@@ -55,7 +51,7 @@ where
 impl<U, S> Plugin for EmailPasswordPlugin<U, S>
 where
     U: EmailPasswordStorage,
-    S: SessionStorage<Error = Error>,
+    S: SessionStorage,
 {
     fn name(&self) -> String {
         "email_password".to_string()
@@ -65,9 +61,13 @@ where
 impl<U, S> EmailPasswordPlugin<U, S>
 where
     U: EmailPasswordStorage,
-    S: SessionStorage<Error = Error>,
+    S: SessionStorage,
 {
-    pub async fn create_user(&self, email: &str, password: &str) -> Result<User, Error> {
+    pub async fn register_user_with_password(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<User, Error> {
         if !is_valid_email(email) {
             return Err(Error::InvalidEmailFormat);
         }
@@ -112,7 +112,7 @@ where
         Ok(user)
     }
 
-    pub async fn change_password(
+    pub async fn change_user_password(
         &self,
         user_id: &UserId,
         old_password: &str,
@@ -164,7 +164,11 @@ where
         Ok(())
     }
 
-    pub async fn login_user(&self, email: &str, password: &str) -> Result<AuthStage, Error> {
+    pub async fn login_user_with_password(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<(User, Session), Error> {
         let user_storage = self.storage.user_storage();
 
         let user = user_storage
@@ -186,12 +190,7 @@ where
 
         let session = self.create_session(&user.id).await?;
 
-        Ok(AuthStage::Complete(AuthResponse {
-            user,
-            session: Some(session),
-            metadata: HashMap::new(),
-            passkey_challenge: None,
-        }))
+        Ok((user, session))
     }
 
     async fn emit_event(&self, event: &Event) -> Result<(), Error> {
@@ -214,6 +213,7 @@ where
         Ok(session)
     }
 
+    #[allow(unused)]
     async fn delete_session(&self, user_id: &UserId, session_id: &SessionId) -> Result<(), Error> {
         let session = self
             .storage
@@ -261,62 +261,10 @@ fn is_valid_password(password: &str) -> bool {
     password.len() >= 8
 }
 
-#[async_trait]
-impl<U, S> AuthPlugin for EmailPasswordPlugin<U, S>
-where
-    U: EmailPasswordStorage,
-    S: SessionStorage<Error = Error>,
-{
-    fn auth_method(&self) -> String {
-        "email_password".to_string()
-    }
-
-    async fn register(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
-        match credentials {
-            Credentials::Password { email, password } => {
-                let user = self.create_user(email, password).await?;
-                let session = self.create_session(&user.id).await?;
-                Ok(AuthStage::Complete(AuthResponse {
-                    user,
-                    session: Some(session),
-                    metadata: HashMap::new(),
-                    passkey_challenge: None,
-                }))
-            }
-            _ => Err(Error::InvalidCredentials),
-        }
-    }
-
-    async fn authenticate(&self, credentials: &Credentials) -> Result<AuthStage, Error> {
-        match credentials {
-            Credentials::Password { email, password } => {
-                let auth_stage = self.login_user(email, password).await?;
-                Ok(auth_stage)
-            }
-            _ => Err(Error::InvalidCredentials),
-        }
-    }
-
-    async fn validate_session(&self, session: &Session) -> Result<bool, Error> {
-        let session = self
-            .storage
-            .get_session(&session.id)
-            .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
-
-        Ok(session.is_some())
-    }
-
-    async fn logout(&self, session: &Session) -> Result<(), Error> {
-        self.delete_session(&session.user_id, &session.id).await?;
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use sqlx::SqlitePool;
     use std::sync::{
         Arc,
@@ -337,7 +285,7 @@ mod tests {
 
         let storage = Storage::new(user_storage.clone(), session_storage.clone());
         let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-        manager.register_auth_plugin(EmailPasswordPlugin::new(storage));
+        manager.register_plugin(EmailPasswordPlugin::new(storage));
 
         user_storage
             .migrate()
@@ -387,25 +335,19 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .create_user("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
 
-        let auth_stage = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        let (user, session) = manager
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .authenticate(&Credentials::Password {
-                email: "test@example.com".to_string(),
-                password: "password".to_string(),
-            })
+            .login_user_with_password("test@example.com", "password")
             .await?;
-        let auth_response = match auth_stage {
-            AuthStage::Complete(auth_response) => auth_response,
-            _ => panic!("Expected complete auth stage"),
-        };
-        assert_eq!(auth_response.user.email, "test@example.com");
+        assert_eq!(user.email, "test@example.com");
+        assert_eq!(session.user_id, user.id);
 
         Ok(())
     }
@@ -415,15 +357,15 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .create_user("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password")
             .await?;
 
         let result = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .create_user("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserAlreadyExists)));
@@ -436,9 +378,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user("not-an-email", "password")
+            .register_user_with_password("not-an-email", "password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidEmailFormat)));
@@ -451,9 +393,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user("test@example.com", "123")
+            .register_user_with_password("test@example.com", "123")
             .await;
 
         assert!(matches!(result, Err(Error::WeakPassword)));
@@ -466,15 +408,15 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password")
             .await?;
 
         let result = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .login_user("test@example.com", "wrong-password")
+            .login_user_with_password("test@example.com", "wrong-password")
             .await;
 
         assert!(matches!(result, Err(Error::InvalidCredentials)));
@@ -487,9 +429,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .login_user("nonexistent@example.com", "password")
+            .login_user_with_password("nonexistent@example.com", "password")
             .await;
 
         assert!(matches!(result, Err(Error::UserNotFound)));
@@ -502,9 +444,9 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .create_user("test@example.com'; DROP TABLE users;--", "password")
+            .register_user_with_password("test@example.com'; DROP TABLE users;--", "password")
             .await
             .expect_err("Should fail validation");
 
@@ -515,11 +457,13 @@ mod tests {
     async fn test_change_password() -> Result<(), Error> {
         let (manager,) = setup_plugin().await?;
         let plugin = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist");
 
         // Create initial user
-        let user = plugin.create_user("test@example.com", "password").await?;
+        let user = plugin
+            .register_user_with_password("test@example.com", "password")
+            .await?;
 
         let session = manager
             .storage()
@@ -537,7 +481,7 @@ mod tests {
 
         // Change password
         plugin
-            .change_password(&user.id, "password", "new-password")
+            .change_user_password(&user.id, "password", "new-password")
             .await?;
 
         // Verify old session was deleted
@@ -545,11 +489,15 @@ mod tests {
         assert!(deleted_session.is_err());
 
         // Verify can login with new password
-        let result = plugin.login_user("test@example.com", "new-password").await;
+        let result = plugin
+            .login_user_with_password("test@example.com", "new-password")
+            .await;
         assert!(result.is_ok());
 
         // Verify can't login with old password
-        let result = plugin.login_user("test@example.com", "password").await;
+        let result = plugin
+            .login_user_with_password("test@example.com", "password")
+            .await;
         assert!(matches!(result, Err(Error::InvalidCredentials)));
 
         Ok(())
@@ -577,7 +525,7 @@ mod tests {
 
         // Register plugin with event bus
         let plugin = EmailPasswordPlugin::new(storage).with_event_bus(event_bus.clone());
-        manager.register_auth_plugin(plugin);
+        manager.register_plugin(plugin);
 
         // Create test event handler that tracks when events are emitted
         let event_was_emitted = Arc::new(AtomicBool::new(false));
@@ -589,11 +537,13 @@ mod tests {
         event_bus.register(Arc::new(handler)).await;
 
         let plugin = manager
-            .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist");
 
         // Test 1: Creating a user should emit an event
-        let user = plugin.create_user("test@example.com", "password").await?;
+        let user = plugin
+            .register_user_with_password("test@example.com", "password")
+            .await?;
         assert!(
             event_was_emitted.load(Ordering::SeqCst),
             "No event emitted when creating user"
@@ -603,7 +553,7 @@ mod tests {
         // Test 2: Changing password should emit 2 events, one for the user update and one for the session deletion
         event_was_emitted.store(false, Ordering::SeqCst);
         plugin
-            .change_password(&user.id, "password", "new-password")
+            .change_user_password(&user.id, "password", "new-password")
             .await?;
         assert!(
             event_was_emitted.load(Ordering::SeqCst),
@@ -614,7 +564,7 @@ mod tests {
         // Test 3: Logging in should emit 1 event
         event_was_emitted.store(false, Ordering::SeqCst);
         plugin
-            .login_user("test@example.com", "new-password")
+            .login_user_with_password("test@example.com", "new-password")
             .await?;
         assert!(
             event_was_emitted.load(Ordering::SeqCst),

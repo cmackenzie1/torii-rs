@@ -8,19 +8,19 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.1.0" }
-torii-auth-email = { path = "../torii-auth-email", version = "0.1.0", optional = true }
-torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.1.0", optional = true }
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0", optional = true }
+# TODO: Make optional and add feature flags for each auth plugin
+torii-auth-email = { path = "../torii-auth-email", version = "0.1.0" }
+torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.1.0" }
+torii-auth-passkey = { path = "../torii-auth-passkey", version = "0.1.0" }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
+
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 clap = { version = "4.5.28", features = ["derive"] }
+thiserror.workspace = true
+serde_json.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
-
-[features]
-default = ["email-auth", "sqlite"]
-email-auth = ["dep:torii-auth-email"]
-oauth-auth = ["dep:torii-auth-oauth"]
-sqlite = ["dep:torii-storage-sqlite"]

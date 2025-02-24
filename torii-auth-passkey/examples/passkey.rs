@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_passkey::PasskeyPlugin;
-use torii_core::{auth::AuthStage, plugin::PluginManager, session::SessionId, storage::Storage};
+use torii_core::{plugin::PluginManager, session::SessionId, storage::Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Clone)]
@@ -35,7 +35,7 @@ async fn begin_registration_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
         .unwrap();
 
     let challenge = plugin
@@ -76,10 +76,10 @@ async fn finish_registration_handler(
 
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
         .unwrap();
 
-    let auth_stage = plugin
+    let (user, session) = plugin
         .complete_registration(&email, &passkey_challenge_id, &body.challenge_response)
         .await
         .map_err(|e| {
@@ -88,24 +88,16 @@ async fn finish_registration_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to complete registration",
             )
-                .into_response()
-        });
+        })
+        .unwrap();
 
-    match auth_stage {
-        Ok(AuthStage::Complete(auth_response)) => {
-            let session = auth_response.session.unwrap();
-            let user = auth_response.user;
+    let jar = jar.add(
+        Cookie::build(("session_id", session.id.to_string()))
+            .path("/")
+            .http_only(true),
+    );
 
-            let jar = jar.add(
-                Cookie::build(("session_id", session.id.to_string()))
-                    .path("/")
-                    .http_only(true),
-            );
-
-            (jar, Json(user)).into_response()
-        }
-        _ => (StatusCode::BAD_REQUEST, "Failed to complete registration").into_response(),
-    }
+    (jar, Json(user)).into_response()
 }
 
 /// Protected route that displays the currently authenticated user's details
@@ -186,7 +178,7 @@ async fn begin_login_handler(
 ) -> Response {
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
         .unwrap();
 
     let challenge = plugin.start_login(&params.email).await.unwrap();
@@ -214,28 +206,23 @@ async fn finish_login_handler(
 ) -> Response {
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
         .unwrap();
 
     let passkey_challenge_id = jar.get("passkey_challenge_id").unwrap().value();
 
-    let auth_stage = plugin
+    let (user, session) = plugin
         .complete_login(&body.email, passkey_challenge_id, &body.challenge_response)
         .await
         .unwrap();
 
-    match auth_stage {
-        AuthStage::Complete(auth_response) => {
-            let session = auth_response.session.unwrap();
-            let jar = jar.add(
-                Cookie::build(("session_id", session.id.to_string()))
-                    .path("/")
-                    .http_only(true),
-            );
-            (jar, Json(auth_response.user)).into_response()
-        }
-        _ => (StatusCode::BAD_REQUEST, "Failed to complete login").into_response(),
-    }
+    let jar = jar.add(
+        Cookie::build(("session_id", session.id.to_string()))
+            .path("/")
+            .http_only(true),
+    );
+
+    (jar, Json(user)).into_response()
 }
 #[tokio::main]
 async fn main() {
@@ -253,7 +240,7 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_auth_plugin(PasskeyPlugin::new(
+    plugin_manager.register_plugin(PasskeyPlugin::new(
         &"localhost",
         &"http://localhost:4000",
         storage,

@@ -1,5 +1,5 @@
 use askama::Template;
-use torii_core::User;
+use torii::User;
 
 use crate::Todo;
 

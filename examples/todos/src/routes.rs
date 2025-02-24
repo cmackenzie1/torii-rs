@@ -13,9 +13,7 @@ use axum_extra::extract::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use torii_auth_email::EmailPasswordPlugin;
-use torii_core::{auth::AuthStage, session::SessionId, User};
-use torii_storage_sqlite::SqliteStorage;
+use torii::{SessionId, User};
 use uuid::Uuid;
 
 use crate::{
@@ -163,12 +161,12 @@ async fn sign_up_form_handler(
     State(state): State<AppState>,
     Form(params): Form<SignUpForm>,
 ) -> impl IntoResponse {
-    let plugin = state
-        .plugin_manager
-        .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
-        .unwrap();
+    let user = state
+        .torii
+        .register_user_with_password(&params.email, &params.password)
+        .await;
 
-    match plugin.create_user(&params.email, &params.password).await {
+    match user {
         Ok(_) => (
             StatusCode::OK,
             Json(json!({ "message": "Successfully signed up" })),
@@ -193,38 +191,23 @@ async fn sign_in_form_handler(
     State(state): State<AppState>,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
-    let plugin = state
-        .plugin_manager
-        .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+    let (_, session) = state
+        .torii
+        .login_user_with_password(&params.email, &params.password)
+        .await
         .unwrap();
 
-    match plugin.login_user(&params.email, &params.password).await {
-        Ok(auth_response) => {
-            if let AuthStage::Complete(auth_response) = auth_response {
-                let cookie =
-                    Cookie::build(("session_id", auth_response.session.unwrap().id.to_string()))
-                        .path("/")
-                        .http_only(true)
-                        .secure(false) // TODO: Set to true in production
-                        .same_site(SameSite::Lax);
-                (
-                    StatusCode::OK,
-                    [(header::SET_COOKIE, cookie.to_string())],
-                    Json(json!({ "message": "Successfully signed in" })),
-                )
-                    .into_response()
-            } else {
-                Redirect::to("/sign-in").into_response()
-            }
-        }
-        Err(e) => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({
-                "error": format!("Authentication failed: {}", e)
-            })),
-        )
-            .into_response(),
-    }
+    let cookie = Cookie::build(("session_id", session.id.to_string()))
+        .path("/")
+        .http_only(true)
+        .secure(false) // TODO: Set to true in production
+        .same_site(SameSite::Lax);
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie.to_string())],
+        Json(json!({ "message": "Successfully signed in" })),
+    )
+        .into_response()
 }
 
 async fn add_user_extension(
@@ -240,16 +223,14 @@ async fn add_user_extension(
 
     if let Some(session_id) = session_id {
         let session = state
-            .plugin_manager
-            .storage()
+            .torii
             .get_session(&SessionId::new(&session_id))
             .await
             .expect("Failed to get session");
 
         if let Some(session) = session {
             let user = state
-                .plugin_manager
-                .storage()
+                .torii
                 .get_user(&session.user_id)
                 .await
                 .expect("Failed to get user");
@@ -277,16 +258,14 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
 
     if let Some(session_id) = session_id {
         let session = state
-            .plugin_manager
-            .storage()
+            .torii
             .get_session(&SessionId::new(&session_id))
             .await
             .expect("Failed to get session");
 
         if let Some(session) = session {
             let user = state
-                .plugin_manager
-                .storage()
+                .torii
                 .get_user(&session.user_id)
                 .await
                 .expect("Failed to get user");

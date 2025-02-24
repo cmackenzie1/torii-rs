@@ -1,11 +1,7 @@
-use std::collections::HashMap;
-
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use torii_core::auth::AuthStage;
 use torii_core::storage::{PasskeyStorage, SessionStorage, Storage};
-use torii_core::{AuthPlugin, AuthResponse, Credentials, Error, Plugin, Session, UserId};
+use torii_core::{Error, Plugin, Session, User, UserId};
 use webauthn_rs::prelude::*;
 
 #[derive(Debug, Error)]
@@ -126,7 +122,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
-    ) -> Result<AuthStage, PasskeyError> {
+    ) -> Result<(User, Session), PasskeyError> {
         let challenge_response: RegisterPublicKeyCredential =
             serde_json::from_value::<RegisterPublicKeyCredential>(challenge_response.clone())
                 .map_err(|e| {
@@ -209,13 +205,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
                 PasskeyError::StorageError(e.to_string())
             })?;
 
-        // Return the complete auth stage
-        Ok(AuthStage::Complete(AuthResponse {
-            user: user.clone(),
-            session: Some(session),
-            metadata: HashMap::new(),
-            passkey_challenge: None,
-        }))
+        Ok((user, session))
     }
 
     pub async fn start_login(&self, email: &str) -> Result<PasskeyChallenge, PasskeyError> {
@@ -281,7 +271,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
-    ) -> Result<AuthStage, PasskeyError> {
+    ) -> Result<(User, Session), PasskeyError> {
         // Get the user by email
         let user = self
             .storage
@@ -336,12 +326,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
                         PasskeyError::StorageError(e.to_string())
                     })?;
 
-                Ok(AuthStage::Complete(AuthResponse {
-                    user: user.clone(),
-                    session: Some(session),
-                    metadata: HashMap::new(),
-                    passkey_challenge: None,
-                }))
+                Ok((user, session))
             }
             Err(e) => {
                 tracing::error!(error = ?e, "Failed to complete login");
@@ -354,29 +339,6 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 impl<U: PasskeyStorage, S: SessionStorage> Plugin for PasskeyPlugin<U, S> {
     fn name(&self) -> String {
         "passkey".to_string()
-    }
-}
-
-#[async_trait]
-impl<U: PasskeyStorage, S: SessionStorage> AuthPlugin for PasskeyPlugin<U, S> {
-    fn auth_method(&self) -> String {
-        "passkey".to_string()
-    }
-
-    async fn register(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
-        todo!()
-    }
-
-    async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
-        todo!()
-    }
-
-    async fn validate_session(&self, _session: &Session) -> Result<bool, Error> {
-        todo!()
-    }
-
-    async fn logout(&self, _session: &Session) -> Result<(), Error> {
-        todo!()
     }
 }
 

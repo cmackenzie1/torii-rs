@@ -17,10 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_email::EmailPasswordPlugin;
-use torii_core::{
-    AuthPlugin, Credentials, auth::AuthStage, plugin::PluginManager, session::SessionId,
-    storage::Storage,
-};
+use torii_core::{plugin::PluginManager, session::SessionId, storage::Storage};
 use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic email/password authentication system using Torii.
@@ -71,14 +68,14 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin
-        .register(&Credentials::email_password(params.email, params.password))
+        .register_user_with_password(&params.email, &params.password)
         .await
     {
-        Ok(AuthStage::Complete(_)) => (
+        Ok(_) => (
             StatusCode::OK,
             Json(json!({ "message": "Successfully signed up" })),
         )
@@ -104,20 +101,19 @@ async fn sign_in_form_handler(
 ) -> impl IntoResponse {
     let plugin: Arc<EmailPasswordPlugin<_, _>> = state
         .plugin_manager
-        .get_auth_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin
-        .authenticate(&Credentials::email_password(params.email, params.password))
+        .login_user_with_password(&params.email, &params.password)
         .await
     {
-        Ok(AuthStage::Complete(auth_response)) => {
-            let cookie =
-                Cookie::build(("session_id", auth_response.session.unwrap().id.to_string()))
-                    .path("/")
-                    .http_only(true)
-                    .secure(false) // TODO: Set to true in production
-                    .same_site(SameSite::Lax);
+        Ok((_user, session)) => {
+            let cookie = Cookie::build(("session_id", session.id.to_string()))
+                .path("/")
+                .http_only(true)
+                .secure(false) // TODO: Set to true in production
+                .same_site(SameSite::Lax);
             (
                 StatusCode::OK,
                 [(header::SET_COOKIE, cookie.to_string())],
@@ -241,7 +237,7 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_auth_plugin(EmailPasswordPlugin::new(storage));
+    plugin_manager.register_plugin(EmailPasswordPlugin::new(storage));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

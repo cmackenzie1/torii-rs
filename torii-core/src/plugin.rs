@@ -6,23 +6,22 @@
 //!
 //! See [`PluginManager`] for the plugin manager which is responsible for managing the plugins.
 use dashmap::DashMap;
+use downcast_rs::{DowncastSync, impl_downcast};
 use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{
-    auth::AuthPlugin,
-    storage::{SessionStorage, Storage, UserStorage},
-};
+use crate::storage::{SessionStorage, Storage, UserStorage};
 
-pub trait Plugin: Any + Send + Sync {
+pub trait Plugin: Any + Send + Sync + DowncastSync {
     /// The unique name of the plugin instance.
     fn name(&self) -> String;
 }
+impl_downcast!(sync Plugin);
 
 /// Manages a collection of plugins.
 pub struct PluginManager<U: UserStorage, S: SessionStorage> {
-    auth_plugins: DashMap<String, Arc<dyn AuthPlugin>>,
+    plugins: DashMap<String, Arc<dyn Plugin>>,
     storage: Storage<U, S>,
 }
 
@@ -37,7 +36,7 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// ```
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
-            auth_plugins: DashMap::new(),
+            plugins: DashMap::new(),
             storage: Storage::new(user_storage, session_storage),
         }
     }
@@ -54,10 +53,10 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     ///
-    /// let plugin = plugin_manager.get_auth_plugin::<MyPlugin>("my_plugin");
+    /// let plugin = plugin_manager.get_plugin::<MyPlugin>("my_plugin");
     /// ```
-    pub fn get_auth_plugin<T: AuthPlugin + 'static>(&self, name: &str) -> Option<Arc<T>> {
-        let plugin = self.auth_plugins.get(name)?;
+    pub fn get_plugin<T: Plugin + 'static>(&self, name: &str) -> Option<Arc<T>> {
+        let plugin = self.plugins.get(name)?;
         plugin.value().clone().downcast_arc::<T>().ok()
     }
 
@@ -73,10 +72,10 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// let mut plugin_manager = PluginManager::new();
     /// plugin_manager.register(MyPlugin);
     /// ```
-    pub fn register_auth_plugin<T: AuthPlugin + 'static>(&mut self, plugin: T) {
+    pub fn register_plugin<T: Plugin + 'static>(&mut self, plugin: T) {
         let name = plugin.name();
         let plugin = Arc::new(plugin);
-        self.auth_plugins.insert(name.clone(), plugin.clone());
+        self.plugins.insert(name.clone(), plugin.clone());
         tracing::info!(plugin.name = name, "Registered plugin");
     }
 
@@ -129,9 +128,7 @@ impl Default for SessionCleanupConfig {
 mod tests {
     use async_trait::async_trait;
 
-    use crate::{
-        Credentials, Error, NewUser, Session, User, UserId, auth::AuthStage, session::SessionId,
-    };
+    use crate::{Error, NewUser, Session, User, UserId, session::SessionId};
 
     use super::*;
 
@@ -141,29 +138,6 @@ mod tests {
     impl Plugin for TestPlugin {
         fn name(&self) -> String {
             "test".to_string()
-        }
-    }
-
-    #[async_trait]
-    impl AuthPlugin for TestPlugin {
-        fn auth_method(&self) -> String {
-            "test".to_string()
-        }
-
-        async fn register(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
-            todo!()
-        }
-
-        async fn authenticate(&self, _credentials: &Credentials) -> Result<AuthStage, Error> {
-            todo!()
-        }
-
-        async fn validate_session(&self, _session: &Session) -> Result<bool, Error> {
-            todo!()
-        }
-
-        async fn logout(&self, _session: &Session) -> Result<(), Error> {
-            todo!()
         }
     }
 
@@ -285,10 +259,8 @@ mod tests {
     async fn test_plugin_manager() {
         let (user_storage, session_storage) = setup_test_storage();
         let mut plugin_manager = PluginManager::new(user_storage, session_storage);
-        plugin_manager.register_auth_plugin(TestPlugin::new());
-        let plugin = plugin_manager
-            .get_auth_plugin::<TestPlugin>("test")
-            .unwrap();
+        plugin_manager.register_plugin(TestPlugin::new());
+        let plugin = plugin_manager.get_plugin::<TestPlugin>("test").unwrap();
         assert_eq!(plugin.name(), "test");
     }
 

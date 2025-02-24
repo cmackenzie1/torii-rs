@@ -29,7 +29,7 @@ struct AppState {
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
+        .get_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
         .unwrap();
 
     let auth_url = plugin.get_authorization_url().await.unwrap();
@@ -57,7 +57,7 @@ async fn callback_handler(
 
     let plugin = state
         .plugin_manager
-        .get_auth_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
+        .get_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("google")
         .unwrap();
 
     let (user, session) = plugin
@@ -91,7 +91,7 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_auth_plugin(OAuthPlugin::google(
+    plugin_manager.register_plugin(OAuthPlugin::google(
         std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
         std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback".to_string(),

@@ -1,8 +1,8 @@
 use dashmap::DashMap;
 use sqlx::{Pool, Sqlite};
 use std::sync::Arc;
-use torii_auth_email::EmailPasswordPlugin;
-use torii_core::{plugin::PluginManager, storage::Storage};
+use torii::Torii;
+use torii_auth_oauth::providers::Provider;
 use torii_storage_sqlite::SqliteStorage;
 
 mod routes;
@@ -13,7 +13,7 @@ mod templates;
 /// - plugin_manager: Coordinates authentication plugins
 #[derive(Clone)]
 pub(crate) struct AppState {
-    plugin_manager: Arc<PluginManager<SqliteStorage, SqliteStorage>>,
+    torii: Arc<Torii<SqliteStorage, SqliteStorage>>,
     todos: Arc<DashMap<String, Todo>>,
 }
 
@@ -32,26 +32,20 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-    let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
-
-    user_storage
-        .migrate()
-        .await
-        .expect("Failed to migrate user storage");
-    session_storage
-        .migrate()
-        .await
-        .expect("Failed to migrate session storage");
-
-    let storage = Storage::new(user_storage.clone(), session_storage.clone());
-
-    let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_auth_plugin(EmailPasswordPlugin::new(storage));
-    let plugin_manager = Arc::new(plugin_manager);
+    let torii = Torii::new(
+        Arc::new(SqliteStorage::new(pool.clone())),
+        Arc::new(SqliteStorage::new(pool.clone())),
+    )
+    .with_email_password_plugin()
+    .with_oauth_provider(Provider::google(
+        std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is not set"),
+        std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is not set"),
+        std::env::var("GOOGLE_REDIRECT_URI").expect("GOOGLE_REDIRECT_URI is not set"),
+    ))
+    .with_passkey_plugin("rp_id", "rp_origin");
 
     let app_state = AppState {
-        plugin_manager: plugin_manager.clone(),
+        torii: Arc::new(torii),
         todos: Arc::new(DashMap::new()),
     };
 

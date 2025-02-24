@@ -22,6 +22,7 @@ use torii_core::{
 use torii_migration::Migration;
 use torii_migration::MigrationManager;
 
+#[derive(Clone)]
 pub struct SqliteStorage {
     pool: SqlitePool,
 }
