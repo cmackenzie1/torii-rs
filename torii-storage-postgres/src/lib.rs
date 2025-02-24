@@ -9,7 +9,8 @@ use migrations::CreateUsersTable;
 use migrations::PostgresMigrationManager;
 use sqlx::PgPool;
 use std::time::Duration;
-use torii_core::Error;
+use torii_core::error::StorageError;
+use torii_core::error::ValidationError;
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, OAuthStorage};
 use torii_core::user::OAuthAccount;
@@ -30,11 +31,11 @@ impl PostgresStorage {
         Self { pool }
     }
 
-    pub async fn migrate(&self) -> Result<(), Error> {
+    pub async fn migrate(&self) -> Result<(), StorageError> {
         let manager = PostgresMigrationManager::new(self.pool.clone());
         manager.initialize().await.map_err(|e| {
             tracing::error!(error = %e, "Failed to initialize migrations");
-            Error::Storage("Failed to initialize migrations".to_string())
+            StorageError::Migration("Failed to initialize migrations".to_string())
         })?;
 
         let migrations: Vec<Box<dyn Migration<_>>> = vec![
@@ -44,7 +45,7 @@ impl PostgresStorage {
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
-            Error::Storage("Failed to run migrations".to_string())
+            StorageError::Migration("Failed to run migrations".to_string())
         })?;
 
         Ok(())
@@ -106,7 +107,7 @@ impl UserStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create user");
-            Self::Error::Storage("Failed to create user".to_string())
+            StorageError::Database("Failed to create user".to_string())
         })?;
 
         Ok(user.into())
@@ -125,7 +126,7 @@ impl UserStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user");
-            Self::Error::Storage("Failed to get user".to_string())
+            StorageError::Database("Failed to get user".to_string())
         })?;
 
         if let Some(user) = user {
@@ -148,7 +149,7 @@ impl UserStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user by email");
-            Self::Error::Storage("Failed to get user by email".to_string())
+            StorageError::Database("Failed to get user by email".to_string())
         })?;
 
         if let Some(user) = user {
@@ -175,7 +176,7 @@ impl UserStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to get or create user by email");
-                Self::Error::Storage("Failed to get or create user by email".to_string())
+                StorageError::Database("Failed to get or create user by email".to_string())
             })?;
 
         Ok(user)
@@ -199,7 +200,7 @@ impl UserStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to update user");
-            Self::Error::Storage("Failed to update user".to_string())
+            StorageError::Database("Failed to update user".to_string())
         })?;
 
         Ok(user.into())
@@ -212,7 +213,7 @@ impl UserStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete user");
-                Self::Error::Storage("Failed to delete user".to_string())
+                StorageError::Database("Failed to delete user".to_string())
             })?;
 
         Ok(())
@@ -276,7 +277,7 @@ impl SessionStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to create session");
-                Self::Error::Storage("Failed to create session".to_string())
+                StorageError::Database("Failed to create session".to_string())
             })?;
 
         Ok(self.get_session(&session.id).await?.unwrap())
@@ -295,7 +296,7 @@ impl SessionStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get session");
-            Self::Error::Storage("Failed to get session".to_string())
+            StorageError::Database("Failed to get session".to_string())
         })?;
 
         Ok(Some(session.into()))
@@ -308,7 +309,7 @@ impl SessionStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete session");
-                Self::Error::Storage("Failed to delete session".to_string())
+                StorageError::Database("Failed to delete session".to_string())
             })?;
 
         Ok(())
@@ -321,7 +322,7 @@ impl SessionStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to cleanup expired sessions");
-                Self::Error::Storage("Failed to cleanup expired sessions".to_string())
+                StorageError::Database("Failed to cleanup expired sessions".to_string())
             })?;
 
         Ok(())
@@ -334,7 +335,7 @@ impl SessionStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete sessions for user");
-                Self::Error::Storage("Failed to delete sessions for user".to_string())
+                StorageError::Database("Failed to delete sessions for user".to_string())
             })?;
 
         Ok(())
@@ -376,19 +377,21 @@ impl PostgresOAuthAccountBuilder {
         self
     }
 
-    pub fn build(self) -> Result<PostgresOAuthAccount, Error> {
+    pub fn build(self) -> Result<PostgresOAuthAccount, torii_core::Error> {
         let now = Utc::now();
         Ok(PostgresOAuthAccount {
             user_id: self
                 .user_id
-                .ok_or(Error::ValidationError("User ID is required".to_string()))?
+                .ok_or(ValidationError::MissingField(
+                    "User ID is required".to_string(),
+                ))?
                 .to_string(),
-            provider: self
-                .provider
-                .ok_or(Error::ValidationError("Provider is required".to_string()))?,
-            subject: self
-                .subject
-                .ok_or(Error::ValidationError("Subject is required".to_string()))?,
+            provider: self.provider.ok_or(ValidationError::MissingField(
+                "Provider is required".to_string(),
+            ))?,
+            subject: self.subject.ok_or(ValidationError::MissingField(
+                "Subject is required".to_string(),
+            ))?,
             created_at: self.created_at.unwrap_or(now),
             updated_at: self.updated_at.unwrap_or(now),
         })
@@ -467,9 +470,7 @@ impl OAuthStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to create oauth account");
-                Self::Error::Storage(
-                    "Failed to create oauth account".to_string(),
-                )
+                StorageError::Database("Failed to create oauth account".to_string())
             })?;
 
         let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
@@ -484,7 +485,7 @@ impl OAuthStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get oauth account");
-            Self::Error::Storage("Failed to get oauth account".to_string())
+            StorageError::Database("Failed to get oauth account".to_string())
         })?;
 
         Ok(oauth_account.into())
@@ -506,7 +507,7 @@ impl OAuthStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get nonce");
-            Self::Error::Storage("Failed to get nonce".to_string())
+            StorageError::Database("Failed to get nonce".to_string())
         })?;
 
         Ok(())
@@ -519,7 +520,7 @@ impl OAuthStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to get nonce");
-                Self::Error::Storage("Failed to get nonce".to_string())
+                StorageError::Database("Failed to get nonce".to_string())
             })?;
 
         Ok(nonce)
@@ -543,7 +544,7 @@ impl OAuthStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get oauth account");
-            Self::Error::Storage("Failed to get oauth account".to_string())
+            StorageError::Database("Failed to get oauth account".to_string())
         })?;
 
         if let Some(oauth_account) = oauth_account {
@@ -571,7 +572,7 @@ impl OAuthStorage for PostgresStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user by provider and subject");
-            Self::Error::Storage("Failed to get user by provider and subject".to_string())
+            StorageError::Database("Failed to get user by provider and subject".to_string())
         })?;
 
         if let Some(user) = user {
@@ -597,7 +598,7 @@ impl OAuthStorage for PostgresStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to link oauth account");
-                Self::Error::Storage("Failed to link oauth account".to_string())
+                StorageError::Database("Failed to link oauth account".to_string())
             })?;
 
         Ok(())
@@ -606,22 +607,29 @@ impl OAuthStorage for PostgresStorage {
 
 #[async_trait]
 impl EmailPasswordStorage for PostgresStorage {
-    async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
+    async fn set_password_hash(
+        &self,
+        user_id: &UserId,
+        hash: &str,
+    ) -> Result<(), torii_core::Error> {
         sqlx::query("UPDATE users SET password_hash = $1 WHERE id::text= $2")
             .bind(hash)
             .bind(user_id.as_ref())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|_| StorageError::Database("Failed to set password hash".to_string()))?;
         Ok(())
     }
 
-    async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error> {
+    async fn get_password_hash(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<String>, torii_core::Error> {
         let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id::text = $1")
             .bind(user_id.as_ref())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|_| StorageError::Database("Failed to get password hash".to_string()))?;
         Ok(result)
     }
 }

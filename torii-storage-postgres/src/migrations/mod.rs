@@ -113,8 +113,7 @@ impl MigrationManager<Postgres> for PostgresMigrationManager {
             .as_str(),
         )
         .fetch_all(&self.pool)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(records)
     }
 
@@ -128,8 +127,7 @@ impl MigrationManager<Postgres> for PostgresMigrationManager {
         )
         .bind(version)
         .fetch_one(&self.pool)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(result)
     }
 }
@@ -152,8 +150,7 @@ impl Migration<Postgres> for CreateUsersTable {
     ) -> Result<(), MigrationError> {
         sqlx::query(r#"CREATE EXTENSION IF NOT EXISTS "pgcrypto""#)
             .execute(&mut *conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
 
         sqlx::query(
             r#"
@@ -170,8 +167,7 @@ impl Migration<Postgres> for CreateUsersTable {
             )"#,
         )
         .execute(&mut *conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -181,8 +177,7 @@ impl Migration<Postgres> for CreateUsersTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS users CASCADE")
             .execute(conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -217,8 +212,7 @@ impl Migration<Postgres> for CreateSessionsTable {
             );"#,
         )
         .execute(&mut *conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -228,8 +222,7 @@ impl Migration<Postgres> for CreateSessionsTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS sessions CASCADE")
             .execute(&mut *conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -264,8 +257,7 @@ impl Migration<Postgres> for CreateOAuthAccountsTable {
             );"#,
         )
         .execute(&mut *conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -275,8 +267,7 @@ impl Migration<Postgres> for CreateOAuthAccountsTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS oauth_accounts CASCADE")
             .execute(&mut *conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -329,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_migrations() -> Result<(), MigrationError> {
-        let manager = setup_test().await?;
+        let manager = setup_test().await.map_err(|e| MigrationError::Sqlx(e))?;
 
         // Test up migrations
         let migrations: Vec<Box<dyn Migration<Postgres>>> = vec![
@@ -355,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_up_down_up() -> Result<(), MigrationError> {
-        let manager = setup_test().await?;
+        let manager = setup_test().await.map_err(|e| MigrationError::Sqlx(e))?;
 
         // Test up migrations
         let migrations: Vec<Box<dyn Migration<Postgres>>> = vec![

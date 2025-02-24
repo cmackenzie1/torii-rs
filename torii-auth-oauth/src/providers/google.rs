@@ -4,7 +4,7 @@ use oauth2::{
     basic::{BasicClient, BasicTokenType},
 };
 use serde::Deserialize;
-use torii_core::Error;
+use torii_core::{Error, error::AuthError};
 
 use super::{AuthorizationUrl, UserInfo};
 
@@ -83,7 +83,7 @@ impl Google {
                     error = ?e,
                     "Error getting user info"
                 );
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?
             .json::<GoogleUserInfo>()
             .await
@@ -92,7 +92,7 @@ impl Google {
                     error = ?e,
                     "Error parsing user info"
                 );
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?;
 
         Ok(UserInfo::Google(user_info))
@@ -122,7 +122,7 @@ impl Google {
             .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier))
             .request_async(&http_client)
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         Ok(token_response)
     }

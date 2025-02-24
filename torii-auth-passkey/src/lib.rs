@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use torii_core::error::{AuthError, PluginError, StorageError};
 use torii_core::storage::{PasskeyStorage, SessionStorage, Storage};
 use torii_core::{Error, Plugin, Session, User, UserId};
 use webauthn_rs::prelude::*;
@@ -24,17 +25,18 @@ pub enum PasskeyError {
     StorageError(String),
 }
 
-// TODO: This is a temporary solution to convert PasskeyError to Error
 impl From<PasskeyError> for Error {
     fn from(error: PasskeyError) -> Self {
         match error {
-            PasskeyError::Webauthn(e) => Error::Plugin(e.to_string()),
-            PasskeyError::InvalidCredentials => Error::InvalidCredentials,
-            PasskeyError::PasskeyExists => Error::InvalidCredentials,
-            PasskeyError::InvalidChallenge => Error::InvalidCredentials,
-            PasskeyError::InvalidChallengeResponse => Error::InvalidCredentials,
-            PasskeyError::InvalidChallengeResponseFormat => Error::InvalidCredentials,
-            PasskeyError::StorageError(e) => Error::Storage(e),
+            PasskeyError::Webauthn(e) => Error::Plugin(PluginError::OperationFailed(e.to_string())),
+            PasskeyError::InvalidCredentials => Error::Auth(AuthError::InvalidCredentials),
+            PasskeyError::PasskeyExists => Error::Auth(AuthError::UserAlreadyExists),
+            PasskeyError::InvalidChallenge => Error::Auth(AuthError::InvalidCredentials),
+            PasskeyError::InvalidChallengeResponse => Error::Auth(AuthError::InvalidCredentials),
+            PasskeyError::InvalidChallengeResponseFormat => {
+                Error::Auth(AuthError::InvalidCredentials)
+            }
+            PasskeyError::StorageError(e) => Error::Storage(StorageError::Database(e)),
         }
     }
 }

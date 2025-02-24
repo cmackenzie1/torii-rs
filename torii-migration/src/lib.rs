@@ -2,13 +2,20 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Database;
 use thiserror::Error;
+use torii_core::{Error, error::StorageError};
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
-    #[error("Migration failed: {0}")]
-    Migration(String),
     #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Sqlx(#[from] sqlx::Error),
+}
+
+impl From<MigrationError> for Error {
+    fn from(value: MigrationError) -> Self {
+        match value {
+            MigrationError::Sqlx(e) => Error::Storage(StorageError::Database(e.to_string())),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, MigrationError>;

@@ -7,20 +7,17 @@ mod session;
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
-use migrations::CreateOAuthAccountsTable;
-use migrations::CreatePasskeyChallengesTable;
-use migrations::CreatePasskeysTable;
-use migrations::CreateSessionsTable;
-use migrations::CreateUsersTable;
-use migrations::SqliteMigrationManager;
+use migrations::{
+    CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
+    CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
+};
 use sqlx::SqlitePool;
-use torii_core::Error;
+use torii_core::error::StorageError;
 use torii_core::{
     User, UserId,
     storage::{NewUser, UserStorage},
 };
-use torii_migration::Migration;
-use torii_migration::MigrationManager;
+use torii_migration::{Migration, MigrationManager};
 
 #[derive(Clone)]
 pub struct SqliteStorage {
@@ -32,11 +29,11 @@ impl SqliteStorage {
         Self { pool }
     }
 
-    pub async fn migrate(&self) -> Result<(), Error> {
+    pub async fn migrate(&self) -> Result<(), StorageError> {
         let manager = SqliteMigrationManager::new(self.pool.clone());
         manager.initialize().await.map_err(|e| {
             tracing::error!(error = %e, "Failed to initialize migrations");
-            Error::Storage("Failed to initialize migrations".to_string())
+            StorageError::Database("Failed to initialize migrations".to_string())
         })?;
 
         let migrations: Vec<Box<dyn Migration<_>>> = vec![
@@ -48,7 +45,7 @@ impl SqliteStorage {
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
-            Error::Storage("Failed to run migrations".to_string())
+            StorageError::Database("Failed to run migrations".to_string())
         })?;
 
         Ok(())
@@ -98,7 +95,7 @@ impl From<User> for SqliteUser {
 
 #[async_trait]
 impl UserStorage for SqliteStorage {
-    type Error = torii_core::Error;
+    type Error = StorageError;
 
     async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error> {
         let now = Utc::now();
@@ -122,7 +119,7 @@ impl UserStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create user");
-            Self::Error::Storage("Failed to create user".to_string())
+            StorageError::Database("Failed to create user".to_string())
         })?;
 
         Ok(user.into())
@@ -141,7 +138,7 @@ impl UserStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user");
-            Self::Error::Storage("Failed to get user".to_string())
+            StorageError::Database("Failed to get user".to_string())
         })?;
 
         if let Some(user) = user {
@@ -164,7 +161,7 @@ impl UserStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user by email");
-            Self::Error::Storage("Failed to get user by email".to_string())
+            StorageError::Database("Failed to get user by email".to_string())
         })?;
 
         if let Some(user) = user {
@@ -191,7 +188,7 @@ impl UserStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to get or create user by email");
-                Self::Error::Storage("Failed to get or create user by email".to_string())
+                StorageError::Database("Failed to get or create user by email".to_string())
             })?;
 
         Ok(user)
@@ -219,7 +216,7 @@ impl UserStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to update user");
-            Self::Error::Storage("Failed to update user".to_string())
+            StorageError::Database("Failed to update user".to_string())
         })?;
 
         Ok(user.into())
@@ -232,7 +229,7 @@ impl UserStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete user");
-                Self::Error::Storage("Failed to delete user".to_string())
+                StorageError::Database("Failed to delete user".to_string())
             })?;
 
         Ok(())
@@ -277,7 +274,7 @@ mod tests {
     pub(crate) async fn create_test_user(
         storage: &SqliteStorage,
         id: &str,
-    ) -> Result<User, torii_core::Error> {
+    ) -> Result<User, StorageError> {
         storage
             .create_user(
                 &NewUser::builder()

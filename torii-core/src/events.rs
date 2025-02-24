@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::{Error, Session, User, UserId, session::SessionId};
+use crate::{Session, User, UserId, error::EventError, session::SessionId};
 
 /// Represents events that can be emitted by the event bus
 ///
@@ -49,7 +49,7 @@ pub enum Event {
 /// ```
 #[async_trait]
 pub trait EventHandler: Send + Sync + 'static {
-    async fn handle_event(&self, event: &Event) -> Result<(), Error>;
+    async fn handle_event(&self, event: &Event) -> Result<(), EventError>;
 }
 
 /// Event bus that can emit events and register event handlers
@@ -135,7 +135,7 @@ impl EventBus {
     /// let event_bus = EventBus::default();
     /// event_bus.emit(&Event::UserCreated(User::builder().id(UserId::new("test")).build().unwrap())).await;
     /// ```
-    pub async fn emit(&self, event: &Event) -> Result<(), Error> {
+    pub async fn emit(&self, event: &Event) -> Result<(), EventError> {
         for handler in self.handlers.read().await.iter() {
             handler.handle_event(event).await?;
         }
@@ -157,7 +157,7 @@ mod tests {
 
     #[async_trait]
     impl EventHandler for TestEventHandler {
-        async fn handle_event(&self, _event: &Event) -> Result<(), Error> {
+        async fn handle_event(&self, _event: &Event) -> Result<(), EventError> {
             self.called.store(true, Ordering::SeqCst);
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -168,8 +168,8 @@ mod tests {
 
     #[async_trait]
     impl EventHandler for ErroringEventHandler {
-        async fn handle_event(&self, _event: &Event) -> Result<(), Error> {
-            Err(Error::EventBus("Test error".into()))
+        async fn handle_event(&self, _event: &Event) -> Result<(), EventError> {
+            Err(EventError::BusError("Test error".into()))
         }
     }
 
@@ -247,7 +247,7 @@ mod tests {
         // Should propagate error from handler
         let result = event_bus.emit(&Event::UserCreated(test_user)).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::EventBus(_)));
+        assert!(matches!(result.unwrap_err(), EventError::BusError(_)));
     }
 
     #[tokio::test]

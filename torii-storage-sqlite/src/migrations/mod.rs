@@ -110,8 +110,7 @@ impl MigrationManager<Sqlite> for SqliteMigrationManager {
             .as_str(),
         )
         .fetch_all(&self.pool)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(records)
     }
 
@@ -125,8 +124,7 @@ impl MigrationManager<Sqlite> for SqliteMigrationManager {
         )
         .bind(version)
         .fetch_one(&self.pool)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(result)
     }
 }
@@ -162,8 +160,7 @@ impl Migration<Sqlite> for CreateUsersTable {
             );"#,
         )
         .execute(conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -173,8 +170,7 @@ impl Migration<Sqlite> for CreateUsersTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS users")
             .execute(conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -209,8 +205,7 @@ impl Migration<Sqlite> for CreateSessionsTable {
             );"#,
         )
         .execute(conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -220,8 +215,7 @@ impl Migration<Sqlite> for CreateSessionsTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS sessions")
             .execute(conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -256,8 +250,7 @@ impl Migration<Sqlite> for CreateOAuthAccountsTable {
             );"#,
         )
         .execute(conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -267,8 +260,7 @@ impl Migration<Sqlite> for CreateOAuthAccountsTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS oauth_accounts")
             .execute(conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -301,8 +293,7 @@ impl Migration<Sqlite> for CreatePasskeysTable {
             );"#,
         )
         .execute(conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -312,8 +303,7 @@ impl Migration<Sqlite> for CreatePasskeysTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS passkeys")
             .execute(conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }
@@ -345,8 +335,7 @@ impl Migration<Sqlite> for CreatePasskeyChallengesTable {
             );"#,
         )
         .execute(conn)
-        .await
-        .map_err(MigrationError::Database)?;
+        .await?;
         Ok(())
     }
 
@@ -356,8 +345,7 @@ impl Migration<Sqlite> for CreatePasskeyChallengesTable {
     ) -> Result<(), MigrationError> {
         sqlx::query("DROP TABLE IF EXISTS passkey_challenges")
             .execute(conn)
-            .await
-            .map_err(MigrationError::Database)?;
+            .await?;
         Ok(())
     }
 }

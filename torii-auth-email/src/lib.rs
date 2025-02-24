@@ -6,6 +6,7 @@
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::Plugin;
+use torii_core::error::{AuthError, StorageError, ValidationError};
 use torii_core::events::{Event, EventBus};
 use torii_core::session::SessionId;
 use torii_core::storage::{EmailPasswordStorage, Storage};
@@ -69,10 +70,10 @@ where
         password: &str,
     ) -> Result<User, Error> {
         if !is_valid_email(email) {
-            return Err(Error::InvalidEmailFormat);
+            return Err(Error::Validation(ValidationError::InvalidEmail));
         }
         if !is_valid_password(password) {
-            return Err(Error::WeakPassword);
+            return Err(Error::Validation(ValidationError::WeakPassword));
         }
 
         if let Some(_user) = self
@@ -80,10 +81,10 @@ where
             .user_storage()
             .get_user_by_email(email)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
         {
             tracing::debug!(email = %email, "User already exists");
-            return Err(Error::UserAlreadyExists);
+            return Err(Error::Auth(AuthError::UserAlreadyExists));
         }
 
         let new_user = NewUser::builder().email(email.to_string()).build().unwrap();
@@ -91,14 +92,14 @@ where
             .storage
             .create_user(&new_user)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         let hash = generate_hash(password);
         self.storage
             .user_storage()
             .set_password_hash(&user.id, &hash)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         tracing::info!(
             user.id = %user.id,
@@ -119,7 +120,7 @@ where
         new_password: &str,
     ) -> Result<(), Error> {
         if !is_valid_password(new_password) {
-            return Err(Error::WeakPassword);
+            return Err(Error::Validation(ValidationError::WeakPassword));
         }
 
         let user = self
@@ -127,29 +128,29 @@ where
             .user_storage()
             .get_user(user_id)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?
-            .ok_or(Error::UserNotFound)?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
+            .ok_or(Error::Auth(AuthError::UserNotFound))?;
 
         let stored_hash = self
             .storage
             .user_storage()
             .get_password_hash(user_id)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         if stored_hash.is_none() {
-            return Err(Error::InvalidCredentials);
+            return Err(Error::Auth(AuthError::InvalidCredentials));
         }
 
         verify_password(old_password, &stored_hash.unwrap())
-            .map_err(|_| Error::InvalidCredentials)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         let new_hash = generate_hash(new_password);
         self.storage
             .user_storage()
             .set_password_hash(user_id, &new_hash)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         // Delete all existing sessions for this user for security
         self.delete_sessions_for_user(user_id).await?;
@@ -174,19 +175,20 @@ where
         let user = user_storage
             .get_user_by_email(email)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?
-            .ok_or(Error::UserNotFound)?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
+            .ok_or(Error::Auth(AuthError::UserNotFound))?;
 
         let hash = user_storage
             .get_password_hash(&user.id)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         if hash.is_none() {
-            return Err(Error::InvalidCredentials);
+            return Err(Error::Auth(AuthError::InvalidCredentials));
         }
 
-        verify_password(password, &hash.unwrap()).map_err(|_| Error::InvalidCredentials)?;
+        verify_password(password, &hash.unwrap())
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         let session = self.create_session(&user.id).await?;
 
@@ -205,7 +207,7 @@ where
             .storage
             .create_session(&Session::builder().user_id(user_id.clone()).build().unwrap())
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         self.emit_event(&Event::SessionCreated(user_id.clone(), session.clone()))
             .await?;
@@ -220,14 +222,14 @@ where
             .session_storage()
             .get_session(session_id)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?
-            .ok_or(Error::SessionNotFound)?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
+            .ok_or(Error::Auth(AuthError::SessionNotFound))?;
 
         self.storage
             .session_storage()
             .delete_session(session_id)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         self.emit_event(&Event::SessionDeleted(user_id.clone(), session.id))
             .await?;
@@ -240,7 +242,7 @@ where
             .session_storage()
             .delete_sessions_for_user(user_id)
             .await
-            .map_err(|e| Error::Storage(e.to_string()))?;
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         self.emit_event(&Event::SessionsCleared(user_id.clone()))
             .await?;
@@ -270,7 +272,7 @@ mod tests {
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
-    use torii_core::{PluginManager, events::EventHandler};
+    use torii_core::{PluginManager, error::EventError, events::EventHandler};
     use torii_storage_sqlite::SqliteStorage;
 
     async fn setup_plugin() -> Result<(PluginManager<SqliteStorage, SqliteStorage>,), Error> {
@@ -287,14 +289,8 @@ mod tests {
         let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
         manager.register_plugin(EmailPasswordPlugin::new(storage));
 
-        user_storage
-            .migrate()
-            .await
-            .map_err(|_| Error::Storage("Failed to migrate user storage".to_string()))?;
-        session_storage
-            .migrate()
-            .await
-            .map_err(|_| Error::Storage("Failed to migrate session storage".to_string()))?;
+        user_storage.migrate().await?;
+        session_storage.migrate().await?;
 
         Ok((manager,))
     }
@@ -368,7 +364,10 @@ mod tests {
             .register_user_with_password("test@example.com", "password")
             .await;
 
-        assert!(matches!(result, Err(Error::UserAlreadyExists)));
+        assert!(matches!(
+            result,
+            Err(Error::Auth(AuthError::UserAlreadyExists))
+        ));
 
         Ok(())
     }
@@ -383,7 +382,10 @@ mod tests {
             .register_user_with_password("not-an-email", "password")
             .await;
 
-        assert!(matches!(result, Err(Error::InvalidEmailFormat)));
+        assert!(matches!(
+            result,
+            Err(Error::Validation(ValidationError::InvalidEmail))
+        ));
 
         Ok(())
     }
@@ -398,7 +400,10 @@ mod tests {
             .register_user_with_password("test@example.com", "123")
             .await;
 
-        assert!(matches!(result, Err(Error::WeakPassword)));
+        assert!(matches!(
+            result,
+            Err(Error::Validation(ValidationError::WeakPassword))
+        ));
 
         Ok(())
     }
@@ -419,7 +424,10 @@ mod tests {
             .login_user_with_password("test@example.com", "wrong-password")
             .await;
 
-        assert!(matches!(result, Err(Error::InvalidCredentials)));
+        assert!(matches!(
+            result,
+            Err(Error::Auth(AuthError::InvalidCredentials))
+        ));
 
         Ok(())
     }
@@ -434,7 +442,7 @@ mod tests {
             .login_user_with_password("nonexistent@example.com", "password")
             .await;
 
-        assert!(matches!(result, Err(Error::UserNotFound)));
+        assert!(matches!(result, Err(Error::Auth(AuthError::UserNotFound))));
 
         Ok(())
     }
@@ -498,7 +506,10 @@ mod tests {
         let result = plugin
             .login_user_with_password("test@example.com", "password")
             .await;
-        assert!(matches!(result, Err(Error::InvalidCredentials)));
+        assert!(matches!(
+            result,
+            Err(Error::Auth(AuthError::InvalidCredentials))
+        ));
 
         Ok(())
     }
@@ -582,7 +593,7 @@ mod tests {
 
     #[async_trait]
     impl EventHandler for TestEventHandler {
-        async fn handle_event(&self, _event: &Event) -> Result<(), Error> {
+        async fn handle_event(&self, _event: &Event) -> Result<(), EventError> {
             self.called.store(true, Ordering::SeqCst);
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(())

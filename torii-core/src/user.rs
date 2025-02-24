@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::Error;
+use crate::{Error, error::ValidationError};
 
 /// A unique, stable identifier for a specific user
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -147,9 +147,9 @@ impl UserBuilder {
         Ok(User {
             id: self.id.unwrap_or(UserId::new_random()),
             name: self.name,
-            email: self
-                .email
-                .ok_or(Error::ValidationError("Email is required".to_string()))?,
+            email: self.email.ok_or(ValidationError::InvalidField(
+                "Email is required".to_string(),
+            ))?,
             email_verified_at: self.email_verified_at,
             created_at: self.created_at.unwrap_or(now),
             updated_at: self.updated_at.unwrap_or(now),
@@ -210,15 +210,15 @@ impl OAuthAccountBuilder {
     pub fn build(self) -> Result<OAuthAccount, Error> {
         let now = Utc::now();
         Ok(OAuthAccount {
-            user_id: self
-                .user_id
-                .ok_or(Error::ValidationError("User ID is required".to_string()))?,
-            provider: self
-                .provider
-                .ok_or(Error::ValidationError("Provider is required".to_string()))?,
-            subject: self
-                .subject
-                .ok_or(Error::ValidationError("Subject is required".to_string()))?,
+            user_id: self.user_id.ok_or(ValidationError::MissingField(
+                "User ID is required".to_string(),
+            ))?,
+            provider: self.provider.ok_or(ValidationError::MissingField(
+                "Provider is required".to_string(),
+            ))?,
+            subject: self.subject.ok_or(ValidationError::MissingField(
+                "Subject is required".to_string(),
+            ))?,
             created_at: self.created_at.unwrap_or(now),
             updated_at: self.updated_at.unwrap_or(now),
         })

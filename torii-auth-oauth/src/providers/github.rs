@@ -4,7 +4,7 @@ use oauth2::{
     basic::{BasicClient, BasicTokenType},
 };
 use serde::Deserialize;
-use torii_core::Error;
+use torii_core::{Error, error::AuthError};
 
 use super::{AuthorizationUrl, UserInfo};
 
@@ -77,7 +77,7 @@ impl Github {
         let http_client = reqwest::ClientBuilder::new()
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         // Get user info
         let user_info = http_client
@@ -90,18 +90,18 @@ impl Github {
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, "Failed to get user info from GitHub API");
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?
             .error_for_status()
             .map_err(|e| {
                 tracing::error!(error = ?e, status = ?e.status(), "GitHub API returned error status");
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?
             .json::<GithubUserInfo>()
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, "Failed to parse GitHub user info response");
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?;
 
         // Get user emails
@@ -115,18 +115,18 @@ impl Github {
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, "Failed to get emails from GitHub API");
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?
             .error_for_status()
             .map_err(|e| {
                 tracing::error!(error = ?e, "GitHub API returned error status for emails");
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?
             .json::<Vec<GithubUserEmail>>()
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, "Failed to parse GitHub user emails response");
-                Error::InternalServerError
+                Error::Auth(AuthError::InvalidCredentials)
             })?;
 
         let email = emails
@@ -159,7 +159,7 @@ impl Github {
             .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier))
             .request_async(&http_client)
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         Ok(token_response)
     }

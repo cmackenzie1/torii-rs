@@ -1,6 +1,7 @@
 use crate::SqliteStorage;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use torii_core::error::StorageError;
 use torii_core::session::SessionId;
 use torii_core::{Session, SessionStorage, UserId};
 
@@ -67,7 +68,7 @@ impl SessionStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to create session");
-                Self::Error::Storage("Failed to create session".to_string())
+                StorageError::Database("Failed to create session".to_string())
             })?;
 
         Ok(session.into())
@@ -86,7 +87,7 @@ impl SessionStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get session");
-            Self::Error::Storage("Failed to get session".to_string())
+            StorageError::Database("Failed to get session".to_string())
         })?;
 
         Ok(Some(session.into()))
@@ -99,7 +100,7 @@ impl SessionStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete session");
-                Self::Error::Storage("Failed to delete session".to_string())
+                StorageError::Database("Failed to delete session".to_string())
             })?;
 
         Ok(())
@@ -112,7 +113,7 @@ impl SessionStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to cleanup expired sessions");
-                Self::Error::Storage("Failed to cleanup expired sessions".to_string())
+                StorageError::Database("Failed to cleanup expired sessions".to_string())
             })?;
 
         Ok(())
@@ -125,7 +126,7 @@ impl SessionStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to delete sessions for user");
-                Self::Error::Storage("Failed to delete sessions for user".to_string())
+                StorageError::Database("Failed to delete sessions for user".to_string())
             })?;
 
         Ok(())

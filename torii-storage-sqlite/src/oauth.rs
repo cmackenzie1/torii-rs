@@ -1,6 +1,7 @@
 use crate::{SqliteStorage, SqliteUser};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use torii_core::error::StorageError;
 use torii_core::storage::OAuthStorage;
 use torii_core::{OAuthAccount, User, UserId};
 
@@ -67,7 +68,7 @@ impl OAuthStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create oauth account");
-            Self::Error::Storage("Failed to create oauth account".to_string())
+            StorageError::Database("Failed to create oauth account".to_string())
         })?;
 
         Ok(oauth_account.into())
@@ -91,7 +92,7 @@ impl OAuthStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get user by provider and subject");
-            Self::Error::Storage("Failed to get user by provider and subject".to_string())
+            StorageError::Database("Failed to get user by provider and subject".to_string())
         })?;
 
         if let Some(user) = user {
@@ -119,7 +120,7 @@ impl OAuthStorage for SqliteStorage {
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get oauth account");
-            Self::Error::Storage("Failed to get oauth account".to_string())
+            StorageError::Database("Failed to get oauth account".to_string())
         })?;
 
         if let Some(oauth_account) = oauth_account {
@@ -146,7 +147,7 @@ impl OAuthStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to link oauth account");
-                Self::Error::Storage("Failed to link oauth account".to_string())
+                StorageError::Database("Failed to link oauth account".to_string())
             })?;
 
         Ok(())
@@ -166,7 +167,7 @@ impl OAuthStorage for SqliteStorage {
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to save pkce verifier");
-                Self::Error::Storage("Failed to save pkce verifier".to_string())
+                StorageError::Database("Failed to save pkce verifier".to_string())
             })?;
 
         Ok(())
@@ -180,7 +181,7 @@ impl OAuthStorage for SqliteStorage {
                 .await
                 .map_err(|e| {
                     tracing::error!(error = %e, "Failed to get pkce verifier");
-                    Self::Error::Storage("Failed to get pkce verifier".to_string())
+                    StorageError::Database("Failed to get pkce verifier".to_string())
                 })?;
 
         Ok(pkce_verifier)

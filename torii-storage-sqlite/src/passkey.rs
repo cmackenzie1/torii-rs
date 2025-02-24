@@ -1,8 +1,9 @@
 use crate::SqliteStorage;
 use async_trait::async_trait;
 use chrono::Utc;
+use torii_core::UserId;
+use torii_core::error::StorageError;
 use torii_core::storage::PasskeyStorage;
-use torii_core::{Error, UserId};
 
 #[async_trait]
 impl PasskeyStorage for SqliteStorage {
@@ -23,7 +24,7 @@ impl PasskeyStorage for SqliteStorage {
         .bind(passkey_json)
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Storage(e.to_string()))?;
+        .map_err(|e| StorageError::Database(e.to_string()))?;
         Ok(())
     }
 
@@ -41,7 +42,7 @@ impl PasskeyStorage for SqliteStorage {
         .bind(credential_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Storage(e.to_string()))?;
+        .map_err(|e| StorageError::Database(e.to_string()))?;
         Ok(passkey)
     }
 
@@ -56,7 +57,7 @@ impl PasskeyStorage for SqliteStorage {
         .bind(user_id.as_ref())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Storage(e.to_string()))?;
+        .map_err(|e| StorageError::Database(e.to_string()))?;
         Ok(passkeys)
     }
 
@@ -77,7 +78,7 @@ impl PasskeyStorage for SqliteStorage {
         .bind((Utc::now() + expires_in).timestamp())
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Storage(e.to_string()))?;
+        .map_err(|e| StorageError::Database(e.to_string()))?;
         Ok(())
     }
 
@@ -96,7 +97,7 @@ impl PasskeyStorage for SqliteStorage {
         .bind(Utc::now().timestamp())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Storage(e.to_string()))?;
+        .map_err(|e| StorageError::Database(e.to_string()))?;
         Ok(challenge)
     }
 }

@@ -3,6 +3,7 @@ pub mod providers;
 use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
+use torii_core::error::AuthError;
 use torii_core::{Error, NewUser, Plugin, Session, SessionStorage, User, UserId, storage::Storage};
 use torii_core::{
     events::{Event, EventBus},
@@ -194,7 +195,7 @@ where
                 chrono::Duration::minutes(5),
             )
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         Ok(authorization_url)
     }
@@ -215,7 +216,7 @@ where
             .user_storage()
             .get_oauth_account_by_provider_and_subject(&self.provider.name(), &subject)
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         if let Some(oauth_account) = oauth_account {
             tracing::info!(
@@ -228,8 +229,8 @@ where
                 .user_storage()
                 .get_user(&oauth_account.user_id)
                 .await
-                .map_err(|_| Error::InternalServerError)?
-                .ok_or(Error::UserNotFound)?;
+                .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?
+                .ok_or(Error::Auth(AuthError::UserNotFound))?;
 
             return Ok(user);
         }
@@ -246,14 +247,14 @@ where
                     .unwrap(),
             )
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         // Create link between user and provider
         self.storage
             .user_storage()
             .create_oauth_account(&self.provider.name(), &subject, &user.id)
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         tracing::info!(
             user_id = ?user.id,
@@ -292,8 +293,8 @@ where
             .user_storage()
             .get_pkce_verifier(&csrf_state)
             .await
-            .map_err(|_| Error::InternalServerError)?
-            .ok_or(Error::InvalidCredentials)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?
+            .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
 
         tracing::debug!(
             pkce_verifier = ?pkce_verifier,
@@ -341,14 +342,14 @@ where
         let user = self
             .get_or_create_user(email, subject)
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         let session = self
             .storage
             .session_storage()
             .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
             .await
-            .map_err(|_| Error::InternalServerError)?;
+            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         tracing::debug!(
             session = ?session,

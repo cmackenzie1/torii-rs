@@ -13,7 +13,7 @@
 //! | `created_at` | `DateTime`       | The timestamp when the session was created.            |
 //! | `updated_at` | `DateTime`       | The timestamp when the session was last updated.       |
 //! | `expires_at` | `DateTime`       | The timestamp when the session will expire.            |
-use crate::{Error, user::UserId};
+use crate::{Error, error::ValidationError, user::UserId};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -150,9 +150,9 @@ impl SessionBuilder {
         let now = Utc::now();
         Ok(Session {
             id: self.id.unwrap_or(SessionId::new_random()),
-            user_id: self
-                .user_id
-                .ok_or(Error::ValidationError("User ID is required".to_string()))?,
+            user_id: self.user_id.ok_or(ValidationError::MissingField(
+                "User ID is required".to_string(),
+            ))?,
             user_agent: self.user_agent,
             ip_address: self.ip_address,
             created_at: self.created_at.unwrap_or(now),

@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, OAuthAccount, Session, User, UserId, session::SessionId};
+use crate::{
+    Error, OAuthAccount, Session, User, UserId, error::ValidationError, session::SessionId,
+};
 
 #[async_trait]
 pub trait StoragePlugin: Send + Sync + 'static {
@@ -98,10 +100,10 @@ pub trait OAuthStorage: UserStorage {
         csrf_state: &str,
         pkce_verifier: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), Error>;
+    ) -> Result<(), Self::Error>;
 
     /// Retrieve a stored PKCE verifier by CSRF state
-    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error>;
+    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -212,9 +214,9 @@ impl NewUserBuilder {
     pub fn build(self) -> Result<NewUser, Error> {
         Ok(NewUser {
             id: self.id.unwrap_or(UserId::new_random()),
-            email: self
-                .email
-                .ok_or(Error::ValidationError("Email is required".to_string()))?,
+            email: self.email.ok_or(ValidationError::MissingField(
+                "Email is required".to_string(),
+            ))?,
             name: self.name,
             email_verified_at: self.email_verified_at,
         })
