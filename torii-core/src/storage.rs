@@ -235,6 +235,12 @@ pub trait PasskeyStorage: UserStorage {
         passkey_json: &str,
     ) -> Result<(), Self::Error>;
 
+    /// Get a passkey by credential ID
+    async fn get_passkey_by_credential_id(
+        &self,
+        credential_id: &str,
+    ) -> Result<Option<String>, Self::Error>;
+
     /// Get all passkeys for a user
     async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, Self::Error>;
 

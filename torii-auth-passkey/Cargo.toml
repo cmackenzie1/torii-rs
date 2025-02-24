@@ -15,7 +15,7 @@ webauthn-rs = { version = "0.5.1", features = [
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-
+thiserror.workspace = true
 [dev-dependencies]
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }

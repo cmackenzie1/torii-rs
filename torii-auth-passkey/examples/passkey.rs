@@ -82,10 +82,17 @@ async fn finish_registration_handler(
     let auth_stage = plugin
         .complete_registration(&email, &passkey_challenge_id, &body.challenge_response)
         .await
-        .unwrap();
+        .map_err(|e| {
+            tracing::error!("Failed to complete registration: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to complete registration",
+            )
+                .into_response()
+        });
 
     match auth_stage {
-        AuthStage::Complete(auth_response) => {
+        Ok(AuthStage::Complete(auth_response)) => {
             let session = auth_response.session.unwrap();
             let user = auth_response.user;
 
@@ -162,10 +169,74 @@ async fn verify_session<B>(
         }
     }
 
-    // If session is invalid or missing, redirect to sign in
-    Redirect::to("/sign-in").into_response()
+    // If session is invalid or missing, redirect to home page
+    Redirect::to("/").into_response()
 }
 
+#[derive(Debug, Deserialize)]
+struct BeginLoginBody {
+    email: String,
+}
+
+#[axum::debug_handler]
+async fn begin_login_handler(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(params): Json<BeginLoginBody>,
+) -> Response {
+    let plugin = state
+        .plugin_manager
+        .get_auth_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
+        .unwrap();
+
+    let challenge = plugin.start_login(&params.email).await.unwrap();
+
+    let jar = jar.add(
+        Cookie::build(("passkey_challenge_id", challenge.challenge_id().to_string()))
+            .path("/")
+            .http_only(true),
+    );
+
+    (jar, Json(challenge.challenge())).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct FinishLoginBody {
+    email: String,
+    challenge_response: serde_json::Value,
+}
+
+#[axum::debug_handler]
+async fn finish_login_handler(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(body): Json<FinishLoginBody>,
+) -> Response {
+    let plugin = state
+        .plugin_manager
+        .get_auth_plugin::<PasskeyPlugin<SqliteStorage, SqliteStorage>>("passkey")
+        .unwrap();
+
+    let passkey_challenge_id = jar.get("passkey_challenge_id").unwrap().value();
+
+    let auth_stage = plugin
+        .complete_login(&body.email, passkey_challenge_id, &body.challenge_response)
+        .await
+        .unwrap();
+
+    match auth_stage {
+        AuthStage::Complete(auth_response) => {
+            let session = auth_response.session.unwrap();
+            let jar = jar.add(
+                Cookie::build(("session_id", session.id.to_string()))
+                    .path("/")
+                    .http_only(true),
+            );
+            (jar, Json(auth_response.user)).into_response()
+        }
+        _ => (StatusCode::BAD_REQUEST, "Failed to complete login").into_response(),
+    }
+}
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -209,6 +280,7 @@ async fn main() {
                     <h1>Passkey Example</h1>
                     <input type="email" id="email" placeholder="Email">
                     <button onclick="beginRegistration()">Begin Registration</button>
+                    <button onclick="beginLogin()">Begin Login</button>
 
                     <script>
                         async function beginRegistration() {
@@ -265,6 +337,59 @@ async fn main() {
 
                         window.location.href = '/whoami';
                     }
+
+                    async function beginLogin() {
+                        const email = document.getElementById('email').value;
+                        const response = await fetch('/auth/passkey/begin-login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ email })
+                        });
+
+                        if (!response.ok) {
+                            console.error('Failed to begin login');
+                            return;
+                        }
+
+                        const challenge = await response.json();
+                        console.log(challenge);
+ /* 
+                        NOTE: The server returns a base64 encoded challenge but the WebAuthn API expects an ArrayBuffer. Using atob() doesn't work 
+                        because no one can agree on what base64 standard to use.
+
+                        Your mileage may vary and you may need to do something different.
+                        */
+                        const opts = PublicKeyCredential.parseRequestOptionsFromJSON(challenge.publicKey);
+                        console.log(opts);
+                        
+                        // Create credentials using WebAuthn API
+                        const credential = await navigator.credentials.get({
+                            publicKey: opts
+                        });
+
+                        console.log(credential);
+
+                        // Start login flow
+                        const result = await fetch('/auth/passkey/finish-login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },  
+                            body: JSON.stringify({
+                                email,
+                                challenge_response: credential
+                            })
+                        });
+
+                        if (!result.ok) {
+                            console.error('Failed to complete login');
+                            return;
+                        }
+
+                        window.location.href = '/whoami';
+                    }
                     </script>
                 </body>
             </html>
@@ -279,6 +404,14 @@ async fn main() {
         .route(
             "/auth/passkey/finish-registration",
             post(finish_registration_handler),
+        )
+        .route(
+            "/auth/passkey/begin-login",
+            post(begin_login_handler),
+        )
+        .route(
+            "/auth/passkey/finish-login",
+            post(finish_login_handler),
         )
         .with_state(app_state);
 
