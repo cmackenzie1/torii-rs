@@ -27,6 +27,24 @@ impl PasskeyStorage for SqliteStorage {
         Ok(())
     }
 
+    async fn get_passkey_by_credential_id(
+        &self,
+        credential_id: &str,
+    ) -> Result<Option<String>, Self::Error> {
+        let passkey: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT public_key 
+            FROM passkeys 
+            WHERE id = ?
+            "#,
+        )
+        .bind(credential_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::Storage(e.to_string()))?;
+        Ok(passkey)
+    }
+
     async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, Self::Error> {
         let passkeys: Vec<String> = sqlx::query_scalar(
             r#"
