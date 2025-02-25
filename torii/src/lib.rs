@@ -85,7 +85,7 @@ where
             .ok_or(ToriiError::PluginNotFound("email_password".to_string()))?;
 
         let user = password_plugin
-            .register_user_with_password(email, password)
+            .register_user_with_password(email, password, None)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 

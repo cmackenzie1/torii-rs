@@ -99,6 +99,11 @@ impl User {
     pub fn builder() -> UserBuilder {
         UserBuilder::default()
     }
+
+    /// Check if the user's email has been verified.
+    pub fn is_email_verified(&self) -> bool {
+        self.email_verified_at.is_some() && self.email_verified_at.unwrap() < Utc::now()
+    }
 }
 
 #[derive(Default)]

@@ -206,8 +206,8 @@ impl NewUserBuilder {
         self
     }
 
-    pub fn email_verified_at(mut self, email_verified_at: DateTime<Utc>) -> Self {
-        self.email_verified_at = Some(email_verified_at);
+    pub fn email_verified_at(mut self, email_verified_at: Option<DateTime<Utc>>) -> Self {
+        self.email_verified_at = email_verified_at;
         self
     }
 

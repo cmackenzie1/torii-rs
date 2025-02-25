@@ -3,6 +3,7 @@
 //! Username is set to the provided email address.
 //!
 //! Password is hashed using the `password_auth` crate using argon2.
+use chrono::{DateTime, Utc};
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::Plugin;
@@ -68,6 +69,7 @@ where
         &self,
         email: &str,
         password: &str,
+        email_verified_at: Option<DateTime<Utc>>,
     ) -> Result<User, Error> {
         if !is_valid_email(email) {
             return Err(Error::Validation(ValidationError::InvalidEmail));
@@ -87,7 +89,11 @@ where
             return Err(Error::Auth(AuthError::UserAlreadyExists));
         }
 
-        let new_user = NewUser::builder().email(email.to_string()).build().unwrap();
+        let new_user = NewUser::builder()
+            .email(email.to_string())
+            .email_verified_at(email_verified_at)
+            .build()
+            .unwrap();
         let user = self
             .storage
             .create_user(&new_user)
@@ -177,6 +183,10 @@ where
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
             .ok_or(Error::Auth(AuthError::UserNotFound))?;
+
+        if !user.is_email_verified() {
+            return Err(Error::Auth(AuthError::EmailNotVerified));
+        }
 
         let hash = user_storage
             .get_password_hash(&user.id)
@@ -327,13 +337,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_user_and_login() -> Result<(), Error> {
+    async fn test_create_user_and_login_with_unverified_email() -> Result<(), Error> {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .register_user_with_password("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password", None)
+            .await?;
+        assert_eq!(user.email, "test@example.com");
+
+        let result = manager
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .unwrap()
+            .login_user_with_password("test@example.com", "password")
+            .await;
+        assert!(matches!(
+            result,
+            Err(Error::Auth(AuthError::EmailNotVerified))
+        ));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_user_and_login_with_verified_email() -> Result<(), Error> {
+        let (manager,) = setup_plugin().await?;
+
+        let user = manager
+            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .unwrap()
+            .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
         assert_eq!(user.email, "test@example.com");
 
@@ -355,13 +389,13 @@ mod tests {
         let _ = manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .register_user_with_password("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password", None)
             .await?;
 
         let result = manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
-            .register_user_with_password("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password", None)
             .await;
 
         assert!(matches!(
@@ -379,7 +413,7 @@ mod tests {
         let result = manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .register_user_with_password("not-an-email", "password")
+            .register_user_with_password("not-an-email", "password", None)
             .await;
 
         assert!(matches!(
@@ -397,7 +431,7 @@ mod tests {
         let result = manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .register_user_with_password("test@example.com", "123")
+            .register_user_with_password("test@example.com", "123", None)
             .await;
 
         assert!(matches!(
@@ -415,7 +449,7 @@ mod tests {
         manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .register_user_with_password("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
 
         let result = manager
@@ -454,7 +488,7 @@ mod tests {
         let _ = manager
             .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
-            .register_user_with_password("test@example.com'; DROP TABLE users;--", "password")
+            .register_user_with_password("test@example.com'; DROP TABLE users;--", "password", None)
             .await
             .expect_err("Should fail validation");
 
@@ -470,7 +504,7 @@ mod tests {
 
         // Create initial user
         let user = plugin
-            .register_user_with_password("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
 
         let session = manager
@@ -553,7 +587,7 @@ mod tests {
 
         // Test 1: Creating a user should emit an event
         let user = plugin
-            .register_user_with_password("test@example.com", "password")
+            .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
         assert!(
             event_was_emitted.load(Ordering::SeqCst),

@@ -72,7 +72,7 @@ async fn sign_up_form_handler(
         .unwrap();
 
     match plugin
-        .register_user_with_password(&params.email, &params.password)
+        .register_user_with_password(&params.email, &params.password, None)
         .await
     {
         Ok(_) => (
