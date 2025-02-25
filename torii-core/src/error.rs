@@ -29,6 +29,9 @@ pub enum AuthError {
     #[error("User already exists")]
     UserAlreadyExists,
 
+    #[error("Email not verified")]
+    EmailNotVerified,
+
     #[error("Session not found")]
     SessionNotFound,
 
