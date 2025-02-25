@@ -13,6 +13,7 @@ chrono.workspace = true
 sqlx = { workspace = true, features = ["postgres", "uuid"] }
 thiserror.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
