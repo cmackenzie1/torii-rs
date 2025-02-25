@@ -70,8 +70,9 @@ The PostgreSQL storage provider implements the following core interfaces:
 
 - `UserStorage` - For managing user accounts
 - `SessionStorage` - For handling user sessions
-- `EmailPasswordStorage` - For email/password authentication
+- `PasswordStorage` - For email/password authentication
 - `OAuthStorage` - For OAuth account linking
+- `PasskeyStorage` - For passkey authentication
 
 Key implementation details:
 

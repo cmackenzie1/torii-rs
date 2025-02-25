@@ -4,7 +4,7 @@ members = [
     "torii",
     "torii-core",
     # Auth plugins
-    "torii-auth-email",
+    "torii-auth-password",
     "torii-auth-oauth",
     "torii-auth-passkey",
     # SQL Storage plugins

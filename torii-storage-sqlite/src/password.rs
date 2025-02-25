@@ -2,10 +2,10 @@ use crate::SqliteStorage;
 use async_trait::async_trait;
 use torii_core::UserId;
 use torii_core::error::StorageError;
-use torii_core::storage::EmailPasswordStorage;
+use torii_core::storage::PasswordStorage;
 
 #[async_trait]
-impl EmailPasswordStorage for SqliteStorage {
+impl PasswordStorage for SqliteStorage {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), StorageError> {
         sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
             .bind(hash)

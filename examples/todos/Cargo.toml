@@ -14,7 +14,7 @@ serde_json = "1.0"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1.0", features = ["full"] }
 torii = { path = "../../torii" }
-torii-auth-email = { path = "../../torii-auth-email" }
+torii-auth-password = { path = "../../torii-auth-password" }
 torii-auth-oauth = { path = "../../torii-auth-oauth" }
 torii-auth-passkey = { path = "../../torii-auth-passkey" }
 torii-storage-sqlite = { path = "../../torii-storage-sqlite" }

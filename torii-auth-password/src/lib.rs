@@ -10,7 +10,7 @@ use torii_core::Plugin;
 use torii_core::error::{AuthError, StorageError, ValidationError};
 use torii_core::events::{Event, EventBus};
 use torii_core::session::SessionId;
-use torii_core::storage::{EmailPasswordStorage, Storage};
+use torii_core::storage::{PasswordStorage, Storage};
 use torii_core::{
     Error, Session, User, UserId,
     storage::{NewUser, SessionStorage},
@@ -23,18 +23,18 @@ use torii_core::{
 /// Username is set to the provided email address.
 ///
 /// Password is hashed using the `password_auth` crate using argon2.
-pub struct EmailPasswordPlugin<U, S>
+pub struct PasswordPlugin<U, S>
 where
-    U: EmailPasswordStorage,
+    U: PasswordStorage,
     S: SessionStorage,
 {
     storage: Storage<U, S>,
     event_bus: Option<EventBus>,
 }
 
-impl<U, S> EmailPasswordPlugin<U, S>
+impl<U, S> PasswordPlugin<U, S>
 where
-    U: EmailPasswordStorage,
+    U: PasswordStorage,
     S: SessionStorage,
 {
     pub fn new(storage: Storage<U, S>) -> Self {
@@ -50,9 +50,9 @@ where
     }
 }
 
-impl<U, S> Plugin for EmailPasswordPlugin<U, S>
+impl<U, S> Plugin for PasswordPlugin<U, S>
 where
-    U: EmailPasswordStorage,
+    U: PasswordStorage,
     S: SessionStorage,
 {
     fn name(&self) -> String {
@@ -60,9 +60,9 @@ where
     }
 }
 
-impl<U, S> EmailPasswordPlugin<U, S>
+impl<U, S> PasswordPlugin<U, S>
 where
-    U: EmailPasswordStorage,
+    U: PasswordStorage,
     S: SessionStorage,
 {
     pub async fn register_user_with_password(
@@ -297,7 +297,7 @@ mod tests {
 
         let storage = Storage::new(user_storage.clone(), session_storage.clone());
         let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-        manager.register_plugin(EmailPasswordPlugin::new(storage));
+        manager.register_plugin(PasswordPlugin::new(storage));
 
         user_storage.migrate().await?;
         session_storage.migrate().await?;
@@ -341,14 +341,14 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", None)
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
             .login_user_with_password("test@example.com", "password")
             .await;
@@ -365,14 +365,14 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let (user, session) = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
             .login_user_with_password("test@example.com", "password")
             .await?;
@@ -387,13 +387,13 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", None)
             .await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", None)
             .await;
@@ -411,7 +411,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
             .register_user_with_password("not-an-email", "password", None)
             .await;
@@ -429,7 +429,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
             .register_user_with_password("test@example.com", "123", None)
             .await;
@@ -447,13 +447,13 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
             .login_user_with_password("test@example.com", "wrong-password")
             .await;
@@ -471,7 +471,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
             .login_user_with_password("nonexistent@example.com", "password")
             .await;
@@ -486,7 +486,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist")
             .register_user_with_password("test@example.com'; DROP TABLE users;--", "password", None)
             .await
@@ -499,7 +499,7 @@ mod tests {
     async fn test_change_password() -> Result<(), Error> {
         let (manager,) = setup_plugin().await?;
         let plugin = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist");
 
         // Create initial user
@@ -569,7 +569,7 @@ mod tests {
         let event_bus = EventBus::new();
 
         // Register plugin with event bus
-        let plugin = EmailPasswordPlugin::new(storage).with_event_bus(event_bus.clone());
+        let plugin = PasswordPlugin::new(storage).with_event_bus(event_bus.clone());
         manager.register_plugin(plugin);
 
         // Create test event handler that tracks when events are emitted
@@ -582,7 +582,7 @@ mod tests {
         event_bus.register(Arc::new(handler)).await;
 
         let plugin = manager
-            .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
             .expect("Plugin should exist");
 
         // Test 1: Creating a user should emit an event

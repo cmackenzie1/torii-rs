@@ -1,5 +1,5 @@
 [package]
-name = "torii-auth-email"
+name = "torii-auth-password"
 version = "0.1.0"
 edition.workspace = true
 repository.workspace = true
@@ -24,5 +24,5 @@ serde.workspace = true
 serde_json.workspace = true
 
 [[example]]
-name = "email_password"
-path = "examples/email_password.rs"
+name = "password"
+path = "examples/password.rs"

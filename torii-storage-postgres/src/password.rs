@@ -2,10 +2,10 @@ use crate::PostgresStorage;
 use async_trait::async_trait;
 use torii_core::UserId;
 use torii_core::error::StorageError;
-use torii_core::storage::EmailPasswordStorage;
+use torii_core::storage::PasswordStorage;
 
 #[async_trait]
-impl EmailPasswordStorage for PostgresStorage {
+impl PasswordStorage for PostgresStorage {
     async fn set_password_hash(
         &self,
         user_id: &UserId,

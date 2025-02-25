@@ -1,4 +1,4 @@
-# torii-auth-email
+# torii-auth-password
 
 This plugin provides email and password authentication for Torii.
 

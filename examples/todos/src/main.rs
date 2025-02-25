@@ -46,7 +46,7 @@ async fn main() {
         .expect("Failed to migrate session storage");
 
     let torii = Torii::new(user_storage, session_storage)
-        .with_email_password_plugin()
+        .with_password_plugin()
         .with_oauth_provider(Provider::google(
             std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is not set"),
             std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is not set"),

@@ -16,7 +16,7 @@ use axum_extra::extract::{
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
-use torii_auth_email::EmailPasswordPlugin;
+use torii_auth_password::PasswordPlugin;
 use torii_core::{plugin::PluginManager, session::SessionId, storage::Storage};
 use torii_storage_sqlite::SqliteStorage;
 
@@ -29,7 +29,7 @@ use torii_storage_sqlite::SqliteStorage;
 /// The example uses:
 /// - SQLite for storing users and sessions (in memory database)
 /// - Axum web framework for routing and handling requests
-/// - EmailPasswordPlugin from torii-auth-email for authentication logic
+/// - EmailPasswordPlugin from torii-auth-password for authentication logic
 ///
 /// Key concepts demonstrated:
 /// - Setting up storage backends (SqliteStorage)
@@ -68,7 +68,7 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin
@@ -99,9 +99,9 @@ async fn sign_in_form_handler(
     State(state): State<AppState>,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
-    let plugin: Arc<EmailPasswordPlugin<_, _>> = state
+    let plugin: Arc<PasswordPlugin<_, _>> = state
         .plugin_manager
-        .get_plugin::<EmailPasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin
@@ -237,7 +237,7 @@ async fn main() {
     let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_plugin(EmailPasswordPlugin::new(storage));
+    plugin_manager.register_plugin(PasswordPlugin::new(storage));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

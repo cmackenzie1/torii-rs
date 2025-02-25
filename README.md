@@ -25,17 +25,18 @@ Torii is a flexible authentication framework for Rust applications that provides
 - 🔐 Multiple authentication methods
   - Email/Password authentication
   - OAuth2 / OpenID Connect (OIDC)
-  - WebAuthn (Coming Soon)
+  - Passkey authentication
 - 💾 Storage backends
   - SQLite support
-  - Postgres support (#3)
-  - MySQL support (#4)
+  - Postgres support
+  - MySQL support (https://github.com/cmackenzie1/torii-rs/issues/4)
 - 🔌 Plugin system for extending functionality
 
 ## Current Plugins
 
-- [Email/Password Authentication](./torii-auth-email/README.md)
+- [Email/Password Authentication](./torii-auth-password/README.md)
 - [OAuth2 / OpenID Connect (oidc)](./torii-auth-oauth/README.md)
+- [Passkey Authentication](./torii-auth-passkey/README.md)
 
 ## Security
 

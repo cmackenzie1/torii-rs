@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use torii_auth_email::EmailPasswordPlugin;
 use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
 use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
+use torii_auth_password::PasswordPlugin;
 use torii_core::{
     PluginManager, SessionStorage,
-    storage::{EmailPasswordStorage, OAuthStorage, PasskeyStorage, Storage, UserStorage},
+    storage::{OAuthStorage, PasskeyStorage, PasswordStorage, Storage, UserStorage},
 };
 
 /// Re-export core types
@@ -65,11 +65,11 @@ where
 
 impl<U, S> Torii<U, S>
 where
-    U: EmailPasswordStorage + Clone,
+    U: PasswordStorage + Clone,
     S: SessionStorage + Clone,
 {
-    pub fn with_email_password_plugin(mut self) -> Self {
-        let plugin = EmailPasswordPlugin::new(self.storage.clone());
+    pub fn with_password_plugin(mut self) -> Self {
+        let plugin = PasswordPlugin::new(self.storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -81,8 +81,8 @@ where
     ) -> Result<User, ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<EmailPasswordPlugin<U, S>>("email_password")
-            .ok_or(ToriiError::PluginNotFound("email_password".to_string()))?;
+            .get_plugin::<PasswordPlugin<U, S>>("password")
+            .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
 
         let user = password_plugin
             .register_user_with_password(email, password, None)
@@ -99,8 +99,8 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<EmailPasswordPlugin<U, S>>("email_password")
-            .ok_or(ToriiError::PluginNotFound("email_password".to_string()))?;
+            .get_plugin::<PasswordPlugin<U, S>>("password")
+            .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
 
         let (user, session) = password_plugin
             .login_user_with_password(email, password)

@@ -1,11 +1,11 @@
-# Email/Password Example
+# Password Example
 
-This example demonstrates how to use the Email/Password plugin to authenticate a user using an email and password.
+This example demonstrates how to use the Password plugin to authenticate a user using an email and password.
 
 ## Running the example
 
 ```bash
-cargo run --example email_password
+cargo run --example password
 ```
 
 ## Accessing the example

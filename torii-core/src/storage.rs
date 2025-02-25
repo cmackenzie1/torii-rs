@@ -50,7 +50,7 @@ pub trait SessionStorage: Send + Sync + 'static {
 /// This trait extends the base `UserStorage` trait with methods needed for
 /// storing and retrieving password hashes.
 #[async_trait]
-pub trait EmailPasswordStorage: UserStorage {
+pub trait PasswordStorage: UserStorage {
     /// Store a password hash for a user
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Self::Error>;
 
