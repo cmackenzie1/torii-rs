@@ -8,18 +8,27 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.1.0" }
-# TODO: Make optional and add feature flags for each auth plugin
-torii-auth-password = { path = "../torii-auth-password", version = "0.1.0" }
-torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.1.0" }
-torii-auth-passkey = { path = "../torii-auth-passkey", version = "0.1.0" }
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
+torii-auth-password = { path = "../torii-auth-password", version = "0.1.0", optional = true }
+torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.1.0", optional = true }
+torii-auth-passkey = { path = "../torii-auth-passkey", version = "0.1.0", optional = true }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0", optional = true }
+torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.1.0", optional = true }
 
-sqlx = { workspace = true, features = ["runtime-tokio-rustls", "sqlite"] }
-tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 thiserror.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }
+
+[features]
+default = ["password", "sqlite"]
+# storage backends
+sqlite = ["dep:torii-storage-sqlite"]
+postgres = ["dep:torii-storage-postgres"]
+# auth plugins
+password = ["dep:torii-auth-password"]
+oauth = ["dep:torii-auth-oauth"]
+passkey = ["dep:torii-auth-passkey"]

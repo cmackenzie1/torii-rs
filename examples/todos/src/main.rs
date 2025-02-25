@@ -1,9 +1,6 @@
 use dashmap::DashMap;
-use sqlx::{Pool, Sqlite};
 use std::sync::Arc;
-use torii::Torii;
-use torii_auth_oauth::providers::Provider;
-use torii_storage_sqlite::SqliteStorage;
+use torii::{SqliteStorage, Torii};
 
 mod routes;
 mod templates;
@@ -28,12 +25,17 @@ pub struct Todo {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-    let pool = Pool::<Sqlite>::connect("sqlite://todos.db?mode=rwc")
-        .await
-        .expect("Failed to connect to database");
 
-    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-    let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let user_storage = Arc::new(
+        SqliteStorage::connect("sqlite://todos.db?mode=rwc")
+            .await
+            .expect("Failed to connect to database"),
+    );
+    let session_storage = Arc::new(
+        SqliteStorage::connect("sqlite://todos.db?mode=rwc")
+            .await
+            .expect("Failed to connect to database"),
+    );
 
     // TODO: Move this into a torii init function
     user_storage
@@ -45,14 +47,7 @@ async fn main() {
         .await
         .expect("Failed to migrate session storage");
 
-    let torii = Torii::new(user_storage, session_storage)
-        .with_password_plugin()
-        .with_oauth_provider(Provider::google(
-            std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID is not set"),
-            std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET is not set"),
-            std::env::var("GOOGLE_REDIRECT_URI").expect("GOOGLE_REDIRECT_URI is not set"),
-        ))
-        .with_passkey_plugin("rp_id", "rp_origin");
+    let torii = Torii::new(user_storage, session_storage).with_password_plugin();
 
     let app_state = AppState {
         torii: Arc::new(torii),

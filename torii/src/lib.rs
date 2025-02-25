@@ -49,9 +49,6 @@
 //! ```
 use std::sync::Arc;
 
-use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
-use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
-use torii_auth_password::PasswordPlugin;
 use torii_core::{
     PluginManager, SessionStorage,
     storage::{OAuthStorage, PasskeyStorage, PasswordStorage, Storage, UserStorage},
@@ -62,6 +59,23 @@ pub use torii_core::{
     session::{Session, SessionId},
     user::{User, UserId},
 };
+
+/// Re-export auth plugins
+#[cfg(feature = "password")]
+pub use torii_auth_password::PasswordPlugin;
+
+#[cfg(feature = "oauth")]
+pub use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
+
+#[cfg(feature = "passkey")]
+pub use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
+
+// Re-export storage backends
+#[cfg(feature = "sqlite")]
+pub use torii_storage_sqlite::SqliteStorage;
+
+#[cfg(feature = "postgres")]
+pub use torii_storage_postgres::PostgresStorage;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ToriiError {
@@ -162,6 +176,7 @@ where
     }
 }
 
+#[cfg(feature = "password")]
 impl<U, S> Torii<U, S>
 where
     U: PasswordStorage + Clone,
@@ -235,6 +250,7 @@ where
     }
 }
 
+#[cfg(feature = "oauth")]
 impl<U, S> Torii<U, S>
 where
     U: OAuthStorage + Clone,
@@ -312,6 +328,7 @@ where
     }
 }
 
+#[cfg(feature = "passkey")]
 impl<U, S> Torii<U, S>
 where
     U: PasskeyStorage + Clone,

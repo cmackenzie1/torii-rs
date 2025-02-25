@@ -29,6 +29,15 @@ impl SqliteStorage {
         Self { pool }
     }
 
+    pub async fn connect(database_url: &str) -> Result<Self, StorageError> {
+        let pool = SqlitePool::connect(database_url).await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to connect to database");
+            StorageError::Database("Failed to connect to database".to_string())
+        })?;
+
+        Ok(Self::new(pool))
+    }
+
     pub async fn migrate(&self) -> Result<(), StorageError> {
         let manager = SqliteMigrationManager::new(self.pool.clone());
         manager.initialize().await.map_err(|e| {
