@@ -272,13 +272,99 @@ impl Migration<Postgres> for CreateOAuthAccountsTable {
     }
 }
 
+pub struct CreatePasskeysTable;
+
+#[async_trait]
+impl Migration<Postgres> for CreatePasskeysTable {
+    fn version(&self) -> i64 {
+        4
+    }
+
+    fn name(&self) -> &str {
+        "CreatePasskeysTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS passkeys (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                credential_id TEXT NOT NULL,
+                user_id UUID NOT NULL,
+                public_key TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );"#,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP TABLE IF EXISTS passkeys")
+            .execute(conn)
+            .await?;
+        Ok(())
+    }
+}
+
+pub struct CreatePasskeyChallengesTable;
+
+#[async_trait]
+impl Migration<Postgres> for CreatePasskeyChallengesTable {
+    fn version(&self) -> i64 {
+        5
+    }
+
+    fn name(&self) -> &str {
+        "CreatePasskeyChallengesTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS passkey_challenges (
+                id TEXT PRIMARY KEY,
+                challenge TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );"#,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP TABLE IF EXISTS passkey_challenges")
+            .execute(conn)
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::Rng;
     use sqlx::PgPool;
 
-    async fn setup_test() -> Result<PostgresMigrationManager, sqlx::Error> {
+    pub(crate) async fn setup_test() -> Result<PostgresMigrationManager, sqlx::Error> {
         // TODO: this function is leaking postgres databases after the test is done.
         // We should find a way to clean up the database after the test is done.
 
@@ -327,6 +413,8 @@ mod tests {
             Box::new(CreateUsersTable),
             Box::new(CreateSessionsTable),
             Box::new(CreateOAuthAccountsTable),
+            Box::new(CreatePasskeysTable),
+            Box::new(CreatePasskeyChallengesTable),
         ];
         manager.up(&migrations).await?;
 
@@ -353,6 +441,8 @@ mod tests {
             Box::new(CreateUsersTable),
             Box::new(CreateSessionsTable),
             Box::new(CreateOAuthAccountsTable),
+            Box::new(CreatePasskeysTable),
+            Box::new(CreatePasskeyChallengesTable),
         ];
         manager.up(&migrations).await?;
 
