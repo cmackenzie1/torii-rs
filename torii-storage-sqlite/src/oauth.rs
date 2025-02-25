@@ -189,3 +189,117 @@ impl OAuthStorage for SqliteStorage {
         Ok(pkce_verifier)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::tests::setup_sqlite_storage;
+
+    use crate::tests::create_test_user;
+
+    #[tokio::test]
+    async fn test_oauth_account_linking() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+
+        // Create test user
+        let user = create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user");
+
+        // Link OAuth account
+        storage
+            .link_oauth_account(&user.id, "google", "oauth_id_123")
+            .await
+            .expect("Failed to link oauth account");
+
+        // Try linking same account again - should fail
+        let result = storage
+            .link_oauth_account(&user.id, "google", "oauth_id_123")
+            .await;
+        assert!(result.is_err());
+
+        // Get OAuth account
+        let oauth_account = storage
+            .get_oauth_account_by_provider_and_subject("google", "oauth_id_123")
+            .await
+            .expect("Failed to get oauth account");
+
+        assert!(oauth_account.is_some());
+        assert_eq!(oauth_account.unwrap().user_id, user.id);
+    }
+
+    #[tokio::test]
+    async fn test_pkce_verifier() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+
+        let csrf_state = "test_state";
+        let pkce_verifier = "test_verifier";
+        let expires_in = chrono::Duration::seconds(3600);
+
+        // Store PKCE verifier
+        storage
+            .store_pkce_verifier(csrf_state, pkce_verifier, expires_in)
+            .await
+            .expect("Failed to store pkce verifier");
+
+        // Get PKCE verifier
+        let stored_verifier = storage
+            .get_pkce_verifier(csrf_state)
+            .await
+            .expect("Failed to get pkce verifier");
+
+        assert_eq!(stored_verifier, Some(pkce_verifier.to_string()));
+
+        // Get non-existent PKCE verifier
+        let non_existent = storage
+            .get_pkce_verifier("non_existent")
+            .await
+            .expect("Failed to get pkce verifier");
+
+        assert_eq!(non_existent, None);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_oauth_providers() {
+        let storage = setup_sqlite_storage()
+            .await
+            .expect("Failed to setup storage");
+
+        // Create test user
+        let user = create_test_user(&storage, "1")
+            .await
+            .expect("Failed to create user");
+
+        // Link multiple OAuth accounts
+        storage
+            .link_oauth_account(&user.id, "google", "google_id_123")
+            .await
+            .expect("Failed to link Google account");
+
+        storage
+            .link_oauth_account(&user.id, "github", "github_id_123")
+            .await
+            .expect("Failed to link GitHub account");
+
+        // Verify both accounts are linked
+        let google_user = storage
+            .get_oauth_account_by_provider_and_subject("google", "google_id_123")
+            .await
+            .expect("Failed to get Google oauth account");
+
+        let github_user = storage
+            .get_oauth_account_by_provider_and_subject("github", "github_id_123")
+            .await
+            .expect("Failed to get GitHub oauth account");
+
+        assert!(google_user.is_some());
+        assert!(github_user.is_some());
+        assert_eq!(google_user.unwrap().user_id, user.id);
+        assert_eq!(github_user.unwrap().user_id, user.id);
+    }
+}
