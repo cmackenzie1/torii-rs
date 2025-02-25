@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use crate::storage::{SessionStorage, Storage, UserStorage};
 
+/// A trait for plugins.
 pub trait Plugin: Any + Send + Sync + DowncastSync {
     /// The unique name of the plugin instance.
     fn name(&self) -> String;

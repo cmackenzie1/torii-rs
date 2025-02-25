@@ -27,7 +27,7 @@ impl Provider {
         Self::Github(github::Github::new(client_id, client_secret, redirect_uri))
     }
 
-    pub fn get_authorization_url(&self) -> Result<AuthorizationUrl, Error> {
+    pub fn get_authorization_url(&self) -> Result<(AuthorizationUrl, String), Error> {
         match self {
             Self::Google(google) => google.get_authorization_url(),
             Self::Github(github) => github.get_authorization_url(),

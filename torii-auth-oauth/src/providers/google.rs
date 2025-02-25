@@ -35,7 +35,7 @@ impl Google {
             redirect_uri,
         }
     }
-    pub fn get_authorization_url(&self) -> Result<AuthorizationUrl, Error> {
+    pub fn get_authorization_url(&self) -> Result<(AuthorizationUrl, String), Error> {
         // Create an OAuth2 client by specifying the client ID, client secret, authorization URL and
         // token URL.
         let client = BasicClient::new(ClientId::new(self.client_id.clone()))
@@ -58,11 +58,13 @@ impl Google {
             )
             .url();
 
-        Ok(AuthorizationUrl {
-            url: auth_url.to_string(),
-            csrf_state: csrf_state.secret().to_string(),
-            pkce_verifier: pkce_verifier.secret().to_string(),
-        })
+        Ok((
+            AuthorizationUrl {
+                url: auth_url.to_string(),
+                csrf_state: csrf_state.secret().to_string(),
+            },
+            pkce_verifier.secret().to_string(),
+        ))
     }
 
     pub async fn get_user_info(&self, access_token: String) -> Result<UserInfo, Error> {

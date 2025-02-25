@@ -50,7 +50,7 @@ impl Github {
         }
     }
 
-    pub fn get_authorization_url(&self) -> Result<AuthorizationUrl, Error> {
+    pub fn get_authorization_url(&self) -> Result<(AuthorizationUrl, String), Error> {
         let client = BasicClient::new(ClientId::new(self.client_id.clone()))
             .set_client_secret(ClientSecret::new(self.client_secret.clone()))
             .set_auth_uri(AuthUrl::new(GITHUB_AUTH_URL.to_string()).expect("Invalid auth URL"))
@@ -66,11 +66,13 @@ impl Github {
             .set_pkce_challenge(pkce_challenge)
             .url();
 
-        Ok(AuthorizationUrl {
-            url: auth_url.to_string(),
-            csrf_state: csrf_state.secret().to_string(),
-            pkce_verifier: pkce_verifier.secret().to_string(),
-        })
+        Ok((
+            AuthorizationUrl {
+                url: auth_url.to_string(),
+                csrf_state: csrf_state.secret().to_string(),
+            },
+            pkce_verifier.secret().to_string(),
+        ))
     }
 
     pub async fn get_user_info(&self, access_token: String) -> Result<UserInfo, Error> {

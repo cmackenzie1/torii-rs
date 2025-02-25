@@ -1,3 +1,17 @@
+//! A passkey authentication plugin for Torii.
+//!
+//! This plugin provides passkey (WebAuthn) authentication capabilities to Torii applications.
+//! It allows users to register and authenticate using passkeys (biometric authentication, security keys, etc).
+//!
+//! # Warning
+//! This plugin is meant to be used as part of the Torii authentication framework and should not be
+//! instantiated directly. Use Torii's plugin system to add passkey authentication to your application.
+//!
+//! # Features
+//! - Passkey registration
+//! - Passkey authentication
+//! - Challenge-response based authentication flow
+//! - Integration with Torii's session management
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use torii_core::error::{AuthError, PluginError, StorageError};
@@ -41,11 +55,26 @@ impl From<PasskeyError> for Error {
     }
 }
 
+/// A plugin for managing passkey authentication.
+///
+/// This plugin provides functionality for registering and authenticating users using passkeys.
+/// It allows users to start registration and login processes, and complete them using the provided
+/// challenge responses.
 pub struct PasskeyPlugin<U: PasskeyStorage, S: SessionStorage> {
     webauthn: Webauthn,
     storage: Storage<U, S>,
 }
 
+/// A challenge for a passkey authentication process.
+///
+/// This struct represents a challenge for a passkey authentication process. It contains the user ID,
+/// the challenge ID, and the challenge response.
+///
+/// # Fields
+/// - `user_id`: The ID of the user that the challenge belongs to.
+/// - `challenge_id`: The ID of the challenge.
+/// - `challenge`: The challenge response. This is typically a JSON object containing the challenge
+///   response from the WebAuthn library.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PasskeyChallenge {
     user_id: UserId,
@@ -62,10 +91,12 @@ impl PasskeyChallenge {
         }
     }
 
+    /// Get the ID of the challenge.
     pub fn challenge_id(&self) -> &String {
         &self.challenge_id
     }
 
+    /// Get the challenge response.
     pub fn challenge(&self) -> &serde_json::Value {
         &self.challenge
     }
@@ -82,7 +113,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 
     /// Start a passkey registration and return the challenge to the client.
     /// The challenge is stored in the database for verification.
-    /// Returns a tuple of the challenge
+    /// Returns a challenge that should be sent to the client.
     pub async fn start_registration(&self, email: &str) -> Result<PasskeyChallenge, PasskeyError> {
         let challenge_id = Uuid::new_v4();
         let user_id = UserId::new_random();
@@ -119,6 +150,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
     }
 
     /// Complete a passkey registration and create a user in the user storage.
+    /// Returns the user and session if the registration is successful.
     pub async fn complete_registration(
         &self,
         email: &str,
@@ -210,6 +242,9 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         Ok((user, session))
     }
 
+    /// Start a passkey login and return the challenge to the client.
+    /// The challenge is stored in the database for verification.
+    /// Returns a challenge that should be sent to the client.
     pub async fn start_login(&self, email: &str) -> Result<PasskeyChallenge, PasskeyError> {
         let user = self
             .storage
@@ -268,6 +303,8 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         ))
     }
 
+    /// Complete a passkey login and create a session.
+    /// Returns the user and session if the login is successful.
     pub async fn complete_login(
         &self,
         email: &str,

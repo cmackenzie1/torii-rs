@@ -1,28 +1,50 @@
-//! This plugin provides email and password authentication for Torii.
+//! A plugin for Torii that provides email and password authentication.
 //!
-//! Username is set to the provided email address.
+//! This plugin allows users to register and authenticate using an email address and password.
+//! It handles password hashing, validation, and session management.
 //!
-//! Password is hashed using the `password_auth` crate using argon2.
+//! # Usage
+//!
+//! ```rust,no_run
+//! use torii::Torii;
+//! use torii_storage_sqlite::SqliteStorage;
+//! use std::sync::Arc;
+//!
+//! let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+//! let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+//!
+//! let torii = Torii::new(user_storage, session_storage)
+//!     .with_password_plugin();
+//!
+//! // Register a new user
+//! let user = torii.register_user_with_password("user@example.com", "password123").await?;
+//!
+//! // Login an existing user
+//! let (user, session) = torii.login_user_with_password("user@example.com", "password123").await?;
+//! ```
+//!
+//! The password plugin requires a storage implementation that implements the [`PasswordStorage`]
+//! trait for storing user credentials and the [`SessionStorage`] trait for managing sessions.
+//!
+//! # Features
+//!
+//! - User registration with email and password
+//! - Password hashing and validation
+//! - Session management
+//! - Optional email verification
+//! - Event emission for authentication events
+
 use chrono::{DateTime, Utc};
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
-use torii_core::Plugin;
-use torii_core::error::{AuthError, StorageError, ValidationError};
-use torii_core::events::{Event, EventBus};
-use torii_core::session::SessionId;
-use torii_core::storage::{PasswordStorage, Storage};
 use torii_core::{
-    Error, Session, User, UserId,
-    storage::{NewUser, SessionStorage},
+    Error, NewUser, Plugin, Session, SessionStorage, User, UserId,
+    error::{AuthError, StorageError, ValidationError},
+    events::{Event, EventBus},
+    session::SessionId,
+    storage::{PasswordStorage, Storage},
 };
 
-/// Email/password authentication plugin
-///
-/// This plugin provides email and password authentication for Torii.
-///
-/// Username is set to the provided email address.
-///
-/// Password is hashed using the `password_auth` crate using argon2.
 pub struct PasswordPlugin<U, S>
 where
     U: PasswordStorage,
@@ -56,7 +78,7 @@ where
     S: SessionStorage,
 {
     fn name(&self) -> String {
-        "email_password".to_string()
+        "password".to_string()
     }
 }
 
@@ -341,14 +363,14 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", None)
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .unwrap()
             .login_user_with_password("test@example.com", "password")
             .await;
@@ -365,14 +387,14 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let user = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
         assert_eq!(user.email, "test@example.com");
 
         let (user, session) = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .unwrap()
             .login_user_with_password("test@example.com", "password")
             .await?;
@@ -387,13 +409,13 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", None)
             .await?;
 
         let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .unwrap()
             .register_user_with_password("test@example.com", "password", None)
             .await;
@@ -411,7 +433,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist")
             .register_user_with_password("not-an-email", "password", None)
             .await;
@@ -429,7 +451,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist")
             .register_user_with_password("test@example.com", "123", None)
             .await;
@@ -447,13 +469,13 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist")
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
 
         let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist")
             .login_user_with_password("test@example.com", "wrong-password")
             .await;
@@ -471,7 +493,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist")
             .login_user_with_password("nonexistent@example.com", "password")
             .await;
@@ -486,7 +508,7 @@ mod tests {
         let (manager,) = setup_plugin().await?;
 
         let _ = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist")
             .register_user_with_password("test@example.com'; DROP TABLE users;--", "password", None)
             .await
@@ -499,7 +521,7 @@ mod tests {
     async fn test_change_password() -> Result<(), Error> {
         let (manager,) = setup_plugin().await?;
         let plugin = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist");
 
         // Create initial user
@@ -582,7 +604,7 @@ mod tests {
         event_bus.register(Arc::new(handler)).await;
 
         let plugin = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
             .expect("Plugin should exist");
 
         // Test 1: Creating a user should emit an event

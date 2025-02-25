@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core" }
+
 async-trait.workspace = true
 chrono.workspace = true
 webauthn-rs = { version = "0.5.1", features = [
@@ -16,13 +17,14 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+
 [dev-dependencies]
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
-tokio.workspace = true
-tracing-subscriber.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
 sqlx.workspace = true
+tokio.workspace = true
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
+tracing-subscriber.workspace = true
 
 [[example]]
 name = "passkey"

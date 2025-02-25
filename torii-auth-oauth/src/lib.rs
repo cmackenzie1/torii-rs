@@ -10,19 +10,32 @@ use torii_core::{
     storage::OAuthStorage,
 };
 
+/// A struct containing the necessary information to complete an OAuth2 authorization flow.
+///
+/// # Fields
+/// - `url`: The authorization URL that the user should be redirected to in order to authenticate
+/// - `csrf_state`: A randomly generated state value that should be stored and verified when the user returns
+///   from the authorization flow to prevent CSRF attacks
+/// - `pkce_verifier`: The PKCE verifier code that should be stored and used when exchanging the authorization
+///   code for tokens
+///
+/// # Usage
+/// 1. Generate an `AuthorizationUrl` using the OAuth provider's `get_authorization_url()` method
+/// 2. Store both the `csrf_state` and `pkce_verifier` values securely (e.g. in the user's session)
+/// 3. Redirect the user to the `url` to begin the OAuth flow
+/// 4. When the user returns to your redirect URI, verify that the state parameter matches the stored `csrf_state`
+/// 5. Use the stored `pkce_verifier` when calling the provider's `exchange_code()` method
 pub struct AuthorizationUrl {
+    /// The authorization URL to redirect the user to
     url: String,
+    /// The CSRF state. This is typically set as a cookie in the user's browser to use when the user returns
+    /// from the authorization flow
     csrf_state: String,
-    pkce_verifier: String,
 }
 
 impl AuthorizationUrl {
-    pub fn new(url: String, csrf_state: String, pkce_verifier: String) -> Self {
-        Self {
-            url,
-            csrf_state,
-            pkce_verifier,
-        }
+    pub fn new(url: String, csrf_state: String) -> Self {
+        Self { url, csrf_state }
     }
 
     pub fn url(&self) -> &str {
@@ -31,10 +44,6 @@ impl AuthorizationUrl {
 
     pub fn csrf_state(&self) -> &str {
         &self.csrf_state
-    }
-
-    pub fn pkce_verifier(&self) -> &str {
-        &self.pkce_verifier
     }
 }
 
@@ -91,27 +100,6 @@ where
     }
 }
 
-/// The start of the oauth authentication flow for authorization code grant. This is the first step in the flow and is used to start the flow by redirecting the user to the provider's authorization URL.
-///
-/// See the [`OAuthPlugin::begin_auth`] method for the core authentication flow.
-#[derive(Debug)]
-pub struct AuthFlowBegin {
-    /// The CSRF state. This value is used to prevent CSRF attacks and may be stored in a cookie.
-    pub csrf_state: String,
-
-    /// The authorization uri. This is the uri that the user will be redirected to begin the authorization flow with the external provider.
-    pub authorization_uri: String,
-}
-
-#[derive(Debug)]
-pub struct AuthFlowCallback {
-    /// The CSRF state. This value is used to prevent CSRF attacks and must match the CSRF state in the [`AuthFlowBegin`] struct.
-    pub csrf_state: String,
-
-    /// The authorization code. This value is used to exchange for an access token and user information.
-    pub code: String,
-}
-
 impl<U, S> OAuthPlugin<U, S>
 where
     U: OAuthStorage,
@@ -134,6 +122,7 @@ where
         self
     }
 
+    /// Create a new OAuth plugin for Google
     pub fn google(
         client_id: String,
         client_secret: String,
@@ -147,6 +136,7 @@ where
         .build()
     }
 
+    /// Create a new OAuth plugin for Github
     pub fn github(
         client_id: String,
         client_secret: String,
@@ -182,13 +172,14 @@ where
     /// * The provider metadata discovery fails
     /// * The HTTP client cannot be created
     pub async fn get_authorization_url(&self) -> Result<AuthorizationUrl, Error> {
-        let authorization_url = self.provider.get_authorization_url()?;
+        let (authorization_url, pkce_verifier) = self.provider.get_authorization_url()?;
 
+        // Store the PKCE verifier in the storage using the CSRF state as the key
         self.storage
             .user_storage()
             .store_pkce_verifier(
                 &authorization_url.csrf_state,
-                &authorization_url.pkce_verifier,
+                &pkce_verifier,
                 chrono::Duration::minutes(5),
             )
             .await

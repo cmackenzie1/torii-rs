@@ -1,3 +1,15 @@
+//! Migration management for SQL databases in Torii
+//!
+//! This module provides traits and utilities for managing SQL database migrations in Torii.
+//! It defines a common interface for writing migrations that can be used across different
+//! SQL database backends.
+//!
+//! The main traits are:
+//! - [`Migration`]: Defines a single SQL migration with up/down operations
+//! - [`MigrationManager`]: Manages the execution and tracking of migrations
+//!
+//! Migrations are tracked in a database table (default name: `_torii_migrations`) to record
+//! which migrations have been applied and when.
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Database;

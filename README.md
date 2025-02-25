@@ -12,31 +12,23 @@
 
 ## Overview
 
-Torii is a flexible authentication framework for Rust applications that provides a plugin-based system for multiple authentication methods. It's designed to be simple to use while remaining extensible for various authentication needs.
+Torii is a powerful authentication framework for Rust applications that gives you complete control over your users' data. Unlike hosted solutions like Auth0, Clerk, or WorkOS that store user information in their cloud, Torii lets you own and manage your authentication stack while providing modern auth features through a flexible plugin system.
 
-## Development Status
+With Torii, you get the best of both worlds - powerful authentication capabilities like passwordless login, social OAuth, and passkeys, combined with full data sovereignty and the ability to store user data wherever you choose.
 
-- 🚧 Early Development
-- ⚠️ Not Production Ready
-- 📝 APIs Subject to Change
+Checkout the example [todos](./examples/todos/README.md) to see Torii in action.
 
 ## Features
 
-- 🔐 Multiple authentication methods
-  - Email/Password authentication
-  - OAuth2 / OpenID Connect (OIDC)
-  - Passkey authentication
-- 💾 Storage backends
-  - SQLite support
-  - Postgres support
-  - MySQL support (https://github.com/cmackenzie1/torii-rs/issues/4)
-- 🔌 Plugin system for extending functionality
+| Plugin                                      | SQLite | PostgreSQL | MySQL                                                     |
+| ------------------------------------------- | ------ | ---------- | --------------------------------------------------------- |
+| [Password](./torii-auth-password/README.md) | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
+| [OAuth2/OIDC](./torii-auth-oauth/README.md) | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
+| [Passkey](./torii-auth-passkey/README.md)   | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
 
-## Current Plugins
-
-- [Email/Password Authentication](./torii-auth-password/README.md)
-- [OAuth2 / OpenID Connect (oidc)](./torii-auth-oauth/README.md)
-- [Passkey Authentication](./torii-auth-passkey/README.md)
+✅ = Supported
+🚧 = Planned/In Development
+❌ = Not Supported
 
 ## Security
 

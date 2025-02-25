@@ -7,21 +7,22 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core" }
-torii-storage-sqlite = { path = "../torii-storage-sqlite" }
 async-trait.workspace = true
 chrono.workspace = true
 password-auth = { version = "1", features = ["argon2"] }
 regex.workspace = true
-sqlx.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
-tracing-subscriber.workspace = true
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
-serde.workspace = true
 serde_json.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+torii-storage-sqlite = { path = "../torii-storage-sqlite" }
+tracing-subscriber.workspace = true
+
 
 [[example]]
 name = "password"
