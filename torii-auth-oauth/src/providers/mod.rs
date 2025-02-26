@@ -65,3 +65,44 @@ pub enum UserInfo {
     Google(google::GoogleUserInfo),
     Github(github::GithubUserInfo),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_name() {
+        let google = Provider::google(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+        );
+        assert_eq!(google.name(), "google");
+
+        let github = Provider::github(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+        );
+        assert_eq!(github.name(), "github");
+    }
+
+    #[tokio::test]
+    async fn test_provider_get_authorization_url() {
+        let google = Provider::google(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+        );
+        let (auth_url, _) = google.get_authorization_url().unwrap();
+        assert!(auth_url.url().contains("accounts.google.com"));
+
+        let github = Provider::github(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+        );
+        let (auth_url, _) = github.get_authorization_url().unwrap();
+        assert!(auth_url.url().contains("github.com"));
+    }
+}

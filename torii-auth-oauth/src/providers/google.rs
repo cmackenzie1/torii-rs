@@ -129,3 +129,24 @@ impl Google {
         Ok(token_response)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_google_get_authorization_url() {
+        let google = Google::new(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+        );
+
+        let (auth_url, pkce_verifier) = google.get_authorization_url().unwrap();
+        assert!(auth_url.url.contains("accounts.google.com"));
+        assert!(auth_url.url.contains("client_id=client_id"));
+        assert!(auth_url.url.contains("scope=openid+email+profile"));
+        assert!(!auth_url.csrf_state.is_empty());
+        assert!(!pkce_verifier.is_empty());
+    }
+}

@@ -166,3 +166,57 @@ impl Github {
         Ok(token_response)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_github_get_authorization_url() {
+        let github = Github::new(
+            "client_id".to_string(),
+            "client_secret".to_string(),
+            "http://localhost:8080/callback".to_string(),
+        );
+
+        let (auth_url, pkce_verifier) = github.get_authorization_url().unwrap();
+        assert!(auth_url.url.contains("github.com"));
+        assert!(auth_url.url.contains("client_id=client_id"));
+        assert!(auth_url.url.contains("scope=read%3Auser+user%3Aemail"));
+        assert!(!auth_url.csrf_state.is_empty());
+        assert!(!pkce_verifier.is_empty());
+    }
+
+    #[test]
+    fn test_github_user_info_deserialization() {
+        let json = r#"{
+            "login": "octocat",
+            "id": 1,
+            "avatar_url": "https://github.com/images/error/octocat_happy.gif",
+            "name": "monalisa octocat",
+            "email": "octocat@github.com",
+            "created_at": "2008-01-14T04:33:35Z",
+            "updated_at": "2008-01-14T04:33:35Z"
+        }"#;
+
+        let user_info: GithubUserInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(user_info.login, "octocat");
+        assert_eq!(user_info.id, 1);
+        assert_eq!(user_info.name.as_deref(), Some("monalisa octocat"));
+        assert_eq!(user_info.email.as_deref(), Some("octocat@github.com"));
+    }
+
+    #[test]
+    fn test_github_user_email_deserialization() {
+        let json = r#"{
+            "email": "octocat@github.com",
+            "primary": true,
+            "verified": true
+        }"#;
+
+        let email: GithubUserEmail = serde_json::from_str(json).unwrap();
+        assert_eq!(email.email, "octocat@github.com");
+        assert!(email.primary);
+        assert!(email.verified);
+    }
+}
