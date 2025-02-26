@@ -7,6 +7,7 @@ mod session;
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
+use migrations::CreateIndexes;
 use migrations::{
     CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
     CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
@@ -51,6 +52,7 @@ impl SqliteStorage {
             Box::new(CreateOAuthAccountsTable),
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
+            Box::new(CreateIndexes),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
