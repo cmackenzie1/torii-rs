@@ -6,7 +6,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core" }
+torii-core = { path = "../torii-core", version = "0.2.0" }
 async-trait.workspace = true
 chrono.workspace = true
 sqlx = { workspace = true, features = ["any"] }

@@ -6,7 +6,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core" }
+torii-core = { path = "../torii-core", version = "0.2.0" }
 async-trait.workspace = true
 chrono.workspace = true
 password-auth = { version = "1", features = ["argon2"] }
@@ -20,7 +20,7 @@ serde_json.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite" }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2.0" }
 tracing-subscriber.workspace = true
 
 

@@ -5,7 +5,10 @@ edition = "2021"
 
 [dependencies]
 # torii
-torii = { path = "../../torii", features = ["password", "sqlite"] }
+torii = { path = "../../torii", version = "0.2.0", features = [
+    "password",
+    "sqlite",
+] }
 
 # web server
 askama = "0.12"

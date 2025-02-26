@@ -6,8 +6,8 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core" }
-torii-migration = { path = "../torii-migration" }
+torii-core = { path = "../torii-core", version = "0.2.0" }
+torii-migration = { path = "../torii-migration", version = "0.2.0" }
 async-trait.workspace = true
 chrono.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
