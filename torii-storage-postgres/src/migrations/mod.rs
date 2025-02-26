@@ -358,6 +358,104 @@ impl Migration<Postgres> for CreatePasskeyChallengesTable {
     }
 }
 
+pub struct CreateIndexes;
+
+#[async_trait]
+impl Migration<Postgres> for CreateIndexes {
+    fn version(&self) -> i64 {
+        6
+    }
+
+    fn name(&self) -> &str {
+        "CreateIndexes"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        // Index for email searches
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index for sessions user_id foreign key
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index for sessions expiration
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Indexes for oauth_accounts lookups
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_accounts_provider_subject ON oauth_accounts(provider, subject)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for passkeys user_id
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_passkeys_user_id ON passkeys(user_id)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index for passkey credential lookup
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_passkeys_credential_id ON passkeys(credential_id)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for passkey challenges expiration
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_passkey_challenges_expires_at ON passkey_challenges(expires_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_users_email")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_sessions_user_id")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_sessions_expires_at")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_oauth_accounts_user_id")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_oauth_accounts_provider_subject")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_passkeys_user_id")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_passkeys_credential_id")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_passkey_challenges_expires_at")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,18 +513,19 @@ mod tests {
             Box::new(CreateOAuthAccountsTable),
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
+            Box::new(CreateIndexes),
         ];
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(3).await?;
+        let applied = manager.is_applied(6).await?;
         assert!(applied, "Migration should be applied");
 
         // Test down migrations
         manager.down(&migrations).await?;
 
         // Verify migration was rolled back
-        let applied = manager.is_applied(3).await?;
+        let applied = manager.is_applied(6).await?;
         assert!(!applied, "Migration should be rolled back");
 
         Ok(())
@@ -443,6 +542,7 @@ mod tests {
             Box::new(CreateOAuthAccountsTable),
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
+            Box::new(CreateIndexes),
         ];
         manager.up(&migrations).await?;
 
