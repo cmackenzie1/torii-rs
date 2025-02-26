@@ -6,7 +6,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core" }
+torii-core = { path = "../torii-core", version = "0.2.0" }
 
 oauth2 = { version = "5.0.0" }
 reqwest = { version = "0.12", features = ["json"] }
@@ -22,7 +22,7 @@ axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "sqlite"] }
 tokio.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.1.0" }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2.0" }
 tracing-subscriber.workspace = true
 
 [[example]]
