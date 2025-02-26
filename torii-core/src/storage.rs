@@ -32,6 +32,7 @@ pub trait UserStorage: Send + Sync + 'static {
     async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error>;
     async fn update_user(&self, user: &User) -> Result<User, Self::Error>;
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error>;
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error>;
 }
 
 #[async_trait]

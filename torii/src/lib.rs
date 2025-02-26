@@ -248,6 +248,19 @@ where
 
         Ok((user, session))
     }
+
+    /// Set a user's email as verified
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to set the email as verified
+    pub async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), ToriiError> {
+        self.storage
+            .user_storage()
+            .set_user_email_verified(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
 }
 
 #[cfg(feature = "oauth")]

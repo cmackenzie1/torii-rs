@@ -217,6 +217,13 @@ mod tests {
             self.users.remove(id);
             Ok(())
         }
+
+        async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
+            let mut user = self.users.get_mut(user_id).unwrap();
+            user.email_verified_at = Some(chrono::Utc::now());
+            self.users.insert(user_id.clone(), user.clone());
+            Ok(())
+        }
     }
 
     #[async_trait]

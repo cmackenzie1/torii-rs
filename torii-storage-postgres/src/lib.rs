@@ -221,6 +221,20 @@ impl UserStorage for PostgresStorage {
 
         Ok(())
     }
+
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
+        sqlx::query("UPDATE users SET email_verified_at = $1 WHERE id::text = $2")
+            .bind(Utc::now())
+            .bind(user_id.as_ref())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to set user email verified");
+                StorageError::Database("Failed to set user email verified".to_string())
+            })?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
