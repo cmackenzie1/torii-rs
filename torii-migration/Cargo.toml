@@ -4,6 +4,7 @@ version = "0.2.0"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.2.0" }
