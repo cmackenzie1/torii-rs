@@ -1,12 +1,12 @@
 [package]
 name = "torii-example-todos"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 publish = false
 
 [dependencies]
 # torii
-torii = { path = "../../torii", version = "0.2.1", features = [
+torii = { path = "../../torii", version = "0.2.2", features = [
     "password",
     "sqlite",
 ] }
