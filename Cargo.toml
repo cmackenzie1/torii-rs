@@ -1,18 +1,14 @@
 [workspace]
+# This is the list of crates in the workspace, keep in order of leaf to root. 
 members = [
-    # Core
-    "torii",
     "torii-core",
-    # Auth plugins
+    "torii-migration",
+    "torii-storage-sqlite",
+    "torii-storage-postgres",
     "torii-auth-password",
     "torii-auth-oauth",
     "torii-auth-passkey",
-    # SQL Storage plugins
-    "torii-storage-sqlite",
-    "torii-storage-postgres",
-    # Migration
-    "torii-migration",
-    # Examples
+    "torii",
     "examples/todos",
 ]
 resolver = "3"
