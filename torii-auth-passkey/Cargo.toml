@@ -24,7 +24,7 @@ axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 sqlx.workspace = true
 tokio.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2.0" }
+torii-storage-sqlite = { path = "../torii-storage-sqlite" } # don't specify version in dev-dependencies
 tracing-subscriber.workspace = true
 
 [[example]]
