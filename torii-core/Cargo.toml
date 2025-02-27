@@ -1,5 +1,6 @@
 [package]
 name = "torii-core"
+description = "Core functionality for the torii authentication ecosystem"
 version = "0.2.0"
 edition.workspace = true
 repository.workspace = true

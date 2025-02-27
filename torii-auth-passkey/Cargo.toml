@@ -1,5 +1,6 @@
 [package]
 name = "torii-auth-passkey"
+description = "Passkey authentication plugin for the torii authentication ecosystem"
 version = "0.2.0"
 edition.workspace = true
 repository.workspace = true
