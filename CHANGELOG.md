@@ -20,3 +20,8 @@ This is the first release of the torii authentication ecosystem, it includes the
 - `torii`: Main crate for the torii authentication ecosystem.
 
 Users should use the `torii` crate with feature flags to enable the authentication plugins and storage backends they need.
+
+```toml
+[dependencies]
+torii = { version = "0.2.0", features = ["password", "sqlite"] }
+```
