@@ -118,38 +118,30 @@ pub struct CreateTodoForm {
 #[axum::debug_handler]
 pub async fn create_todo_handler(
     State(state): State<AppState>,
-    Extension(user): Extension<Option<User>>,
+    Extension(user): Extension<User>,
     Form(params): Form<CreateTodoForm>,
 ) -> Response {
-    if let Some(user) = user {
-        let todo = Todo {
-            id: Uuid::now_v7().to_string(),
-            title: params.title,
-            completed_at: None,
-            user_id: user.id.to_string(),
-        };
-        state.todos.insert(todo.id.clone(), todo.clone());
-        let todo_partial = TodoPartial { todo };
-        let html = todo_partial.render().unwrap();
-        Html(html).into_response()
-    } else {
-        Redirect::to("/sign-in").into_response()
-    }
+    let todo = Todo {
+        id: Uuid::now_v7().to_string(),
+        title: params.title,
+        completed_at: None,
+        user_id: user.id.to_string(),
+    };
+    state.todos.insert(todo.id.clone(), todo.clone());
+    let todo_partial = TodoPartial { todo };
+    let html = todo_partial.render().unwrap();
+    Html(html).into_response()
 }
 
 #[axum::debug_handler]
 pub async fn delete_todo_handler(
     State(state): State<AppState>,
-    Extension(user): Extension<Option<User>>,
+    Extension(_user): Extension<User>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Some(_user) = user {
-        state.todos.remove(&id);
-        let html = "Todo deleted".into_response();
-        Html(html).into_response()
-    } else {
-        Redirect::to("/sign-in").into_response()
-    }
+    state.todos.remove(&id);
+    let html = "Todo deleted".into_response();
+    Html(html).into_response()
 }
 
 /// Handles user registration
@@ -234,7 +226,10 @@ async fn add_user_extension(
                 .get_user(&session.user_id)
                 .await
                 .expect("Failed to get user");
-            request.extensions_mut().insert(user);
+            request.extensions_mut().insert(user.clone());
+            if let Some(valid_user) = user {
+                request.extensions_mut().insert(valid_user);
+            }
         }
     }
     next.run(request).await
@@ -285,23 +280,19 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
 #[axum::debug_handler]
 async fn toggle_todo_handler(
     State(state): State<AppState>,
-    Extension(user): Extension<Option<User>>,
+    Extension(user): Extension<User>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Some(user) = user {
-        if let Some(mut todo) = state.todos.get_mut(&id) {
-            if todo.user_id == user.id.to_string() {
-                todo.completed_at = match todo.completed_at {
-                    Some(_) => None,
-                    None => Some(chrono::Utc::now().to_rfc3339()),
-                };
-                let todo_partial = TodoPartial { todo: todo.clone() };
-                let html = todo_partial.render().unwrap();
-                return Html(html).into_response();
-            }
+    if let Some(mut todo) = state.todos.get_mut(&id) {
+        if todo.user_id == user.id.to_string() {
+            todo.completed_at = match todo.completed_at {
+                Some(_) => None,
+                None => Some(chrono::Utc::now().to_rfc3339()),
+            };
+            let todo_partial = TodoPartial { todo: todo.clone() };
+            let html = todo_partial.render().unwrap();
+            return Html(html).into_response();
         }
-        StatusCode::NOT_FOUND.into_response()
-    } else {
-        Redirect::to("/sign-in").into_response()
     }
+    StatusCode::NOT_FOUND.into_response()
 }
