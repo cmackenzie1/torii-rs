@@ -226,6 +226,9 @@ async fn add_user_extension(
                 .get_user(&session.user_id)
                 .await
                 .expect("Failed to get user");
+            // Adding both User and Option<User> so that routes that need a logged in user can
+            // use Extension<User>, while routes that support both logged in and out
+            // can use Extension<Option<User>>
             request.extensions_mut().insert(user.clone());
             if let Some(valid_user) = user {
                 request.extensions_mut().insert(valid_user);
