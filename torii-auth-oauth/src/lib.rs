@@ -1,10 +1,12 @@
 pub mod providers;
 
+use std::sync::Arc;
+
 use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
 use torii_core::error::AuthError;
-use torii_core::{Error, NewUser, Plugin, Session, SessionStorage, User, UserId, storage::Storage};
+use torii_core::{Error, NewUser, Plugin, User, UserId};
 use torii_core::{
     events::{Event, EventBus},
     storage::OAuthStorage,
@@ -47,42 +49,39 @@ impl AuthorizationUrl {
     }
 }
 
-pub struct OAuthPlugin<U: OAuthStorage, S: SessionStorage> {
+pub struct OAuthPlugin<U: OAuthStorage> {
     /// The provider.
     provider: Provider,
     /// The storage instance.
-    storage: Storage<U, S>,
+    user_storage: Arc<U>,
     /// The event bus.
     event_bus: Option<EventBus>,
 }
 
-impl<U, S> Plugin for OAuthPlugin<U, S>
+impl<U> Plugin for OAuthPlugin<U>
 where
     U: OAuthStorage,
-    S: SessionStorage,
 {
     fn name(&self) -> String {
         self.provider.name()
     }
 }
 
-pub struct OAuthPluginBuilder<U: OAuthStorage, S: SessionStorage> {
+pub struct OAuthPluginBuilder<U: OAuthStorage> {
     provider: Provider,
-
+    user_storage: Arc<U>,
     event_bus: Option<EventBus>,
-    storage: Storage<U, S>,
 }
 
-impl<U, S> OAuthPluginBuilder<U, S>
+impl<U> OAuthPluginBuilder<U>
 where
     U: OAuthStorage,
-    S: SessionStorage,
 {
-    pub fn new(provider: Provider, storage: Storage<U, S>) -> Self {
+    pub fn new(provider: Provider, user_storage: Arc<U>) -> Self {
         Self {
             provider,
             event_bus: None,
-            storage,
+            user_storage,
         }
     }
 
@@ -91,29 +90,28 @@ where
         self
     }
 
-    pub fn build(self) -> OAuthPlugin<U, S> {
+    pub fn build(self) -> OAuthPlugin<U> {
         OAuthPlugin {
             provider: self.provider,
             event_bus: self.event_bus,
-            storage: self.storage,
+            user_storage: self.user_storage,
         }
     }
 }
 
-impl<U, S> OAuthPlugin<U, S>
+impl<U> OAuthPlugin<U>
 where
     U: OAuthStorage,
-    S: SessionStorage,
 {
-    pub fn builder(provider: Provider, storage: Storage<U, S>) -> OAuthPluginBuilder<U, S> {
-        OAuthPluginBuilder::new(provider, storage)
+    pub fn builder(provider: Provider, user_storage: Arc<U>) -> OAuthPluginBuilder<U> {
+        OAuthPluginBuilder::new(provider, user_storage)
     }
 
-    pub fn new(provider: Provider, storage: Storage<U, S>) -> Self {
+    pub fn new(provider: Provider, user_storage: Arc<U>) -> Self {
         Self {
             provider,
             event_bus: None,
-            storage,
+            user_storage,
         }
     }
 
@@ -127,11 +125,11 @@ where
         client_id: String,
         client_secret: String,
         redirect_uri: String,
-        storage: Storage<U, S>,
+        user_storage: Arc<U>,
     ) -> Self {
         OAuthPluginBuilder::new(
             Provider::google(client_id, client_secret, redirect_uri),
-            storage,
+            user_storage,
         )
         .build()
     }
@@ -141,20 +139,19 @@ where
         client_id: String,
         client_secret: String,
         redirect_uri: String,
-        storage: Storage<U, S>,
+        user_storage: Arc<U>,
     ) -> Self {
         OAuthPluginBuilder::new(
             Provider::github(client_id, client_secret, redirect_uri),
-            storage,
+            user_storage,
         )
         .build()
     }
 }
 
-impl<U, S> OAuthPlugin<U, S>
+impl<U> OAuthPlugin<U>
 where
     U: OAuthStorage,
-    S: SessionStorage,
 {
     /// Begin the authentication process by generating a new CSRF state and redirecting the user to the provider's authorization URL.
     ///
@@ -175,8 +172,7 @@ where
         let (authorization_url, pkce_verifier) = self.provider.get_authorization_url()?;
 
         // Store the PKCE verifier in the storage using the CSRF state as the key
-        self.storage
-            .user_storage()
+        self.user_storage
             .store_pkce_verifier(
                 &authorization_url.csrf_state,
                 &pkce_verifier,
@@ -200,8 +196,7 @@ where
     pub async fn get_or_create_user(&self, email: String, subject: String) -> Result<User, Error> {
         // Check if user exists in database by provider and subject
         let oauth_account = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_oauth_account_by_provider_and_subject(&self.provider.name(), &subject)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
@@ -213,8 +208,7 @@ where
             );
 
             let user = self
-                .storage
-                .user_storage()
+                .user_storage
                 .get_user(&oauth_account.user_id)
                 .await
                 .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?
@@ -225,8 +219,7 @@ where
 
         // Create new user
         let user = self
-            .storage
-            .user_storage()
+            .user_storage
             .create_user(
                 &NewUser::builder()
                     .id(UserId::new_random())
@@ -238,8 +231,7 @@ where
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         // Create link between user and provider
-        self.storage
-            .user_storage()
+        self.user_storage
             .create_oauth_account(&self.provider.name(), &subject, &user.id)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
@@ -268,17 +260,10 @@ where
     /// * `csrf_state` - The CSRF state
     ///
     /// # Returns
-    /// Returns a tuple containing:
-    /// * A [`User`] struct containing the user's information
-    /// * A [`Session`] struct containing the session information
-    pub async fn exchange_code(
-        &self,
-        code: String,
-        csrf_state: String,
-    ) -> Result<(User, Session), Error> {
+    /// Returns a [`User`] struct containing the user's information.
+    pub async fn exchange_code(&self, code: String, csrf_state: String) -> Result<User, Error> {
         let pkce_verifier = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_pkce_verifier(&csrf_state)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?
@@ -332,25 +317,7 @@ where
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
-        let session = self
-            .storage
-            .session_storage()
-            .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
-            .await
-            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
-
-        tracing::debug!(
-            session = ?session,
-            "Created session"
-        );
-
-        self.emit_event(&Event::SessionCreated(
-            session.user_id.clone(),
-            session.clone(),
-        ))
-        .await?;
-
-        Ok((user, session))
+        Ok(user)
     }
 
     async fn emit_event(&self, event: &Event) -> Result<(), Error> {

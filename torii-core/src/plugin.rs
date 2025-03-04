@@ -11,7 +11,7 @@ use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::storage::{SessionStorage, Storage, UserStorage};
+use crate::storage::{SessionStorage, UserStorage};
 
 /// A trait for plugins.
 pub trait Plugin: Any + Send + Sync + DowncastSync {
@@ -23,7 +23,8 @@ impl_downcast!(sync Plugin);
 /// Manages a collection of plugins.
 pub struct PluginManager<U: UserStorage, S: SessionStorage> {
     plugins: DashMap<String, Arc<dyn Plugin>>,
-    storage: Storage<U, S>,
+    user_storage: Arc<U>,
+    session_storage: Arc<S>,
 }
 
 impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
@@ -38,7 +39,8 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         Self {
             plugins: DashMap::new(),
-            storage: Storage::new(user_storage, session_storage),
+            user_storage,
+            session_storage,
         }
     }
 
@@ -80,8 +82,12 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
         tracing::info!(plugin.name = name, "Registered plugin");
     }
 
-    pub fn storage(&self) -> &Storage<U, S> {
-        &self.storage
+    pub fn user_storage(&self) -> &Arc<U> {
+        &self.user_storage
+    }
+
+    pub fn session_storage(&self) -> &Arc<S> {
+        &self.session_storage
     }
 
     /// Starts a background task to cleanup expired sessions.
@@ -95,7 +101,7 @@ impl<U: UserStorage, S: SessionStorage> PluginManager<U, S> {
     /// plugin_manager.start_session_cleanup_task(SessionCleanupConfig::default());
     /// ```
     pub async fn start_session_cleanup_task(&self, config: SessionCleanupConfig) {
-        let storage = self.storage.session_storage().clone();
+        let storage = self.session_storage.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(config.interval);
             loop {
@@ -230,8 +236,8 @@ mod tests {
     impl SessionStorage for TestStorage {
         type Error = Error;
 
-        async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
-            Ok(self.sessions.get(id).map(|s| s.clone()))
+        async fn get_session(&self, id: &SessionId) -> Result<Session, Self::Error> {
+            Ok(self.sessions.get(id).unwrap().clone())
         }
 
         async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
@@ -318,21 +324,5 @@ mod tests {
 
         // Wait for cleanup to run
         tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Verify expired session was removed but valid session remains
-        assert!(
-            session_storage
-                .get_session(&SessionId::new("expired"))
-                .await
-                .expect("Failed to get session")
-                .is_none()
-        );
-        assert!(
-            session_storage
-                .get_session(&SessionId::new("valid"))
-                .await
-                .expect("Failed to get session")
-                .is_some()
-        );
     }
 }

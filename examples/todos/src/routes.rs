@@ -220,19 +220,17 @@ async fn add_user_extension(
             .await
             .expect("Failed to get session");
 
-        if let Some(session) = session {
-            let user = state
-                .torii
-                .get_user(&session.user_id)
-                .await
-                .expect("Failed to get user");
-            // Adding both User and Option<User> so that routes that need a logged in user can
-            // use Extension<User>, while routes that support both logged in and out
-            // can use Extension<Option<User>>
-            request.extensions_mut().insert(user.clone());
-            if let Some(valid_user) = user {
-                request.extensions_mut().insert(valid_user);
-            }
+        let user = state
+            .torii
+            .get_user(&session.user_id)
+            .await
+            .expect("Failed to get user");
+        // Adding both User and Option<User> so that routes that need a logged in user can
+        // use Extension<User>, while routes that support both logged in and out
+        // can use Extension<Option<User>>
+        request.extensions_mut().insert(user.clone());
+        if let Some(valid_user) = user {
+            request.extensions_mut().insert(valid_user);
         }
     }
     next.run(request).await
@@ -261,14 +259,13 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
             .await
             .expect("Failed to get session");
 
-        if let Some(session) = session {
-            let user = state
-                .torii
-                .get_user(&session.user_id)
-                .await
-                .expect("Failed to get user");
-            return Json(user).into_response();
-        }
+        let user = state
+            .torii
+            .get_user(&session.user_id)
+            .await
+            .expect("Failed to get user");
+
+        return Json(user).into_response();
     }
 
     (

@@ -11,12 +11,13 @@
 //! - Passkey registration
 //! - Passkey authentication
 //! - Challenge-response based authentication flow
-//! - Integration with Torii's session management
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use torii_core::error::{AuthError, PluginError, StorageError};
-use torii_core::storage::{PasskeyStorage, SessionStorage, Storage};
-use torii_core::{Error, Plugin, Session, User, UserId};
+use torii_core::storage::PasskeyStorage;
+use torii_core::{Error, Plugin, User, UserId};
 use webauthn_rs::prelude::*;
 
 #[derive(Debug, Error)]
@@ -60,9 +61,9 @@ impl From<PasskeyError> for Error {
 /// This plugin provides functionality for registering and authenticating users using passkeys.
 /// It allows users to start registration and login processes, and complete them using the provided
 /// challenge responses.
-pub struct PasskeyPlugin<U: PasskeyStorage, S: SessionStorage> {
+pub struct PasskeyPlugin<U: PasskeyStorage> {
     webauthn: Webauthn,
-    storage: Storage<U, S>,
+    user_storage: Arc<U>,
 }
 
 /// A challenge for a passkey authentication process.
@@ -102,13 +103,16 @@ impl PasskeyChallenge {
     }
 }
 
-impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
-    pub fn new(rp_id: &str, rp_origin: &str, storage: Storage<U, S>) -> Self {
+impl<U: PasskeyStorage> PasskeyPlugin<U> {
+    pub fn new(rp_id: &str, rp_origin: &str, user_storage: Arc<U>) -> Self {
         let rp_origin = Url::parse(rp_origin).expect("Failed to parse rp_origin");
         let builder = WebauthnBuilder::new(rp_id, &rp_origin).expect("Invalid configuration");
         let webauthn = builder.build().expect("Invalid configuration");
 
-        Self { webauthn, storage }
+        Self {
+            webauthn,
+            user_storage,
+        }
     }
 
     /// Start a passkey registration and return the challenge to the client.
@@ -123,8 +127,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
             .start_passkey_registration(user_id.as_uuid(), email, email, None)
             .expect("Failed to start registration.");
 
-        self.storage
-            .user_storage()
+        self.user_storage
             .set_passkey_challenge(
                 &challenge_id.to_string(),
                 &serde_json::to_string(&skr).unwrap_or_else(|e| {
@@ -150,13 +153,13 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
     }
 
     /// Complete a passkey registration and create a user in the user storage.
-    /// Returns the user and session if the registration is successful.
+    /// Returns the user if the registration is successful.
     pub async fn complete_registration(
         &self,
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
-    ) -> Result<(User, Session), PasskeyError> {
+    ) -> Result<User, PasskeyError> {
         let challenge_response: RegisterPublicKeyCredential =
             serde_json::from_value::<RegisterPublicKeyCredential>(challenge_response.clone())
                 .map_err(|e| {
@@ -166,8 +169,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 
         // Check if the passkey already exists
         let passkey_exists = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_passkey_by_credential_id(&challenge_response.id)
             .await
             .map_err(|e| {
@@ -181,8 +183,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 
         // Get the challenge from the database
         let passkey_challenge = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_passkey_challenge(challenge_id)
             .await
             .map_err(|e| {
@@ -206,8 +207,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 
         // Get or create the user
         let user = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_or_create_user_by_email(email)
             .await
             .map_err(|e| {
@@ -216,8 +216,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
             })?;
 
         // Add the passkey to the user
-        self.storage
-            .user_storage()
+        self.user_storage
             .add_passkey(
                 &user.id,
                 &serde_json::to_string(&passkey.cred_id()).unwrap(),
@@ -229,17 +228,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
                 PasskeyError::StorageError(e.to_string())
             })?;
 
-        let session = self
-            .storage
-            .session_storage()
-            .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
-            .await
-            .map_err(|e| {
-                tracing::error!(error = ?e, "Failed to create session");
-                PasskeyError::StorageError(e.to_string())
-            })?;
-
-        Ok((user, session))
+        Ok(user)
     }
 
     /// Start a passkey login and return the challenge to the client.
@@ -247,8 +236,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
     /// Returns a challenge that should be sent to the client.
     pub async fn start_login(&self, email: &str) -> Result<PasskeyChallenge, PasskeyError> {
         let user = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_user_by_email(email)
             .await
             .map_err(|e| {
@@ -259,8 +247,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 
         // Get the passkeys for the user
         let passkey_credentials = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_passkeys(&user.id)
             .await
             .map_err(|e| {
@@ -282,8 +269,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
             .expect("Failed to start login.");
 
         // Store the challenge in the database
-        self.storage
-            .user_storage()
+        self.user_storage
             .set_passkey_challenge(
                 &challenge_id.to_string(),
                 &serde_json::to_string(&rak).unwrap(),
@@ -303,18 +289,17 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
         ))
     }
 
-    /// Complete a passkey login and create a session.
-    /// Returns the user and session if the login is successful.
+    /// Complete a passkey login.
+    /// Returns the user if the login is successful.
     pub async fn complete_login(
         &self,
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
-    ) -> Result<(User, Session), PasskeyError> {
+    ) -> Result<User, PasskeyError> {
         // Get the user by email
         let user = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_user_by_email(email)
             .await
             .map_err(|e| {
@@ -325,8 +310,7 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
 
         // Get the challenge from the database
         let passkey_challenge = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_passkey_challenge(challenge_id)
             .await
             .map_err(|e| {
@@ -350,56 +334,20 @@ impl<U: PasskeyStorage, S: SessionStorage> PasskeyPlugin<U, S> {
             })?;
 
         // Finish the passkey login
-        match self
+        let _ = self
             .webauthn
             .finish_passkey_authentication(&challenge_response, &passkey_challenge)
-        {
-            Ok(_) => {
-                let session = self
-                    .storage
-                    .session_storage()
-                    .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(error = ?e, "Failed to create session");
-                        PasskeyError::StorageError(e.to_string())
-                    })?;
-
-                Ok((user, session))
-            }
-            Err(e) => {
+            .map_err(|e| {
                 tracing::error!(error = ?e, "Failed to complete login");
-                Err(PasskeyError::InvalidCredentials)
-            }
-        }
+                PasskeyError::InvalidCredentials
+            })?;
+
+        Ok(user)
     }
 }
 
-impl<U: PasskeyStorage, S: SessionStorage> Plugin for PasskeyPlugin<U, S> {
+impl<U: PasskeyStorage> Plugin for PasskeyPlugin<U> {
     fn name(&self) -> String {
         "passkey".to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use sqlx::SqlitePool;
-    use torii_storage_sqlite::SqliteStorage;
-
-    use super::*;
-
-    async fn setup_storage() -> Storage<SqliteStorage, SqliteStorage> {
-        let _ = tracing_subscriber::fmt::try_init();
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-
-        let user_storage = SqliteStorage::new(pool.clone());
-        let session_storage = SqliteStorage::new(pool.clone());
-
-        user_storage.migrate().await.unwrap();
-        session_storage.migrate().await.unwrap();
-
-        Storage::new(Arc::new(user_storage), Arc::new(session_storage))
     }
 }

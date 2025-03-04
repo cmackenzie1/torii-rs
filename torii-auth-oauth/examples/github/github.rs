@@ -11,7 +11,7 @@ use axum_extra::extract::{CookieJar, cookie::Cookie};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 use torii_auth_oauth::OAuthPlugin;
-use torii_core::{plugin::PluginManager, storage::Storage};
+use torii_core::{Session, plugin::PluginManager, storage::SessionStorage};
 use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Debug, Deserialize)]
@@ -29,7 +29,7 @@ struct AppState {
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
     let plugin = state
         .plugin_manager
-        .get_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("github")
+        .get_plugin::<OAuthPlugin<SqliteStorage>>("github")
         .unwrap();
 
     let auth_url = plugin.get_authorization_url().await.unwrap();
@@ -57,13 +57,25 @@ async fn callback_handler(
 
     let plugin = state
         .plugin_manager
-        .get_plugin::<OAuthPlugin<SqliteStorage, SqliteStorage>>("github")
+        .get_plugin::<OAuthPlugin<SqliteStorage>>("github")
         .unwrap();
 
-    let (user, session) = plugin
+    let user = plugin
         .exchange_code(params.code.to_string(), csrf_state.to_string())
         .await
         .unwrap();
+
+    let session = state
+        .plugin_manager
+        .session_storage()
+        .create_session(
+            &Session::builder()
+                .user_id(user.id.clone())
+                .build()
+                .expect("Failed to build session"),
+        )
+        .await
+        .expect("Failed to create session");
 
     // Set session cookie
     let jar = jar.add(
@@ -88,14 +100,12 @@ async fn main() {
     user_storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
-    let storage = Storage::new(user_storage.clone(), session_storage.clone());
-
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
     plugin_manager.register_plugin(OAuthPlugin::github(
         std::env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID must be set"),
         std::env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/github/callback".to_string(),
-        storage,
+        user_storage.clone(),
     ));
 
     let app = Router::new()

@@ -65,10 +65,10 @@ impl SessionStorage for PostgresStorage {
                 StorageError::Database("Failed to create session".to_string())
             })?;
 
-        Ok(self.get_session(&session.id).await?.unwrap())
+        Ok(self.get_session(&session.id).await?)
     }
 
-    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+    async fn get_session(&self, id: &SessionId) -> Result<Session, Self::Error> {
         let session = sqlx::query_as::<_, PostgresSession>(
             r#"
             SELECT id::text, user_id::text, user_agent, ip_address, created_at, updated_at, expires_at
@@ -84,7 +84,7 @@ impl SessionStorage for PostgresStorage {
             StorageError::Database("Failed to get session".to_string())
         })?;
 
-        Ok(Some(session.into()))
+        Ok(session.into())
     }
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
@@ -184,8 +184,7 @@ mod test {
         let fetched = storage
             .get_session(&session_id)
             .await
-            .expect("Failed to get session")
-            .expect("Session should exist");
+            .expect("Failed to get session");
         assert_eq!(fetched.user_id, user_id);
 
         storage
@@ -244,8 +243,7 @@ mod test {
         let valid_session = storage
             .get_session(&session_id)
             .await
-            .expect("Failed to get valid session")
-            .expect("Session should exist");
+            .expect("Failed to get valid session");
         assert_eq!(valid_session.user_id, user_id);
     }
 
@@ -311,6 +309,6 @@ mod test {
             .get_session(&session_id3)
             .await
             .expect("Failed to get session 3");
-        assert!(session3.is_some());
+        assert_eq!(session3.user_id, user_id2);
     }
 }
