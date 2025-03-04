@@ -13,7 +13,14 @@
 //! | `created_at` | `DateTime`       | The timestamp when the session was created.            |
 //! | `updated_at` | `DateTime`       | The timestamp when the session was last updated.       |
 //! | `expires_at` | `DateTime`       | The timestamp when the session will expire.            |
-use crate::{Error, error::ValidationError, user::UserId};
+use std::sync::Arc;
+
+use crate::{
+    Error, SessionStorage,
+    error::{SessionError, StorageError, ValidationError},
+    user::UserId,
+};
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -157,6 +164,99 @@ impl SessionBuilder {
             updated_at: self.updated_at.unwrap_or(now),
             expires_at: self.expires_at.unwrap_or(now + Duration::days(30)),
         })
+    }
+}
+
+#[async_trait]
+pub trait SessionManager {
+    async fn create_session(
+        &self,
+        user_id: &UserId,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+        duration: Duration,
+    ) -> Result<Session, Error>;
+    async fn get_session(&self, id: &SessionId) -> Result<Session, Error>;
+    async fn delete_session(&self, id: &SessionId) -> Result<(), Error>;
+    async fn cleanup_expired_sessions(&self) -> Result<(), Error>;
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
+}
+
+pub struct DefaultSessionManager<S: SessionStorage> {
+    storage: Arc<S>,
+}
+
+impl<S: SessionStorage> DefaultSessionManager<S> {
+    pub fn new(storage: Arc<S>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait]
+impl<S: SessionStorage> SessionManager for DefaultSessionManager<S> {
+    async fn create_session(
+        &self,
+        user_id: &UserId,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+        duration: Duration,
+    ) -> Result<Session, Error> {
+        let session = Session::builder()
+            .user_id(user_id.clone())
+            .user_agent(user_agent)
+            .ip_address(ip_address)
+            .expires_at(Utc::now() + duration)
+            .build()?;
+
+        let session = self
+            .storage
+            .create_session(&session)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        Ok(session)
+    }
+
+    async fn get_session(&self, id: &SessionId) -> Result<Session, Error> {
+        let session = self
+            .storage
+            .get_session(id)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        if session.is_expired() {
+            self.delete_session(id).await?;
+            return Err(Error::Session(SessionError::Expired));
+        }
+
+        Ok(session)
+    }
+
+    async fn delete_session(&self, id: &SessionId) -> Result<(), Error> {
+        self.storage
+            .delete_session(id)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
+        self.storage
+            .cleanup_expired_sessions()
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
+        self.storage
+            .delete_sessions_for_user(user_id)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        Ok(())
     }
 }
 

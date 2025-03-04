@@ -49,9 +49,11 @@
 //! ```
 use std::sync::Arc;
 
+use chrono::Duration;
 use torii_core::{
     PluginManager, SessionStorage,
-    storage::{OAuthStorage, PasskeyStorage, PasswordStorage, Storage, UserStorage},
+    session::{DefaultSessionManager, SessionManager},
+    storage::{OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
 };
 
 /// Re-export core types
@@ -120,22 +122,27 @@ pub enum ToriiError {
 /// ```
 pub struct Torii<U, S>
 where
-    U: UserStorage + Clone,
-    S: SessionStorage + Clone,
+    U: UserStorage,
+    S: SessionStorage,
 {
-    storage: Storage<U, S>,
+    user_storage: Arc<U>,
+    session_manager: Arc<DefaultSessionManager<S>>,
     manager: PluginManager<U, S>,
 }
 
 impl<U, S> Torii<U, S>
 where
-    U: UserStorage + Clone,
-    S: SessionStorage + Clone,
+    U: UserStorage,
+    S: SessionStorage,
 {
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
+        let session_manager = Arc::new(DefaultSessionManager::new(session_storage.clone()));
+        let manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+
         Self {
-            storage: Storage::new(user_storage.clone(), session_storage.clone()),
-            manager: PluginManager::new(user_storage, session_storage),
+            user_storage,
+            session_manager,
+            manager,
         }
     }
 
@@ -150,10 +157,11 @@ where
     /// Returns the user if found, otherwise `None`
     pub async fn get_user(&self, user_id: &UserId) -> Result<Option<User>, ToriiError> {
         let user = self
-            .storage
+            .user_storage
             .get_user(user_id)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
         Ok(user)
     }
 
@@ -166,12 +174,13 @@ where
     /// # Returns
     ///
     /// Returns the session if found, otherwise `None`
-    pub async fn get_session(&self, session_id: &SessionId) -> Result<Option<Session>, ToriiError> {
+    pub async fn get_session(&self, session_id: &SessionId) -> Result<Session, ToriiError> {
         let session = self
-            .storage
+            .session_manager
             .get_session(session_id)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
         Ok(session)
     }
 }
@@ -188,7 +197,7 @@ where
     ///
     /// Returns the updated Torii instance with the password plugin registered
     pub fn with_password_plugin(mut self) -> Self {
-        let plugin = PasswordPlugin::new(self.storage.clone());
+        let plugin = PasswordPlugin::new(self.user_storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -210,7 +219,7 @@ where
     ) -> Result<User, ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<PasswordPlugin<U, S>>("password")
+            .get_plugin::<PasswordPlugin<U>>("password")
             .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
 
         let user = password_plugin
@@ -238,13 +247,19 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<PasswordPlugin<U, S>>("password")
+            .get_plugin::<PasswordPlugin<U>>("password")
             .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
 
-        let (user, session) = password_plugin
+        let user = password_plugin
             .login_user_with_password(email, password)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        let session = self
+            .session_manager
+            .create_session(&user.id, None, None, Duration::days(30))
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
         Ok((user, session))
     }
@@ -255,8 +270,7 @@ where
     ///
     /// * `user_id`: The ID of the user to set the email as verified
     pub async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), ToriiError> {
-        self.storage
-            .user_storage()
+        self.user_storage
             .set_user_email_verified(user_id)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
@@ -279,7 +293,7 @@ where
     ///
     /// Returns the updated Torii instance with the OAuth provider registered
     pub fn with_oauth_provider(mut self, provider: Provider) -> Self {
-        let plugin = OAuthPlugin::new(provider, self.storage.clone());
+        let plugin = OAuthPlugin::new(provider, self.user_storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -299,7 +313,7 @@ where
     ) -> Result<AuthorizationUrl, ToriiError> {
         let oauth_plugin = self
             .manager
-            .get_plugin::<OAuthPlugin<U, S>>(provider)
+            .get_plugin::<OAuthPlugin<U>>(provider)
             .ok_or(ToriiError::PluginNotFound(provider.to_string()))?;
 
         let url = oauth_plugin
@@ -329,13 +343,19 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let oauth_plugin = self
             .manager
-            .get_plugin::<OAuthPlugin<U, S>>(provider)
+            .get_plugin::<OAuthPlugin<U>>(provider)
             .ok_or(ToriiError::PluginNotFound(provider.to_string()))?;
 
-        let (user, session) = oauth_plugin
+        let user = oauth_plugin
             .exchange_code(code.to_string(), csrf_state.to_string())
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        let session = self
+            .session_manager
+            .create_session(&user.id, None, None, Duration::days(30))
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
         Ok((user, session))
     }
@@ -358,7 +378,7 @@ where
     ///
     /// Returns the updated Torii instance with the passkey plugin registered
     pub fn with_passkey_plugin(mut self, rp_id: &str, rp_origin: &str) -> Self {
-        let plugin = PasskeyPlugin::new(rp_id, rp_origin, self.storage.clone());
+        let plugin = PasskeyPlugin::new(rp_id, rp_origin, self.user_storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -378,7 +398,7 @@ where
     ) -> Result<PasskeyChallenge, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U, S>>("passkey")
+            .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
         passkey_plugin
@@ -403,18 +423,18 @@ where
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
-    ) -> Result<(User, Session), ToriiError> {
+    ) -> Result<User, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U, S>>("passkey")
+            .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        let (user, session) = passkey_plugin
+        let user = passkey_plugin
             .complete_registration(email, challenge_id, challenge_response)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
-        Ok((user, session))
+        Ok(user)
     }
 
     /// Begin a passkey login
@@ -429,7 +449,7 @@ where
     pub async fn begin_passkey_login(&self, email: &str) -> Result<PasskeyChallenge, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U, S>>("passkey")
+            .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
         passkey_plugin
@@ -457,13 +477,19 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U, S>>("passkey")
+            .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        let (user, session) = passkey_plugin
+        let user = passkey_plugin
             .complete_login(email, challenge_id, challenge_response)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        let session = self
+            .session_manager
+            .create_session(&user.id, None, None, Duration::days(30))
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
         Ok((user, session))
     }

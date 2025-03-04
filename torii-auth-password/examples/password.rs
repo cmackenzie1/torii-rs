@@ -17,7 +17,12 @@ use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_password::PasswordPlugin;
-use torii_core::{plugin::PluginManager, session::SessionId, storage::Storage};
+use torii_core::{
+    Session,
+    plugin::PluginManager,
+    session::SessionId,
+    storage::{SessionStorage, UserStorage},
+};
 use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic email/password authentication system using Torii.
@@ -68,7 +73,7 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_plugin::<PasswordPlugin<SqliteStorage>>("email_password")
         .unwrap();
 
     match plugin
@@ -99,36 +104,34 @@ async fn sign_in_form_handler(
     State(state): State<AppState>,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
-    let plugin: Arc<PasswordPlugin<_, _>> = state
+    let plugin: Arc<PasswordPlugin<SqliteStorage>> = state
         .plugin_manager
-        .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("email_password")
+        .get_plugin::<PasswordPlugin<SqliteStorage>>("email_password")
         .unwrap();
 
-    match plugin
+    let user = plugin
         .login_user_with_password(&params.email, &params.password)
         .await
-    {
-        Ok((_user, session)) => {
-            let cookie = Cookie::build(("session_id", session.id.to_string()))
-                .path("/")
-                .http_only(true)
-                .secure(false) // TODO: Set to true in production
-                .same_site(SameSite::Lax);
-            (
-                StatusCode::OK,
-                [(header::SET_COOKIE, cookie.to_string())],
-                Json(json!({ "message": "Successfully signed in" })),
-            )
-                .into_response()
-        }
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({
-                "error": format!("Authentication failed")
-            })),
-        )
-            .into_response(),
-    }
+        .unwrap();
+
+    let session = state
+        .plugin_manager
+        .session_storage()
+        .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
+        .await
+        .unwrap();
+
+    let cookie = Cookie::build(("session_id", session.id.to_string()))
+        .path("/")
+        .http_only(true)
+        .secure(false) // TODO: Set to true in production
+        .same_site(SameSite::Lax);
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie.to_string())],
+        Json(json!({ "message": "Successfully signed in" })),
+    )
+        .into_response()
 }
 
 #[axum::debug_handler]
@@ -173,16 +176,14 @@ async fn verify_session<B>(
 
     if let Some(session_id) = session_id {
         // Verify session exists and is valid
-        if let Ok(session) = state
+        state
             .plugin_manager
-            .storage()
+            .session_storage()
             .get_session(&SessionId::new(&session_id))
             .await
-        {
-            if session.is_some() {
-                return next.run(request).await;
-            }
-        }
+            .unwrap();
+
+        return next.run(request).await;
     }
 
     // If session is invalid or missing, redirect to sign in
@@ -199,20 +200,18 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
     if let Some(session_id) = session_id {
         let session = state
             .plugin_manager
-            .storage()
+            .session_storage()
             .get_session(&SessionId::new(&session_id))
             .await
             .unwrap();
 
-        if let Some(session) = session {
-            let user = state
-                .plugin_manager
-                .storage()
-                .get_user(&session.user_id)
-                .await
-                .unwrap();
-            return Json(user).into_response();
-        }
+        let user = state
+            .plugin_manager
+            .user_storage()
+            .get_user(&session.user_id)
+            .await
+            .unwrap();
+        return Json(user).into_response();
     }
 
     (
@@ -234,10 +233,9 @@ async fn main() {
 
     user_storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
-    let storage = Storage::new(user_storage.clone(), session_storage.clone());
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_plugin(PasswordPlugin::new(storage));
+    plugin_manager.register_plugin(PasswordPlugin::new(user_storage.clone()));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

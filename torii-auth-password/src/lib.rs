@@ -1,67 +1,67 @@
 //! A plugin for Torii that provides email and password authentication.
 //!
 //! This plugin allows users to register and authenticate using an email address and password.
-//! It handles password hashing, validation, and session management.
+//! It handles password hashing, validation.
 //!
 //! # Usage
 //!
 //! ```rust,no_run
-//! use torii::Torii;
+//! use torii_auth_password::PasswordPlugin;
 //! use torii_storage_sqlite::SqliteStorage;
+//! use torii_core::PluginManager;
 //! use std::sync::Arc;
 //!
 //! let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-//! let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+//! let plugin = PasswordPlugin::new(user_storage.clone());
 //!
-//! let torii = Torii::new(user_storage, session_storage)
-//!     .with_password_plugin();
+//! let mut manager = PluginManager::new(user_storage);
+//! manager.register_plugin(plugin);
 //!
 //! // Register a new user
-//! let user = torii.register_user_with_password("user@example.com", "password123").await?;
+//! let plugin = manager.get_plugin::<PasswordPlugin<SqliteStorage>>("password").unwrap();
+//! let user = plugin.register_user_with_password("user@example.com", "password123", None).await?;
 //!
 //! // Login an existing user
-//! let (user, session) = torii.login_user_with_password("user@example.com", "password123").await?;
+//! let user = plugin.login_user_with_password("user@example.com", "password123").await?;
 //! ```
 //!
 //! The password plugin requires a storage implementation that implements the [`PasswordStorage`]
-//! trait for storing user credentials and the [`SessionStorage`] trait for managing sessions.
+//! trait for storing user credentials.
 //!
 //! # Features
 //!
 //! - User registration with email and password
 //! - Password hashing and validation
-//! - Session management
 //! - Optional email verification
 //! - Event emission for authentication events
+
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use password_auth::{generate_hash, verify_password};
 use regex::Regex;
 use torii_core::{
-    Error, NewUser, Plugin, Session, SessionStorage, User, UserId,
+    Error, NewUser, Plugin, User, UserId,
     error::{AuthError, StorageError, ValidationError},
     events::{Event, EventBus},
-    session::SessionId,
-    storage::{PasswordStorage, Storage},
+    storage::PasswordStorage,
 };
 
-pub struct PasswordPlugin<U, S>
+pub struct PasswordPlugin<U>
 where
     U: PasswordStorage,
-    S: SessionStorage,
 {
-    storage: Storage<U, S>,
+    user_storage: Arc<U>,
     event_bus: Option<EventBus>,
 }
 
-impl<U, S> PasswordPlugin<U, S>
+impl<U> PasswordPlugin<U>
 where
     U: PasswordStorage,
-    S: SessionStorage,
 {
-    pub fn new(storage: Storage<U, S>) -> Self {
+    pub fn new(user_storage: Arc<U>) -> Self {
         Self {
-            storage,
+            user_storage,
             event_bus: None,
         }
     }
@@ -72,20 +72,18 @@ where
     }
 }
 
-impl<U, S> Plugin for PasswordPlugin<U, S>
+impl<U> Plugin for PasswordPlugin<U>
 where
     U: PasswordStorage,
-    S: SessionStorage,
 {
     fn name(&self) -> String {
         "password".to_string()
     }
 }
 
-impl<U, S> PasswordPlugin<U, S>
+impl<U> PasswordPlugin<U>
 where
     U: PasswordStorage,
-    S: SessionStorage,
 {
     pub async fn register_user_with_password(
         &self,
@@ -101,8 +99,7 @@ where
         }
 
         if let Some(_user) = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_user_by_email(email)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
@@ -117,14 +114,13 @@ where
             .build()
             .unwrap();
         let user = self
-            .storage
+            .user_storage
             .create_user(&new_user)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         let hash = generate_hash(password);
-        self.storage
-            .user_storage()
+        self.user_storage
             .set_password_hash(&user.id, &hash)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
@@ -152,16 +148,14 @@ where
         }
 
         let user = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_user(user_id)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
             .ok_or(Error::Auth(AuthError::UserNotFound))?;
 
         let stored_hash = self
-            .storage
-            .user_storage()
+            .user_storage
             .get_password_hash(user_id)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
@@ -174,14 +168,10 @@ where
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
         let new_hash = generate_hash(new_password);
-        self.storage
-            .user_storage()
+        self.user_storage
             .set_password_hash(user_id, &new_hash)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
-
-        // Delete all existing sessions for this user for security
-        self.delete_sessions_for_user(user_id).await?;
 
         tracing::info!(
             user.id = %user_id,
@@ -197,10 +187,9 @@ where
         &self,
         email: &str,
         password: &str,
-    ) -> Result<(User, Session), Error> {
-        let user_storage = self.storage.user_storage();
-
-        let user = user_storage
+    ) -> Result<User, Error> {
+        let user = self
+            .user_storage
             .get_user_by_email(email)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
@@ -210,7 +199,8 @@ where
             return Err(Error::Auth(AuthError::EmailNotVerified));
         }
 
-        let hash = user_storage
+        let hash = self
+            .user_storage
             .get_password_hash(&user.id)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
@@ -222,63 +212,13 @@ where
         verify_password(password, &hash.unwrap())
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
-        let session = self.create_session(&user.id).await?;
-
-        Ok((user, session))
+        Ok(user)
     }
 
     async fn emit_event(&self, event: &Event) -> Result<(), Error> {
         if let Some(event_bus) = &self.event_bus {
             event_bus.emit(event).await?;
         }
-        Ok(())
-    }
-
-    async fn create_session(&self, user_id: &UserId) -> Result<Session, Error> {
-        let session = self
-            .storage
-            .create_session(&Session::builder().user_id(user_id.clone()).build().unwrap())
-            .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
-
-        self.emit_event(&Event::SessionCreated(user_id.clone(), session.clone()))
-            .await?;
-
-        Ok(session)
-    }
-
-    #[allow(unused)]
-    async fn delete_session(&self, user_id: &UserId, session_id: &SessionId) -> Result<(), Error> {
-        let session = self
-            .storage
-            .session_storage()
-            .get_session(session_id)
-            .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?
-            .ok_or(Error::Auth(AuthError::SessionNotFound))?;
-
-        self.storage
-            .session_storage()
-            .delete_session(session_id)
-            .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
-
-        self.emit_event(&Event::SessionDeleted(user_id.clone(), session.id))
-            .await?;
-
-        Ok(())
-    }
-
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
-        self.storage
-            .session_storage()
-            .delete_sessions_for_user(user_id)
-            .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
-
-        self.emit_event(&Event::SessionsCleared(user_id.clone()))
-            .await?;
-
         Ok(())
     }
 }
@@ -304,10 +244,10 @@ mod tests {
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
-    use torii_core::{PluginManager, error::EventError, events::EventHandler};
+    use torii_core::{error::EventError, events::EventHandler};
     use torii_storage_sqlite::SqliteStorage;
 
-    async fn setup_plugin() -> Result<(PluginManager<SqliteStorage, SqliteStorage>,), Error> {
+    async fn setup_storage() -> Result<Arc<SqliteStorage>, Error> {
         let _ = tracing_subscriber::fmt().try_init();
 
         let pool = SqlitePool::connect("sqlite::memory:")
@@ -315,16 +255,9 @@ mod tests {
             .expect("Failed to create pool");
 
         let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-        let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
-
-        let storage = Storage::new(user_storage.clone(), session_storage.clone());
-        let mut manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-        manager.register_plugin(PasswordPlugin::new(storage));
-
         user_storage.migrate().await?;
-        session_storage.migrate().await?;
 
-        Ok((manager,))
+        Ok(user_storage)
     }
 
     #[test]
@@ -360,18 +293,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_user_and_login_with_unverified_email() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let user = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .unwrap()
+        let user = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com", "password", None)
             .await?;
         assert_eq!(user.email, "test@example.com");
 
-        let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .unwrap()
+        let result = PasswordPlugin::new(user_storage.clone())
             .login_user_with_password("test@example.com", "password")
             .await;
         assert!(matches!(
@@ -384,39 +313,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_user_and_login_with_verified_email() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let user = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .unwrap()
+        let user = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
         assert_eq!(user.email, "test@example.com");
 
-        let (user, session) = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .unwrap()
+        let user = PasswordPlugin::new(user_storage.clone())
             .login_user_with_password("test@example.com", "password")
             .await?;
         assert_eq!(user.email, "test@example.com");
-        assert_eq!(session.user_id, user.id);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_create_duplicate_user() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let _ = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .unwrap()
+        let _ = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com", "password", None)
             .await?;
 
-        let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .unwrap()
+        let result = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com", "password", None)
             .await;
 
@@ -430,11 +350,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_email_format() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist")
+        let result = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("not-an-email", "password", None)
             .await;
 
@@ -448,11 +366,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_weak_password() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist")
+        let result = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com", "123", None)
             .await;
 
@@ -466,17 +382,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_incorrect_password_login() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist")
+        PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
 
-        let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist")
+        let result = PasswordPlugin::new(user_storage.clone())
             .login_user_with_password("test@example.com", "wrong-password")
             .await;
 
@@ -490,11 +402,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_nonexistent_user_login() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let result = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist")
+        let result = PasswordPlugin::new(user_storage.clone())
             .login_user_with_password("nonexistent@example.com", "password")
             .await;
 
@@ -505,52 +415,35 @@ mod tests {
 
     #[tokio::test]
     async fn test_sql_injection_attempt() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
+        let user_storage = setup_storage().await?;
 
-        let _ = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist")
+        let result = PasswordPlugin::new(user_storage.clone())
             .register_user_with_password("test@example.com'; DROP TABLE users;--", "password", None)
-            .await
-            .expect_err("Should fail validation");
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Validation(ValidationError::InvalidEmail))
+        ));
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_change_password() -> Result<(), Error> {
-        let (manager,) = setup_plugin().await?;
-        let plugin = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist");
+        let user_storage = setup_storage().await?;
+
+        let plugin = PasswordPlugin::new(user_storage.clone());
 
         // Create initial user
         let user = plugin
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
 
-        let session = manager
-            .storage()
-            .create_session(&Session::builder().user_id(user.id.clone()).build().unwrap())
-            .await?;
-
-        // Verify initial session exists
-        let initial_session = manager
-            .storage()
-            .get_session(&session.id)
-            .await
-            .expect("Failed to get session")
-            .expect("Session should exist");
-        assert_eq!(initial_session.user_id, user.id);
-
         // Change password
         plugin
             .change_user_password(&user.id, "password", "new-password")
             .await?;
-
-        // Verify old session was deleted
-        let deleted_session = manager.storage().get_session(&session.id).await;
-        assert!(deleted_session.is_err());
 
         // Verify can login with new password
         let result = plugin
@@ -574,70 +467,42 @@ mod tests {
     async fn test_event_handler_emitting() -> Result<(), Error> {
         let _ = tracing_subscriber::fmt().try_init();
 
-        // Create in-memory SQLite database and storage
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("Failed to create pool");
-        let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-        let session_storage = Arc::new(SqliteStorage::new(pool));
+        let user_storage = setup_storage().await?;
 
-        // Initialize database schema
-        user_storage.migrate().await.unwrap();
-        session_storage.migrate().await.unwrap();
-
-        // Create plugin manager and event bus
-        let storage = Storage::new(user_storage.clone(), session_storage.clone());
-        let mut manager = PluginManager::new(user_storage, session_storage);
         let event_bus = EventBus::new();
-
-        // Register plugin with event bus
-        let plugin = PasswordPlugin::new(storage).with_event_bus(event_bus.clone());
-        manager.register_plugin(plugin);
-
-        // Create test event handler that tracks when events are emitted
         let event_was_emitted = Arc::new(AtomicBool::new(false));
         let event_count = Arc::new(AtomicUsize::new(0));
+
         let handler = TestEventHandler {
             called: event_was_emitted.clone(),
             call_count: event_count.clone(),
         };
         event_bus.register(Arc::new(handler)).await;
 
-        let plugin = manager
-            .get_plugin::<PasswordPlugin<SqliteStorage, SqliteStorage>>("password")
-            .expect("Plugin should exist");
+        let plugin = PasswordPlugin::new(user_storage.clone()).with_event_bus(event_bus);
 
-        // Test 1: Creating a user should emit an event
+        // Test user creation event
         let user = plugin
             .register_user_with_password("test@example.com", "password", Some(Utc::now()))
             .await?;
+
         assert!(
             event_was_emitted.load(Ordering::SeqCst),
-            "No event emitted when creating user"
+            "Expected event to be emitted on user creation"
         );
         assert_eq!(event_count.load(Ordering::SeqCst), 1);
 
-        // Test 2: Changing password should emit 2 events, one for the user update and one for the session deletion
+        // Test password change event
         event_was_emitted.store(false, Ordering::SeqCst);
         plugin
             .change_user_password(&user.id, "password", "new-password")
             .await?;
-        assert!(
-            event_was_emitted.load(Ordering::SeqCst),
-            "No event emitted when changing password"
-        );
-        assert_eq!(event_count.load(Ordering::SeqCst), 3);
 
-        // Test 3: Logging in should emit 1 event
-        event_was_emitted.store(false, Ordering::SeqCst);
-        plugin
-            .login_user_with_password("test@example.com", "new-password")
-            .await?;
         assert!(
             event_was_emitted.load(Ordering::SeqCst),
-            "No event emitted when logging in"
+            "Expected event to be emitted on password change"
         );
-        assert_eq!(event_count.load(Ordering::SeqCst), 4);
+        assert_eq!(event_count.load(Ordering::SeqCst), 2);
 
         Ok(())
     }

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -40,7 +38,7 @@ pub trait SessionStorage: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error>;
-    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error>;
+    async fn get_session(&self, id: &SessionId) -> Result<Session, Self::Error>;
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error>;
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error>;
@@ -105,53 +103,6 @@ pub trait OAuthStorage: UserStorage {
 
     /// Retrieve a stored PKCE verifier by CSRF state
     async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error>;
-}
-
-#[derive(Debug, Clone)]
-pub struct Storage<U: UserStorage, S: SessionStorage> {
-    user_storage: Arc<U>,
-    session_storage: Arc<S>,
-}
-
-impl<U: UserStorage, S: SessionStorage> Storage<U, S> {
-    pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
-        Self {
-            user_storage,
-            session_storage,
-        }
-    }
-
-    pub async fn create_user(&self, user: &NewUser) -> Result<User, U::Error> {
-        self.user_storage.create_user(user).await
-    }
-
-    pub async fn get_user(&self, id: &UserId) -> Result<Option<User>, U::Error> {
-        self.user_storage.get_user(id).await
-    }
-
-    pub async fn create_session(&self, session: &Session) -> Result<Session, S::Error> {
-        self.session_storage.create_session(session).await
-    }
-
-    pub async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, S::Error> {
-        self.session_storage.get_session(id).await
-    }
-
-    pub async fn delete_session(&self, id: &SessionId) -> Result<(), S::Error> {
-        self.session_storage.delete_session(id).await
-    }
-
-    pub async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), S::Error> {
-        self.session_storage.delete_sessions_for_user(user_id).await
-    }
-
-    pub fn user_storage(&self) -> Arc<U> {
-        self.user_storage.clone()
-    }
-
-    pub fn session_storage(&self) -> Arc<S> {
-        self.session_storage.clone()
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

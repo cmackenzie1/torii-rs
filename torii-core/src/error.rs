@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error("Event error: {0}")]
     Event(#[from] EventError),
+
+    #[error("Session error: {0}")]
+    Session(#[from] SessionError),
 }
 
 #[derive(Debug, Error)]
@@ -32,14 +35,20 @@ pub enum AuthError {
     #[error("Email not verified")]
     EmailNotVerified,
 
-    #[error("Session not found")]
-    SessionNotFound,
-
-    #[error("Session expired")]
-    SessionExpired,
-
     #[error("Unsupported authentication method: {0}")]
     UnsupportedMethod(String),
+}
+
+#[derive(Debug, Error)]
+pub enum SessionError {
+    #[error("Session not found")]
+    NotFound,
+
+    #[error("Session expired")]
+    Expired,
+
+    #[error("Session already exists")]
+    AlreadyExists,
 }
 
 #[derive(Debug, Error)]
