@@ -59,7 +59,7 @@ impl OAuthStorage for SqliteStorage {
             RETURNING user_id, provider, subject, created_at, updated_at
             "#,
         )
-        .bind(user_id.as_ref())
+        .bind(user_id.as_str())
         .bind(provider)
         .bind(subject)
         .bind(now.timestamp())
@@ -138,7 +138,7 @@ impl OAuthStorage for SqliteStorage {
     ) -> Result<(), Self::Error> {
         let now = Utc::now();
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .bind(provider)
             .bind(subject)
             .bind(now.timestamp())

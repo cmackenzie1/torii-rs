@@ -1,3 +1,4 @@
+mod magic_link;
 mod migrations;
 mod oauth;
 mod passkey;
@@ -8,6 +9,7 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use migrations::CreateIndexes;
+use migrations::CreateMagicLinksTable;
 use migrations::{
     CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
     CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
@@ -53,6 +55,7 @@ impl SqliteStorage {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
@@ -117,7 +120,7 @@ impl UserStorage for SqliteStorage {
             RETURNING id, email, name, email_verified_at, created_at, updated_at
             "#,
         )
-        .bind(user.id.as_ref())
+        .bind(user.id.as_str())
         .bind(&user.email)
         .bind(&user.name)
         .bind(
@@ -144,7 +147,7 @@ impl UserStorage for SqliteStorage {
             WHERE id = ?
             "#,
         )
-        .bind(id.as_ref())
+        .bind(id.as_str())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
@@ -222,7 +225,7 @@ impl UserStorage for SqliteStorage {
                 .map(|timestamp| timestamp.timestamp()),
         )
         .bind(now.timestamp())
-        .bind(user.id.as_ref())
+        .bind(user.id.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -235,7 +238,7 @@ impl UserStorage for SqliteStorage {
 
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(id.as_ref())
+            .bind(id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -249,7 +252,7 @@ impl UserStorage for SqliteStorage {
     async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("UPDATE users SET email_verified_at = ? WHERE id = ?")
             .bind(Utc::now().timestamp())
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {

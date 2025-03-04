@@ -261,3 +261,47 @@ pub trait PasskeyStorage: UserStorage {
         challenge_id: &str,
     ) -> Result<Option<String>, Self::Error>;
 }
+
+#[derive(Debug, Clone)]
+pub struct MagicToken {
+    pub user_id: UserId,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl MagicToken {
+    pub fn new(
+        user_id: UserId,
+        token: String,
+        expires_at: DateTime<Utc>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            user_id,
+            token,
+            expires_at,
+            created_at,
+            updated_at,
+        }
+    }
+}
+
+impl PartialEq for MagicToken {
+    fn eq(&self, other: &Self) -> bool {
+        self.user_id == other.user_id
+            && self.token == other.token
+            // Some databases may not store the timestamp with more precision than seconds, so we compare the timestamps as integers
+            && self.expires_at.timestamp() == other.expires_at.timestamp()
+            && self.created_at.timestamp() == other.created_at.timestamp()
+            && self.updated_at.timestamp() == other.updated_at.timestamp()
+    }
+}
+
+#[async_trait]
+pub trait MagicLinkStorage: UserStorage {
+    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Self::Error>;
+    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error>;
+}

@@ -57,8 +57,8 @@ impl SessionStorage for SqliteStorage {
             RETURNING id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             "#,
         )
-            .bind(session.id.as_ref())
-            .bind(session.user_id.as_ref())
+            .bind(session.id.as_str())
+            .bind(session.user_id.as_str())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
             .bind(session.created_at.timestamp())
@@ -82,7 +82,7 @@ impl SessionStorage for SqliteStorage {
             WHERE id = ?
             "#,
         )
-        .bind(id.as_ref())
+        .bind(id.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -95,7 +95,7 @@ impl SessionStorage for SqliteStorage {
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(id.as_ref())
+            .bind(id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -121,7 +121,7 @@ impl SessionStorage for SqliteStorage {
 
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE user_id = ?")
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {

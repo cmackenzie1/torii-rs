@@ -106,7 +106,7 @@ impl UserStorage for PostgresStorage {
             RETURNING id::text, email, name, email_verified_at, created_at, updated_at
             "#,
         )
-        .bind(user.id.as_ref())
+        .bind(user.id.as_str())
         .bind(&user.email)
         .fetch_one(&self.pool)
         .await
@@ -126,7 +126,7 @@ impl UserStorage for PostgresStorage {
             WHERE id::text = $1
             "#,
         )
-        .bind(id.as_ref())
+        .bind(id.as_str())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
@@ -198,7 +198,7 @@ impl UserStorage for PostgresStorage {
         .bind(&user.name)
         .bind(user.email_verified_at)
         .bind(user.updated_at)
-        .bind(user.id.as_ref())
+        .bind(user.id.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -211,7 +211,7 @@ impl UserStorage for PostgresStorage {
 
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM users WHERE id::text = $1")
-            .bind(id.as_ref())
+            .bind(id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -225,7 +225,7 @@ impl UserStorage for PostgresStorage {
     async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("UPDATE users SET email_verified_at = $1 WHERE id::text = $2")
             .bind(Utc::now())
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {

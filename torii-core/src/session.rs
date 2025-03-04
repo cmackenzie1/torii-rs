@@ -33,6 +33,10 @@ impl SessionId {
     pub fn into_inner(self) -> String {
         self.0
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl Default for SessionId {
@@ -50,12 +54,6 @@ impl From<String> for SessionId {
 impl From<&str> for SessionId {
     fn from(s: &str) -> Self {
         Self(s.to_string())
-    }
-}
-
-impl AsRef<str> for SessionId {
-    fn as_ref(&self) -> &str {
-        &self.0
     }
 }
 
