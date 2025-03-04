@@ -125,7 +125,7 @@ impl OAuthStorage for PostgresStorage {
         user_id: &UserId,
     ) -> Result<OAuthAccount, Self::Error> {
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .bind(provider)
             .bind(subject)
             .bind(Utc::now())
@@ -144,7 +144,7 @@ impl OAuthStorage for PostgresStorage {
             WHERE user_id::text = $1
             "#,
         )
-        .bind(user_id.as_ref())
+        .bind(user_id.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -254,7 +254,7 @@ impl OAuthStorage for PostgresStorage {
         subject: &str,
     ) -> Result<(), Self::Error> {
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .bind(provider)
             .bind(subject)
             .bind(Utc::now())

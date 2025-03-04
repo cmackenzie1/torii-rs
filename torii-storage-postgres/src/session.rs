@@ -51,8 +51,8 @@ impl SessionStorage for PostgresStorage {
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
         sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)")
-            .bind(session.id.as_ref())
-            .bind(session.user_id.as_ref())
+            .bind(session.id.as_str())
+            .bind(session.user_id.as_str())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
             .bind(session.created_at)
@@ -76,7 +76,7 @@ impl SessionStorage for PostgresStorage {
             WHERE id::text = $1
             "#,
         )
-        .bind(id.as_ref())
+        .bind(id.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -89,7 +89,7 @@ impl SessionStorage for PostgresStorage {
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE id::text = $1")
-            .bind(id.as_ref())
+            .bind(id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -115,7 +115,7 @@ impl SessionStorage for PostgresStorage {
 
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
         sqlx::query("DELETE FROM sessions WHERE user_id::text = $1")
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {

@@ -1,0 +1,17 @@
+[package]
+name = "torii-auth-magic-link"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+torii-core = { path = "../torii-core", version = "0.2" }
+thiserror.workspace = true
+rand = "0.9"
+base64 = "0.22"
+chrono.workspace = true
+[dev-dependencies]
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2" }
+tokio.workspace = true
+async-trait.workspace = true

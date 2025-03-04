@@ -38,6 +38,10 @@ impl UserId {
     pub fn as_uuid(&self) -> Uuid {
         Uuid::parse_str(&self.0).unwrap()
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl Default for UserId {
@@ -55,12 +59,6 @@ impl From<String> for UserId {
 impl From<&str> for UserId {
     fn from(s: &str) -> Self {
         Self(s.to_string())
-    }
-}
-
-impl AsRef<str> for UserId {
-    fn as_ref(&self) -> &str {
-        &self.0
     }
 }
 
@@ -237,9 +235,9 @@ mod tests {
     #[test]
     fn test_user_id() {
         let user_id = UserId::new("test");
-        assert_eq!(user_id.as_ref(), "test");
+        assert_eq!(user_id.as_str(), "test");
 
-        let user_id_from_str = UserId::from(user_id.as_ref());
+        let user_id_from_str = UserId::from(user_id.as_str());
         assert_eq!(user_id_from_str, user_id);
 
         let user_id_random = UserId::new_random();

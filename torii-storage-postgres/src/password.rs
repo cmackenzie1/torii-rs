@@ -13,7 +13,7 @@ impl PasswordStorage for PostgresStorage {
     ) -> Result<(), torii_core::Error> {
         sqlx::query("UPDATE users SET password_hash = $1 WHERE id::text = $2")
             .bind(hash)
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|_| StorageError::Database("Failed to set password hash".to_string()))?;
@@ -25,7 +25,7 @@ impl PasswordStorage for PostgresStorage {
         user_id: &UserId,
     ) -> Result<Option<String>, torii_core::Error> {
         let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id::text = $1")
-            .bind(user_id.as_ref())
+            .bind(user_id.as_str())
             .fetch_optional(&self.pool)
             .await
             .map_err(|_| StorageError::Database("Failed to get password hash".to_string()))?;

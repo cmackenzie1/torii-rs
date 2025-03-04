@@ -8,6 +8,7 @@ members = [
     "torii-auth-password",
     "torii-auth-oauth",
     "torii-auth-passkey",
+    "torii-auth-magic-link",
     "torii",
     "examples/todos",
 ]

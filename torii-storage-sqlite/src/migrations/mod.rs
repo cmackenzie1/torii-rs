@@ -434,6 +434,65 @@ impl Migration<Sqlite> for CreateIndexes {
     }
 }
 
+pub struct CreateMagicLinksTable;
+
+#[async_trait::async_trait]
+impl Migration<Sqlite> for CreateMagicLinksTable {
+    fn version(&self) -> i64 {
+        7
+    }
+
+    fn name(&self) -> &str {
+        "CreateMagicLinksTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS magic_links (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                token TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch()),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(token)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_magic_links_expires_at ON magic_links(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_magic_links_user_id ON magic_links(user_id);
+            CREATE INDEX IF NOT EXISTS idx_magic_links_token ON magic_links(token);
+            "#,
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            DROP TABLE IF EXISTS magic_links;
+            DROP INDEX IF EXISTS idx_magic_links_expires_at;
+            DROP INDEX IF EXISTS idx_magic_links_user_id;
+            DROP INDEX IF EXISTS idx_magic_links_token;
+            "#,
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,18 +522,19 @@ mod tests {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(6).await?;
+        let applied = manager.is_applied(7).await?;
         assert!(applied, "Migration should be applied");
 
         // Test down migrations
         manager.down(&migrations).await?;
 
         // Verify migration was rolled back
-        let applied = manager.is_applied(6).await?;
+        let applied = manager.is_applied(7).await?;
         assert!(!applied, "Migration should be rolled back");
 
         Ok(())
@@ -500,6 +560,7 @@ mod tests {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await?;
 
@@ -510,7 +571,7 @@ mod tests {
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(6).await?;
+        let applied = manager.is_applied(7).await?;
         assert!(applied, "Migration should be applied");
 
         Ok(())

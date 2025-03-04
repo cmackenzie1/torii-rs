@@ -20,7 +20,7 @@ impl PasskeyStorage for PostgresStorage {
             "#,
         )
         .bind(credential_id)
-        .bind(user_id.as_ref())
+        .bind(user_id.as_str())
         .bind(passkey_json)
         .execute(&self.pool)
         .await
@@ -54,7 +54,7 @@ impl PasskeyStorage for PostgresStorage {
             WHERE user_id = $1::uuid
             "#,
         )
-        .bind(user_id.as_ref())
+        .bind(user_id.as_str())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| StorageError::Database(e.to_string()))?;
