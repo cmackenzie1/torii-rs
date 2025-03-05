@@ -9,6 +9,7 @@
 //! - Password-based authentication
 //! - Social OAuth/OpenID Connect
 //! - Passkey/WebAuthn support
+//! - Magic Link authentication
 //!
 //! Combined with full data sovereignty and the ability to store user data wherever you choose.
 //!
