@@ -11,7 +11,20 @@ thiserror.workspace = true
 rand = "0.9"
 base64 = "0.22"
 chrono.workspace = true
+
 [dev-dependencies]
 torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2" }
-tokio.workspace = true
+
 async-trait.workspace = true
+axum = { version = "0.8", features = ["macros"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+serde_json.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+
+
+[[example]]
+name = "magic-link"
+path = "examples/magic_link.rs"
