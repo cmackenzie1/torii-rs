@@ -45,7 +45,7 @@ impl From<&MagicToken> for SqliteMagicToken {
 
 #[async_trait]
 impl MagicLinkStorage for SqliteStorage {
-    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), StorageError> {
+    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Self::Error> {
         let row = SqliteMagicToken::from(token);
 
         sqlx::query("INSERT INTO magic_links (user_id, token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
@@ -61,7 +61,7 @@ impl MagicLinkStorage for SqliteStorage {
         Ok(())
     }
 
-    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, StorageError> {
+    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error> {
         let row: Option<SqliteMagicToken> =
             sqlx::query_as("SELECT id, user_id, token, expires_at, created_at, updated_at FROM magic_links WHERE token = ?")
                 .bind(token)

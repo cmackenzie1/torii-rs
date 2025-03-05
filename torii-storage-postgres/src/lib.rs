@@ -1,3 +1,4 @@
+mod magic_link;
 mod migrations;
 mod oauth;
 mod passkey;
@@ -8,6 +9,7 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use migrations::CreateIndexes;
+use migrations::CreateMagicLinksTable;
 use migrations::CreateOAuthAccountsTable;
 use migrations::CreatePasskeyChallengesTable;
 use migrations::CreatePasskeysTable;
@@ -47,6 +49,7 @@ impl PostgresStorage {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
