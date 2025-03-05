@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::Utc;
 use rand::TryRngCore;
@@ -19,7 +21,7 @@ pub enum MagicLinkError {
 }
 
 pub struct MagicLinkPlugin<U: UserStorage> {
-    user_storage: U,
+    user_storage: Arc<U>,
 }
 
 impl<U> Plugin for MagicLinkPlugin<U>
@@ -35,7 +37,7 @@ impl<U> MagicLinkPlugin<U>
 where
     U: MagicLinkStorage,
 {
-    pub fn new(user_storage: U) -> Self {
+    pub fn new(user_storage: Arc<U>) -> Self {
         Self { user_storage }
     }
 
@@ -97,10 +99,10 @@ mod tests {
 
     use super::*;
 
-    async fn setup_sqlite_storage() -> SqliteStorage {
+    async fn setup_sqlite_storage() -> Arc<SqliteStorage> {
         let storage = SqliteStorage::connect("sqlite::memory:").await.unwrap();
         storage.migrate().await.unwrap();
-        storage
+        Arc::new(storage)
     }
 
     #[tokio::test]
