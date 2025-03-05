@@ -217,6 +217,7 @@ pub trait PasskeyStorage: UserStorage {
 pub struct MagicToken {
     pub user_id: UserId,
     pub token: String,
+    pub used_at: Option<DateTime<Utc>>,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -226,6 +227,7 @@ impl MagicToken {
     pub fn new(
         user_id: UserId,
         token: String,
+        used_at: Option<DateTime<Utc>>,
         expires_at: DateTime<Utc>,
         created_at: DateTime<Utc>,
         updated_at: DateTime<Utc>,
@@ -233,10 +235,15 @@ impl MagicToken {
         Self {
             user_id,
             token,
+            used_at,
             expires_at,
             created_at,
             updated_at,
         }
+    }
+
+    pub fn used(&self) -> bool {
+        self.used_at.is_some()
     }
 }
 
@@ -255,4 +262,5 @@ impl PartialEq for MagicToken {
 pub trait MagicLinkStorage: UserStorage {
     async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Self::Error>;
     async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error>;
+    async fn set_magic_token_used(&self, token: &str) -> Result<(), Self::Error>;
 }

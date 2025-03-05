@@ -118,6 +118,7 @@ async fn verify_magic_link_handler(
         .get_plugin::<MagicLinkPlugin<SqliteStorage>>("magic_link")
         .unwrap();
 
+    // This also consumes the magic token by marking it as used.
     let token = plugin.verify_magic_token(&params.token).await.unwrap();
 
     let user = state

@@ -456,6 +456,7 @@ impl Migration<Sqlite> for CreateMagicLinksTable {
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
                 token TEXT NOT NULL,
+                used_at INTEGER,
                 expires_at INTEGER NOT NULL,
                 created_at INTEGER DEFAULT (unixepoch()),
                 updated_at INTEGER DEFAULT (unixepoch()),
@@ -463,6 +464,8 @@ impl Migration<Sqlite> for CreateMagicLinksTable {
                 UNIQUE(token)
             );
 
+            -- Magic links table indexes
+            CREATE INDEX IF NOT EXISTS idx_magic_links_used_at ON magic_links(used_at);
             CREATE INDEX IF NOT EXISTS idx_magic_links_expires_at ON magic_links(expires_at);
             CREATE INDEX IF NOT EXISTS idx_magic_links_user_id ON magic_links(user_id);
             CREATE INDEX IF NOT EXISTS idx_magic_links_token ON magic_links(token);
@@ -481,6 +484,7 @@ impl Migration<Sqlite> for CreateMagicLinksTable {
         sqlx::query(
             r#"
             DROP TABLE IF EXISTS magic_links;
+            DROP INDEX IF EXISTS idx_magic_links_used_at;
             DROP INDEX IF EXISTS idx_magic_links_expires_at;
             DROP INDEX IF EXISTS idx_magic_links_user_id;
             DROP INDEX IF EXISTS idx_magic_links_token;

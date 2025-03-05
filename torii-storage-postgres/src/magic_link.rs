@@ -13,6 +13,7 @@ pub struct PostgresMagicToken {
     pub id: Option<String>,
     pub user_id: String,
     pub token: String,
+    pub used_at: Option<DateTime<Utc>>,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -23,6 +24,7 @@ impl From<PostgresMagicToken> for MagicToken {
         MagicToken::new(
             UserId::new(&row.user_id),
             row.token.clone(),
+            row.used_at,
             row.expires_at,
             row.created_at,
             row.updated_at,
@@ -36,6 +38,7 @@ impl From<&MagicToken> for PostgresMagicToken {
             id: None,
             user_id: token.user_id.as_str().to_string(),
             token: token.token.clone(),
+            used_at: token.used_at,
             expires_at: token.expires_at,
             created_at: token.created_at,
             updated_at: token.updated_at,
@@ -63,13 +66,25 @@ impl MagicLinkStorage for PostgresStorage {
 
     async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error> {
         let row: Option<PostgresMagicToken> =
-            sqlx::query_as("SELECT id::text, user_id::text, token, expires_at, created_at, updated_at FROM magic_links WHERE token = $1")
+            sqlx::query_as("SELECT id::text, user_id::text, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL")
                 .bind(token)
+                .bind(Utc::now())
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| StorageError::Database(e.to_string()))?;
 
         Ok(row.map(|row| row.into()))
+    }
+
+    async fn set_magic_token_used(&self, token: &str) -> Result<(), Self::Error> {
+        sqlx::query("UPDATE magic_links SET used_at = $1 WHERE token = $2")
+            .bind(Utc::now())
+            .bind(token)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        Ok(())
     }
 }
 
@@ -104,6 +119,7 @@ mod tests {
         let token = MagicToken::new(
             UserId::new(&user.id.to_string()),
             Uuid::new_v4().to_string(),
+            None,
             Utc::now() + Duration::minutes(5),
             Utc::now(),
             Utc::now(),
