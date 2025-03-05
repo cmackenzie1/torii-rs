@@ -136,9 +136,7 @@ mod tests {
         assert!(stored_token.is_some());
 
         let stored_token = stored_token.unwrap();
-        assert_eq!(stored_token.user_id, user.id);
-        assert_eq!(stored_token.token, token.token);
-        assert_eq!(stored_token.expires_at, token.expires_at);
+        assert_eq!(stored_token, token);
     }
 
     #[tokio::test]

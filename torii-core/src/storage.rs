@@ -251,6 +251,7 @@ impl PartialEq for MagicToken {
     fn eq(&self, other: &Self) -> bool {
         self.user_id == other.user_id
             && self.token == other.token
+            && self.used_at == other.used_at
             // Some databases may not store the timestamp with more precision than seconds, so we compare the timestamps as integers
             && self.expires_at.timestamp() == other.expires_at.timestamp()
             && self.created_at.timestamp() == other.created_at.timestamp()
