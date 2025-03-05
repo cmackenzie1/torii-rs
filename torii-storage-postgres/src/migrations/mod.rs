@@ -456,6 +456,79 @@ impl Migration<Postgres> for CreateIndexes {
     }
 }
 
+pub struct CreateMagicLinksTable;
+
+#[async_trait::async_trait]
+impl Migration<Postgres> for CreateMagicLinksTable {
+    fn version(&self) -> i64 {
+        7
+    }
+
+    fn name(&self) -> &str {
+        "CreateMagicLinksTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS magic_links (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL,
+                token TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(token)
+            )"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_magic_links_expires_at ON magic_links(expires_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_magic_links_user_id ON magic_links(user_id)")
+            .execute(&mut *conn)
+            .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_magic_links_token ON magic_links(token)")
+            .execute(&mut *conn)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_magic_links_expires_at")
+            .execute(&mut *conn)
+            .await?;
+
+        sqlx::query("DROP INDEX IF EXISTS idx_magic_links_user_id")
+            .execute(&mut *conn)
+            .await?;
+
+        sqlx::query("DROP INDEX IF EXISTS idx_magic_links_token")
+            .execute(&mut *conn)
+            .await?;
+
+        sqlx::query("DROP TABLE IF EXISTS magic_links")
+            .execute(&mut *conn)
+            .await?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,18 +587,19 @@ mod tests {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(6).await?;
+        let applied = manager.is_applied(7).await?;
         assert!(applied, "Migration should be applied");
 
         // Test down migrations
         manager.down(&migrations).await?;
 
         // Verify migration was rolled back
-        let applied = manager.is_applied(6).await?;
+        let applied = manager.is_applied(7).await?;
         assert!(!applied, "Migration should be rolled back");
 
         Ok(())
@@ -543,6 +617,7 @@ mod tests {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await?;
 
