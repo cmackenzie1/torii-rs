@@ -27,8 +27,9 @@ use torii_storage_sqlite::SqliteStorage;
 
 /// This example demonstrates how to set up a basic magic link authentication system using Torii.
 /// It creates a simple web server with:
-/// - Sign up page (/sign-up)
-/// - Sign in page (/sign-in)
+/// - Sign up page (/)
+/// - Magic link verification route (/auth/magic-link/verify)
+/// - Magic link generation route (/auth/magic-link/generate)
 /// - Protected route (/whoami) that shows the authenticated user's details
 ///
 /// The example uses:
@@ -63,7 +64,8 @@ struct AppState {
 /// Handles user registration
 /// 1. Extracts email from form submission
 /// 2. Creates new user via MagicLinkPlugin
-/// 3. Redirects to sign-in page on success
+/// 3. Displays magic link to user (for demonstration purposes only). After generating the link,
+/// you should send it to the user's email.
 #[axum::debug_handler]
 async fn generate_magic_link_handler(
     State(state): State<AppState>,
@@ -79,7 +81,6 @@ async fn generate_magic_link_handler(
         "http://localhost:4000/auth/magic-link/verify?token={}",
         token.token
     );
-    println!("Magic URL: {}", link);
 
     (
         StatusCode::OK,
@@ -112,7 +113,7 @@ async fn verify_magic_link_handler(
     State(state): State<AppState>,
     Query(params): Query<SignInParams>,
 ) -> impl IntoResponse {
-    let plugin: Arc<MagicLinkPlugin<SqliteStorage>> = state
+    let plugin = state
         .plugin_manager
         .get_plugin::<MagicLinkPlugin<SqliteStorage>>("magic_link")
         .unwrap();
@@ -158,20 +159,21 @@ async fn verify_session<B>(
         .get("session_id")
         .and_then(|cookie| cookie.value().parse::<String>().ok());
 
-    if let Some(session_id) = session_id {
-        // Verify session exists and is valid
-        state
-            .plugin_manager
-            .session_storage()
-            .get_session(&SessionId::new(&session_id))
-            .await
-            .unwrap();
-
-        return next.run(request).await;
+    if session_id.is_none() {
+        return Redirect::to("/sign-in").into_response();
     }
 
-    // If session is invalid or missing, redirect to sign in
-    Redirect::to("/sign-in").into_response()
+    // Verify session exists and is valid
+    state
+        .plugin_manager
+        .session_storage()
+        .get_session(&SessionId::new(
+            &session_id.expect("session_id is required"),
+        ))
+        .await
+        .unwrap();
+
+    return next.run(request).await;
 }
 
 /// Protected route that displays the currently authenticated user's details
@@ -181,30 +183,33 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
         .get("session_id")
         .and_then(|cookie| cookie.value().parse::<String>().ok());
 
-    if let Some(session_id) = session_id {
-        let session = state
-            .plugin_manager
-            .session_storage()
-            .get_session(&SessionId::new(&session_id))
-            .await
-            .unwrap();
-
-        let user = state
-            .plugin_manager
-            .user_storage()
-            .get_user(&session.user_id)
-            .await
-            .unwrap();
-        return Json(user).into_response();
+    if session_id.is_none() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": "Not authenticated"
+            })),
+        )
+            .into_response();
     }
 
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(json!({
-            "error": "Not authenticated"
-        })),
-    )
-        .into_response()
+    let session = state
+        .plugin_manager
+        .session_storage()
+        .get_session(&SessionId::new(
+            &session_id.expect("session_id is required"),
+        ))
+        .await
+        .unwrap();
+
+    let user = state
+        .plugin_manager
+        .user_storage()
+        .get_user(&session.user_id)
+        .await
+        .unwrap();
+
+    Json(user).into_response()
 }
 
 #[tokio::main]

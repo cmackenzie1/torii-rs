@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+#### `torii-auth-magic-link`
+
+A new plugin for generating and verifying magic links has been added.
+
+### Changed
+
+#### `torii-core`
+
+- `SessionStorage::get_session` now returns a `Result<Session, Error>` instead of `Result<Option<Session>, Error>`. Users should check the error for details on if the session was found, or expired.
+- Session creation, deletion, and cleanup are now handled by the `SessionManager` trait and the `DefaultSessionManager` implementation.
+- Plugins no longer require a `SessionStorage` parameter, the top level `Torii` struct now holds a `SessionManager` instance and login methods continue to return a `Session` instance.
+
+### Removed
+
+#### `torii-core`
+
+- `Storage<U,S>` struct has been removed. Use `Arc<U>` and `Arc<S>` directly instead.
+- `AsRef<UserId> and AsRef<SessionId>` have been removed. Use `as_str()` instead when needing a database serializable string.
 
 ## [0.2.0] - 2025-02-27
 

@@ -1,3 +1,32 @@
+//! Magic Link authentication plugin for Torii
+//!
+//! This plugin provides magic link authentication functionality, allowing users to sign in by clicking
+//! a secure link sent to their email address rather than using a password.
+//!
+//! # Features
+//!
+//! - Generate secure one-time use magic links
+//! - Verify magic link tokens
+//! - Automatic user creation if not exists
+//! - Configurable token expiration
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use torii_auth_magic_link::MagicLinkPlugin;
+//! use torii_core::plugin::PluginManager;
+//!
+//! // Register the plugin with your PluginManager
+//! let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+//! plugin_manager.register_plugin(MagicLinkPlugin::new(user_storage.clone()));
+//!
+//! // Generate a magic link token
+//! let plugin = plugin_manager.get_plugin::<MagicLinkPlugin>("magic_link").unwrap();
+//! let token = plugin.generate_magic_token("user@example.com").await?;
+//!
+//! // Verify the token when user clicks the link
+//! let user = plugin.verify_magic_token(&token.token).await?;
+//! ```
 use std::sync::Arc;
 
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
@@ -20,6 +49,34 @@ pub enum MagicLinkError {
     StorageError(String),
 }
 
+/// Magic Link authentication plugin
+///
+/// This plugin provides magic link authentication functionality, allowing users to sign in by clicking
+/// a secure link sent to their email address rather than using a password.
+///
+/// # Features
+///
+/// - Generate secure one-time use magic links
+/// - Verify magic link tokens
+/// - Automatic user creation if not exists
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use torii_auth_magic_link::MagicLinkPlugin;
+/// use torii_core::plugin::PluginManager;
+///
+/// // Register the plugin with your PluginManager
+/// let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+/// plugin_manager.register_plugin(MagicLinkPlugin::new(user_storage.clone()));
+///
+/// // Generate a magic link token
+/// let plugin = plugin_manager.get_plugin::<MagicLinkPlugin>("magic_link").unwrap();
+/// let token = plugin.generate_magic_token("user@example.com").await?;
+///
+/// // Verify the token when user clicks the link
+/// let user = plugin.verify_magic_token(&token.token).await?;
+/// ```
 pub struct MagicLinkPlugin<U: UserStorage> {
     user_storage: Arc<U>,
 }
@@ -81,6 +138,19 @@ where
     }
 }
 
+/// Generate a secure token
+///
+/// This function generates a secure token using the `rand` crate.
+/// The token is encoded using the `BASE64_URL_SAFE_NO_PAD` engine.
+///
+/// # Returns
+/// A secure token as a string
+///
+/// # Example
+///
+/// ```rust,no_run
+/// let token = generate_secure_token();
+/// ```
 fn generate_secure_token() -> String {
     let mut token = [0u8; 32];
     rand::rngs::OsRng
