@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use torii_core::{
     UserId,
     error::StorageError,
@@ -13,6 +13,7 @@ pub struct SqliteMagicToken {
     pub id: Option<String>,
     pub user_id: String,
     pub token: String,
+    pub used_at: Option<i64>,
     pub expires_at: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -23,6 +24,8 @@ impl From<SqliteMagicToken> for MagicToken {
         MagicToken::new(
             UserId::new(&row.user_id),
             row.token.clone(),
+            row.used_at
+                .map(|timestamp| DateTime::from_timestamp(timestamp, 0).unwrap()),
             DateTime::from_timestamp(row.expires_at, 0).unwrap(),
             DateTime::from_timestamp(row.created_at, 0).unwrap(),
             DateTime::from_timestamp(row.updated_at, 0).unwrap(),
@@ -36,6 +39,7 @@ impl From<&MagicToken> for SqliteMagicToken {
             id: None,
             user_id: token.user_id.as_str().to_string(),
             token: token.token.clone(),
+            used_at: token.used_at.map(|dt| dt.timestamp()),
             expires_at: token.expires_at.timestamp(),
             created_at: token.created_at.timestamp(),
             updated_at: token.updated_at.timestamp(),
@@ -62,13 +66,30 @@ impl MagicLinkStorage for SqliteStorage {
     }
 
     async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error> {
-        let row: Option<SqliteMagicToken> =
-            sqlx::query_as("SELECT id, user_id, token, expires_at, created_at, updated_at FROM magic_links WHERE token = ?")
-                .bind(token)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(|e| StorageError::Database(e.to_string()))?;
+        let row: Option<SqliteMagicToken> = sqlx::query_as(
+            r#"
+            SELECT id, user_id, token, used_at, expires_at, created_at, updated_at 
+            FROM magic_links 
+            WHERE token = ? AND expires_at > ? AND used_at IS NULL
+            "#,
+        )
+        .bind(token)
+        .bind(Utc::now().timestamp())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| StorageError::Database(e.to_string()))?;
 
         Ok(row.map(|row| row.into()))
+    }
+
+    async fn set_magic_token_used(&self, token: &str) -> Result<(), Self::Error> {
+        sqlx::query("UPDATE magic_links SET used_at = ? WHERE token = ?")
+            .bind(Utc::now().timestamp())
+            .bind(token)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()))?;
+
+        Ok(())
     }
 }

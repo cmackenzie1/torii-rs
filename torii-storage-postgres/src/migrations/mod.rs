@@ -478,6 +478,7 @@ impl Migration<Postgres> for CreateMagicLinksTable {
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 user_id UUID NOT NULL,
                 token TEXT NOT NULL,
+                used_at TIMESTAMPTZ,
                 expires_at TIMESTAMPTZ NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -487,6 +488,10 @@ impl Migration<Postgres> for CreateMagicLinksTable {
         )
         .execute(&mut *conn)
         .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_magic_links_used_at ON magic_links(used_at)")
+            .execute(&mut *conn)
+            .await?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_magic_links_expires_at ON magic_links(expires_at)",

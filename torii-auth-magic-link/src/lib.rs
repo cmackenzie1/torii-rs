@@ -45,6 +45,9 @@ pub enum MagicLinkError {
     #[error("Token expired")]
     TokenExpired,
 
+    #[error("Token already used")]
+    TokenAlreadyUsed,
+
     #[error("Storage error: {0}")]
     StorageError(String),
 }
@@ -109,6 +112,7 @@ where
         let token = MagicToken::new(
             user.id,
             generate_secure_token(),
+            None,
             now + chrono::Duration::minutes(10),
             now,
             now,
@@ -133,6 +137,15 @@ where
         if token.expires_at < Utc::now() {
             return Err(MagicLinkError::TokenExpired);
         }
+
+        if token.used() {
+            return Err(MagicLinkError::TokenAlreadyUsed);
+        }
+
+        self.user_storage
+            .set_magic_token_used(&token.token)
+            .await
+            .map_err(|e| MagicLinkError::StorageError(e.to_string()))?;
 
         Ok(token)
     }
