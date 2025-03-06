@@ -1,4 +1,8 @@
-use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
+use sea_orm::{
+    DbErr, DeriveMigrationName,
+    prelude::*,
+    sea_query::{Index, Table},
+};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
     schema::{pk_uuid, string, string_null, timestamp, timestamp_null},
@@ -24,6 +28,17 @@ impl MigrationTrait for CreateUsers {
                     .col(timestamp_null(Users::EmailVerifiedAt))
                     .col(timestamp(Users::CreatedAt).default(Expr::current_timestamp()))
                     .col(timestamp(Users::UpdatedAt).default(Expr::current_timestamp()))
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Users::Table)
+                    .name("idx_users_email")
+                    .col(Users::Email)
+                    .unique()
                     .to_owned(),
             )
             .await?;

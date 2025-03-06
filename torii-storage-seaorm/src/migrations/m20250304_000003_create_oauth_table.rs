@@ -1,4 +1,8 @@
-use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
+use sea_orm::{
+    DbErr, DeriveMigrationName,
+    prelude::*,
+    sea_query::{Index, Table},
+};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
     schema::{pk_auto, string, timestamp},
@@ -28,6 +32,36 @@ impl MigrationTrait for CreateOAuthAccounts {
             .await?;
 
         manager
+            .create_index(
+                Index::create()
+                    .table(OauthAccounts::Table)
+                    .name("idx_oauth_accounts_user_id")
+                    .col(OauthAccounts::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(OauthAccounts::Table)
+                    .name("idx_oauth_accounts_provider")
+                    .col(OauthAccounts::Provider)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(OauthAccounts::Table)
+                    .name("idx_oauth_accounts_subject")
+                    .col(OauthAccounts::Subject)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
             .create_table(
                 Table::create()
                     .table(PkceVerifiers::Table)
@@ -42,7 +76,25 @@ impl MigrationTrait for CreateOAuthAccounts {
             )
             .await?;
 
-        // TODO: Add indexes
+        manager
+            .create_index(
+                Index::create()
+                    .table(PkceVerifiers::Table)
+                    .name("idx_pkce_verifiers_csrf_state")
+                    .col(PkceVerifiers::CsrfState)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(PkceVerifiers::Table)
+                    .name("idx_pkce_verifiers_expires_at")
+                    .col(PkceVerifiers::ExpiresAt)
+                    .to_owned(),
+            )
+            .await?;
 
         Ok(())
     }

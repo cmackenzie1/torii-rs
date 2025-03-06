@@ -43,14 +43,13 @@ impl SeaORMStorage {
     }
 
     pub async fn connect(url: &str) -> Result<Self, SeaORMStorageError> {
-        let pool = Database::connect(url)
-            .await
-            .map_err(|e| SeaORMStorageError::Database(e))?;
+        let pool = Database::connect(url).await?;
+
         Ok(Self::new(pool))
     }
 
     pub async fn migrate(&self) -> Result<(), SeaORMStorageError> {
-        let _ = Migrator::up(&self.pool, None).await.unwrap();
+        Migrator::up(&self.pool, None).await.unwrap();
 
         Ok(())
     }
