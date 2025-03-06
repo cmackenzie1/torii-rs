@@ -118,12 +118,14 @@ impl From<OAuthAccount> for PostgresOAuthAccount {
 
 #[async_trait]
 impl OAuthStorage for PostgresStorage {
+    type Error = StorageError;
+
     async fn create_oauth_account(
         &self,
         provider: &str,
         subject: &str,
         user_id: &UserId,
-    ) -> Result<OAuthAccount, Self::Error> {
+    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error> {
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
             .bind(user_id.as_str())
             .bind(provider)
@@ -160,7 +162,7 @@ impl OAuthStorage for PostgresStorage {
         csrf_state: &str,
         pkce_verifier: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), <Self as OAuthStorage>::Error> {
         sqlx::query(
             "INSERT INTO oauth_state (csrf_state, pkce_verifier, expires_at) VALUES ($1::text, $2, $3) RETURNING value",
         )
@@ -177,7 +179,10 @@ impl OAuthStorage for PostgresStorage {
         Ok(())
     }
 
-    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error> {
+    async fn get_pkce_verifier(
+        &self,
+        csrf_state: &str,
+    ) -> Result<Option<String>, <Self as OAuthStorage>::Error> {
         let pkce_verifier =
             sqlx::query_scalar("SELECT pkce_verifier FROM oauth_state WHERE csrf_state = $1")
                 .bind(csrf_state)
@@ -195,7 +200,7 @@ impl OAuthStorage for PostgresStorage {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OAuthAccount>, Self::Error> {
+    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
         let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
             SELECT user_id::text, provider, subject, created_at, updated_at
@@ -223,7 +228,7 @@ impl OAuthStorage for PostgresStorage {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<User>, Self::Error> {
+    ) -> Result<Option<User>, <Self as OAuthStorage>::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             SELECT id::text, email, name, email_verified_at, created_at, updated_at
@@ -252,7 +257,7 @@ impl OAuthStorage for PostgresStorage {
         user_id: &UserId,
         provider: &str,
         subject: &str,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), <Self as OAuthStorage>::Error> {
         sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
             .bind(user_id.as_str())
             .bind(provider)

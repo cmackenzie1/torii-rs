@@ -71,27 +71,28 @@ pub trait PasswordStorage: UserStorage {
 /// OAuth account management and PKCE verifier storage.
 #[async_trait]
 pub trait OAuthStorage: UserStorage {
+    type Error: std::error::Error + Send + Sync + 'static;
     /// Create a new OAuth account linked to a user
     async fn create_oauth_account(
         &self,
         provider: &str,
         subject: &str,
         user_id: &UserId,
-    ) -> Result<OAuthAccount, Self::Error>;
+    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error>;
 
     /// Find a user by their OAuth provider and subject
     async fn get_user_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<User>, Self::Error>;
+    ) -> Result<Option<User>, <Self as OAuthStorage>::Error>;
 
     /// Find an OAuth account by provider and subject
     async fn get_oauth_account_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OAuthAccount>, Self::Error>;
+    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error>;
 
     /// Link an existing user to an OAuth account
     async fn link_oauth_account(
@@ -99,7 +100,7 @@ pub trait OAuthStorage: UserStorage {
         user_id: &UserId,
         provider: &str,
         subject: &str,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), <Self as OAuthStorage>::Error>;
 
     /// Store a PKCE verifier with an expiration time
     async fn store_pkce_verifier(
@@ -107,10 +108,13 @@ pub trait OAuthStorage: UserStorage {
         csrf_state: &str,
         pkce_verifier: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), <Self as OAuthStorage>::Error>;
 
     /// Retrieve a stored PKCE verifier by CSRF state
-    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Self::Error>;
+    async fn get_pkce_verifier(
+        &self,
+        csrf_state: &str,
+    ) -> Result<Option<String>, <Self as OAuthStorage>::Error>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
