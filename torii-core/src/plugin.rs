@@ -236,8 +236,8 @@ mod tests {
     impl SessionStorage for TestStorage {
         type Error = Error;
 
-        async fn get_session(&self, id: &SessionId) -> Result<Session, Self::Error> {
-            Ok(self.sessions.get(id).unwrap().clone())
+        async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+            Ok(self.sessions.get(id).map(|s| s.clone()))
         }
 
         async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {

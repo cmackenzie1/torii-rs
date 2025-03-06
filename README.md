@@ -5,8 +5,6 @@
 [![docs.rs](https://img.shields.io/docsrs/torii)](https://docs.rs/torii/latest/torii/)
 [![Crates.io Version](https://img.shields.io/crates/v/torii)](https://crates.io/crates/torii)
 
-![Torii Logo](./assets/splash.jpeg)
-
 > [!WARNING]
 > This project is in early development and is not production-ready. The API is subject to change without notice.
 

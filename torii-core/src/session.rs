@@ -224,12 +224,15 @@ impl<S: SessionStorage> SessionManager for DefaultSessionManager<S> {
             .await
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
-        if session.is_expired() {
-            self.delete_session(id).await?;
-            return Err(Error::Session(SessionError::Expired));
+        if let Some(session) = session {
+            if session.is_expired() {
+                self.delete_session(id).await?;
+                return Err(Error::Session(SessionError::Expired));
+            }
+            Ok(session)
+        } else {
+            Err(Error::Session(SessionError::NotFound))
         }
-
-        Ok(session)
     }
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Error> {
