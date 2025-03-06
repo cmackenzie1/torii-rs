@@ -48,7 +48,12 @@ impl From<&MagicToken> for PostgresMagicToken {
 
 #[async_trait]
 impl MagicLinkStorage for PostgresStorage {
-    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Self::Error> {
+    type Error = StorageError;
+
+    async fn save_magic_token(
+        &self,
+        token: &MagicToken,
+    ) -> Result<(), <Self as MagicLinkStorage>::Error> {
         let row = PostgresMagicToken::from(token);
 
         sqlx::query("INSERT INTO magic_links (user_id, token, expires_at, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
@@ -64,10 +69,15 @@ impl MagicLinkStorage for PostgresStorage {
         Ok(())
     }
 
-    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error> {
+    async fn get_magic_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error> {
         let row: Option<PostgresMagicToken> =
-            sqlx::query_as("SELECT id::text, user_id::text, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL")
-                .bind(token)
+            sqlx::query_as(
+                "SELECT id::text, user_id::text, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL",
+            )
+            .bind(token)
                 .bind(Utc::now())
                 .fetch_optional(&self.pool)
                 .await
@@ -76,7 +86,10 @@ impl MagicLinkStorage for PostgresStorage {
         Ok(row.map(|row| row.into()))
     }
 
-    async fn set_magic_token_used(&self, token: &str) -> Result<(), Self::Error> {
+    async fn set_magic_token_used(
+        &self,
+        token: &str,
+    ) -> Result<(), <Self as MagicLinkStorage>::Error> {
         sqlx::query("UPDATE magic_links SET used_at = $1 WHERE token = $2")
             .bind(Utc::now())
             .bind(token)

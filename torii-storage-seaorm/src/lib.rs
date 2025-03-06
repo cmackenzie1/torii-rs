@@ -1,4 +1,5 @@
 mod entities;
+mod magic_link;
 mod migrations;
 mod oauth;
 mod passkey;

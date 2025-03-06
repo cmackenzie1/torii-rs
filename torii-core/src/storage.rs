@@ -278,7 +278,18 @@ impl PartialEq for MagicToken {
 
 #[async_trait]
 pub trait MagicLinkStorage: UserStorage {
-    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Self::Error>;
-    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Self::Error>;
-    async fn set_magic_token_used(&self, token: &str) -> Result<(), Self::Error>;
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    async fn save_magic_token(
+        &self,
+        token: &MagicToken,
+    ) -> Result<(), <Self as MagicLinkStorage>::Error>;
+    async fn get_magic_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error>;
+    async fn set_magic_token_used(
+        &self,
+        token: &str,
+    ) -> Result<(), <Self as MagicLinkStorage>::Error>;
 }

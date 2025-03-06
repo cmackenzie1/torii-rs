@@ -1,3 +1,4 @@
+pub(crate) mod magic_link;
 pub(crate) mod oauth;
 pub(crate) mod passkey;
 pub(crate) mod passkey_challenge;
