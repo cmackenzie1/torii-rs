@@ -1,4 +1,8 @@
-use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
+use sea_orm::{
+    DbErr, DeriveMigrationName,
+    prelude::*,
+    sea_query::{Index, Table},
+};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
     schema::{pk_auto, string, timestamp, timestamp_null},
@@ -28,7 +32,35 @@ impl MigrationTrait for CreateMagicLinks {
             )
             .await?;
 
-        // TODO: Add indexes
+        manager
+            .create_index(
+                Index::create()
+                    .table(MagicLinks::Table)
+                    .name("idx_magic_links_user_id")
+                    .col(MagicLinks::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(MagicLinks::Table)
+                    .name("idx_magic_links_token")
+                    .col(MagicLinks::Token)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(MagicLinks::Table)
+                    .name("idx_magic_links_expires_at")
+                    .col(MagicLinks::ExpiresAt)
+                    .to_owned(),
+            )
+            .await?;
 
         Ok(())
     }

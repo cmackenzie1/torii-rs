@@ -1,4 +1,8 @@
-use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
+use sea_orm::{
+    DbErr, DeriveMigrationName,
+    prelude::*,
+    sea_query::{Index, Table},
+};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
     schema::{pk_auto, string, timestamp},
@@ -36,6 +40,26 @@ impl MigrationTrait for CreatePasskeys {
             .await?;
 
         manager
+            .create_index(
+                Index::create()
+                    .table(Passkeys::Table)
+                    .name("idx_passkeys_user_id")
+                    .col(Passkeys::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Passkeys::Table)
+                    .name("idx_passkeys_credential_id")
+                    .col(Passkeys::CredentialId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
             .create_table(
                 Table::create()
                     .table(PasskeyChallenges::Table)
@@ -50,7 +74,25 @@ impl MigrationTrait for CreatePasskeys {
             )
             .await?;
 
-        // TODO: Add indexes
+        manager
+            .create_index(
+                Index::create()
+                    .table(PasskeyChallenges::Table)
+                    .name("idx_passkey_challenges_challenge_id")
+                    .col(PasskeyChallenges::ChallengeId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(PasskeyChallenges::Table)
+                    .name("idx_passkey_challenges_expires_at")
+                    .col(PasskeyChallenges::ExpiresAt)
+                    .to_owned(),
+            )
+            .await?;
 
         Ok(())
     }

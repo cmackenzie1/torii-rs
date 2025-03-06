@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::ActiveValue::Set;
-use sea_orm::prelude::Uuid;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use torii_core::{UserId, storage::PasskeyStorage};
 

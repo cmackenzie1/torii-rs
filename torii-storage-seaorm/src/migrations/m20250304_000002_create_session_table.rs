@@ -1,4 +1,8 @@
-use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
+use sea_orm::{
+    DbErr, DeriveMigrationName,
+    prelude::*,
+    sea_query::{Index, Table},
+};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
     schema::{pk_auto, string, string_null, timestamp},
@@ -28,6 +32,58 @@ impl MigrationTrait for CreateSessions {
                     .to_owned(),
             )
             .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Sessions::Table)
+                    .name("idx_sessions_token")
+                    .col(Sessions::Token)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Sessions::Table)
+                    .name("idx_sessions_user_id")
+                    .col(Sessions::UserId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Sessions::Table)
+                    .name("idx_sessions_expires_at")
+                    .col(Sessions::ExpiresAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Sessions::Table)
+                    .name("idx_sessions_created_at")
+                    .col(Sessions::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .table(Sessions::Table)
+                    .name("idx_sessions_updated_at")
+                    .col(Sessions::UpdatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 }
