@@ -1,6 +1,7 @@
 mod entities;
 mod migrations;
 mod oauth;
+mod passkey;
 mod password;
 mod session;
 mod user;
