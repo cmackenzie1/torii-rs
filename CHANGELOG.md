@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+Added a new crate, `torii-storage-seaorm`, which is a storage backend for the torii authentication ecosystem that uses SeaORM to target SQLite, Postgres, and MySQL.
+
 ### Changed
 
 #### `torii-core`
@@ -35,6 +39,8 @@ A new plugin for generating and verifying magic links has been added.
 
 - `Storage<U,S>` struct has been removed. Use `Arc<U>` and `Arc<S>` directly instead.
 - `AsRef<UserId> and AsRef<SessionId>` have been removed. Use `as_str()` instead when needing a database serializable string.
+
+---
 
 ## [0.2.0] - 2025-02-27
 

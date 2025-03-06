@@ -8,12 +8,17 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.2.2" }
+# auth plugins
 torii-auth-password = { path = "../torii-auth-password", version = "0.2.2", optional = true }
 torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.2.2", optional = true }
 torii-auth-passkey = { path = "../torii-auth-passkey", version = "0.2.2", optional = true }
+torii-auth-magic-link = { path = "../torii-auth-magic-link", version = "0.2.2", optional = true }
+# storage backends
 torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2.2", optional = true }
 torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.2.2", optional = true }
+torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.2.2", optional = true }
 
+# dependencies
 chrono.workspace = true # TODO: Make this optional and expose std::time::Duration in APIs
 tracing.workspace = true
 thiserror.workspace = true
@@ -25,11 +30,20 @@ tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }
 
 [features]
-default = ["password", "sqlite"]
+default = ["password", "seaorm-sqlite"]
+
 # storage backends
 sqlite = ["dep:torii-storage-sqlite"]
 postgres = ["dep:torii-storage-postgres"]
+
+# seaorm storage backends
+seaorm-sqlite = ["dep:torii-storage-seaorm", "torii-storage-seaorm/sqlite"]
+seaorm-postgres = ["dep:torii-storage-seaorm", "torii-storage-seaorm/postgres"]
+seaorm-mysql = ["dep:torii-storage-seaorm", "torii-storage-seaorm/mysql"]
+seaorm = ["dep:torii-storage-seaorm", "torii-storage-seaorm/sqlite", "torii-storage-seaorm/postgres", "torii-storage-seaorm/mysql"]
+
 # auth plugins
 password = ["dep:torii-auth-password"]
 oauth = ["dep:torii-auth-oauth"]
 passkey = ["dep:torii-auth-passkey"]
+magic-link = ["dep:torii-auth-magic-link"]

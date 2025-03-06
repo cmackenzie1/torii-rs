@@ -51,10 +51,11 @@
 use std::sync::Arc;
 
 use chrono::Duration;
+use torii_auth_magic_link::MagicLinkPlugin;
 use torii_core::{
     PluginManager, SessionStorage,
     session::{DefaultSessionManager, SessionManager},
-    storage::{OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
+    storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
 };
 
 /// Re-export core types
@@ -493,5 +494,86 @@ where
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
         Ok((user, session))
+    }
+}
+
+#[cfg(feature = "magic-link")]
+impl<U, S> Torii<U, S>
+where
+    U: MagicLinkStorage + Clone,
+    S: SessionStorage + Clone,
+{
+    /// Add a magic link plugin to the Torii instance
+    ///
+    /// # Returns
+    ///
+    /// Returns the updated Torii instance with the magic link plugin registered
+    pub fn with_magic_link_plugin(mut self) -> Self {
+        let plugin = MagicLinkPlugin::new(self.user_storage.clone());
+        self.manager.register_plugin(plugin);
+        self
+    }
+
+    /// Send a magic link to a user
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email of the user to send the magic link to
+    /// * `redirect_uri`: The redirect URI to send the magic link to
+    ///
+    /// # Returns
+    ///
+    /// Returns the user and session if the magic link is sent successfully
+    pub async fn generate_magic_token(&self, email: &str) -> Result<(), ToriiError> {
+        let magic_link_plugin = self
+            .manager
+            .get_plugin::<MagicLinkPlugin<U>>("magic-link")
+            .ok_or(ToriiError::PluginNotFound("magic-link".to_string()))?;
+
+        magic_link_plugin
+            .generate_magic_token(email)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Verify a magic link
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The token to verify
+    ///
+    /// # Returns
+    ///
+    /// Returns the user and session if the magic link is verified successfully
+    pub async fn verify_magic_token(&self, token: &str) -> Result<(User, Session), ToriiError> {
+        let magic_link_plugin = self
+            .manager
+            .get_plugin::<MagicLinkPlugin<U>>("magic-link")
+            .ok_or(ToriiError::PluginNotFound("magic-link".to_string()))?;
+
+        let user = magic_link_plugin
+            .verify_magic_token(token)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        let user = self
+            .user_storage
+            .get_user(&user.user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+        if let Some(user) = user {
+            let session = self
+                .session_manager
+                .create_session(&user.id, None, None, Duration::days(30))
+                .await
+                .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+            Ok((user, session))
+        } else {
+            Err(ToriiError::AuthError("User not found".to_string()))
+        }
     }
 }
