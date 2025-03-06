@@ -193,22 +193,27 @@ impl NewUserBuilder {
 /// storing and retrieving passkey credentials for a user.
 #[async_trait]
 pub trait PasskeyStorage: UserStorage {
+    type Error: std::error::Error + Send + Sync + 'static;
+
     /// Add a passkey credential for a user
     async fn add_passkey(
         &self,
         user_id: &UserId,
         credential_id: &str,
         passkey_json: &str,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), <Self as PasskeyStorage>::Error>;
 
     /// Get a passkey by credential ID
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &str,
-    ) -> Result<Option<String>, Self::Error>;
+    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error>;
 
     /// Get all passkeys for a user
-    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, Self::Error>;
+    async fn get_passkeys(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<String>, <Self as PasskeyStorage>::Error>;
 
     /// Set a passkey challenge for a user
     async fn set_passkey_challenge(
@@ -216,13 +221,13 @@ pub trait PasskeyStorage: UserStorage {
         challenge_id: &str,
         challenge: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), <Self as PasskeyStorage>::Error>;
 
     /// Get a passkey challenge
     async fn get_passkey_challenge(
         &self,
         challenge_id: &str,
-    ) -> Result<Option<String>, Self::Error>;
+    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error>;
 }
 
 #[derive(Debug, Clone)]

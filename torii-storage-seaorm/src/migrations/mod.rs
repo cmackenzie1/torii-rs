@@ -11,6 +11,7 @@ use sea_orm_migration::{MigrationTrait, MigratorTrait};
 mod m20250304_000001_create_user_table;
 mod m20250304_000002_create_session_table;
 mod m20250304_000003_create_oauth_table;
+mod m20250304_000004_create_passkeys_table;
 
 #[allow(dead_code)]
 pub struct Migrator;
@@ -73,6 +74,28 @@ pub enum PkceVerifiers {
     Id,
     CsrfState,
     Verifier,
+    ExpiresAt,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum Passkeys {
+    Table,
+    Id,
+    UserId,
+    CredentialId,
+    DataJson,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum PasskeyChallenges {
+    Table,
+    Id,
+    ChallengeId,
+    Challenge,
     ExpiresAt,
     CreatedAt,
     UpdatedAt,
