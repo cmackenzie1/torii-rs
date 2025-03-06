@@ -50,11 +50,19 @@ pub trait SessionStorage: Send + Sync + 'static {
 /// storing and retrieving password hashes.
 #[async_trait]
 pub trait PasswordStorage: UserStorage {
+    type Error: std::error::Error + Send + Sync + 'static;
     /// Store a password hash for a user
-    async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Self::Error>;
+    async fn set_password_hash(
+        &self,
+        user_id: &UserId,
+        hash: &str,
+    ) -> Result<(), <Self as PasswordStorage>::Error>;
 
     /// Retrieve a user's password hash
-    async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Self::Error>;
+    async fn get_password_hash(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<String>, <Self as PasswordStorage>::Error>;
 }
 
 /// Storage methods specific to OAuth authentication

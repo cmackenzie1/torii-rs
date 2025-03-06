@@ -25,7 +25,10 @@ impl From<session::Model> for Session {
 impl SessionStorage for SeaORMStorage {
     type Error = sea_orm::DbErr;
 
-    async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
+    async fn create_session(
+        &self,
+        session: &Session,
+    ) -> Result<Session, <Self as SessionStorage>::Error> {
         let s = session::ActiveModel {
             // TODO: The id should be set by the database (or in ActiveModelBehavior)
             id: Set(session.id.as_str().to_owned()),
@@ -42,15 +45,19 @@ impl SessionStorage for SeaORMStorage {
         Ok(result.into())
     }
 
-    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+    async fn get_session(
+        &self,
+        id: &SessionId,
+    ) -> Result<Option<Session>, <Self as SessionStorage>::Error> {
         let session = session::Entity::find_by_id(id.as_str())
             .one(&self.pool)
-            .await?;
+            .await?
+            .map(|s| s.into());
 
-        Ok(session.map(|s| s.into()))
+        Ok(session)
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
+    async fn delete_session(&self, id: &SessionId) -> Result<(), <Self as SessionStorage>::Error> {
         session::Entity::delete_by_id(id.as_str())
             .exec(&self.pool)
             .await?;
@@ -58,7 +65,7 @@ impl SessionStorage for SeaORMStorage {
         Ok(())
     }
 
-    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
+    async fn cleanup_expired_sessions(&self) -> Result<(), <Self as SessionStorage>::Error> {
         session::Entity::delete_many()
             .filter(session::Column::ExpiresAt.lt(Utc::now()))
             .exec(&self.pool)
@@ -67,7 +74,10 @@ impl SessionStorage for SeaORMStorage {
         Ok(())
     }
 
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+    async fn delete_sessions_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<(), <Self as SessionStorage>::Error> {
         session::Entity::delete_many()
             .filter(session::Column::UserId.eq(user_id.as_str()))
             .exec(&self.pool)

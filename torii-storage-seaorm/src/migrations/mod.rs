@@ -31,6 +31,7 @@ pub enum Users {
     Id,
     Email,
     Name,
+    PasswordHash,
     EmailVerifiedAt,
     CreatedAt,
     UpdatedAt,
