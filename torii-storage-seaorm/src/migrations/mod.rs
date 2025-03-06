@@ -12,6 +12,7 @@ mod m20250304_000001_create_user_table;
 mod m20250304_000002_create_session_table;
 mod m20250304_000003_create_oauth_table;
 mod m20250304_000004_create_passkeys_table;
+mod m20250304_000005_create_magic_links;
 
 #[allow(dead_code)]
 pub struct Migrator;
@@ -96,6 +97,18 @@ pub enum PasskeyChallenges {
     Id,
     ChallengeId,
     Challenge,
+    ExpiresAt,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum MagicLinks {
+    Table,
+    Id,
+    UserId,
+    Token,
+    UsedAt,
     ExpiresAt,
     CreatedAt,
     UpdatedAt,
