@@ -74,7 +74,7 @@ impl SessionStorage for SqliteStorage {
         Ok(session.into())
     }
 
-    async fn get_session(&self, id: &SessionId) -> Result<Session, Self::Error> {
+    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
         let session = sqlx::query_as::<_, SqliteSession>(
             r#"
             SELECT id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
@@ -90,7 +90,7 @@ impl SessionStorage for SqliteStorage {
             StorageError::Database("Failed to get session".to_string())
         })?;
 
-        Ok(session.into())
+        Ok(Some(session.into()))
     }
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
@@ -179,7 +179,7 @@ pub(crate) mod test {
             .get_session(&SessionId::new("1"))
             .await
             .expect("Failed to get session");
-        assert_eq!(fetched.user_id, UserId::new("1"));
+        assert_eq!(fetched.unwrap().user_id, UserId::new("1"));
 
         storage
             .delete_session(&SessionId::new("1"))
@@ -233,7 +233,7 @@ pub(crate) mod test {
             .get_session(&SessionId::new("valid"))
             .await
             .expect("Failed to get valid session");
-        assert_eq!(valid_session.user_id, UserId::new("1"));
+        assert_eq!(valid_session.unwrap().user_id, UserId::new("1"));
     }
 
     #[tokio::test]
@@ -280,6 +280,6 @@ pub(crate) mod test {
             .get_session(&SessionId::new("session3"))
             .await
             .expect("Failed to get session 3");
-        assert_eq!(session3.user_id, UserId::new("2"));
+        assert_eq!(session3.unwrap().user_id, UserId::new("2"));
     }
 }

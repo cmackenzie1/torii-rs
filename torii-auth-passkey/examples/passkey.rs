@@ -128,7 +128,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
         let user = state
             .plugin_manager
             .user_storage()
-            .get_user(&session.user_id)
+            .get_user(&session.unwrap().user_id)
             .await
             .unwrap();
         return Json(user).into_response();

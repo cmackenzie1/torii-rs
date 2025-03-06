@@ -5,6 +5,7 @@ members = [
     "torii-migration",
     "torii-storage-sqlite",
     "torii-storage-postgres",
+    "torii-storage-seaorm",
     "torii-auth-password",
     "torii-auth-oauth",
     "torii-auth-passkey",
