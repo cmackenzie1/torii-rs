@@ -1,0 +1,28 @@
+[package]
+name = "torii-storage-seaorm"
+description = "SeaORM storage plugin for Torii"
+version = "0.2.3"
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+torii-core = { path = "../torii-core", version = "0.2" }
+
+async-trait.workspace = true
+chrono.workspace = true
+sea-orm = { version = "1.1", features = [
+    "runtime-tokio-rustls",
+    "macros",
+    "with-chrono",
+    "with-uuid",
+] }
+sea-orm-migration = { version = "1.1", features = ["runtime-tokio-rustls"] }
+
+[dev-dependencies]
+tokio.workspace = true
+[features]
+default = ["sqlite"]
+sqlite = ["sea-orm/sqlx-sqlite", "sea-orm-migration/sqlx-sqlite"]
+postgres = ["sea-orm/sqlx-postgres", "sea-orm-migration/sqlx-postgres"]
+mysql = ["sea-orm/sqlx-mysql", "sea-orm-migration/sqlx-mysql"]
