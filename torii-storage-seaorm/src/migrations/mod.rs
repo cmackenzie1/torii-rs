@@ -1,6 +1,7 @@
 use m20250304_000001_create_user_table::CreateUsers;
 use m20250304_000002_create_session_table::CreateSessions;
 
+use m20250304_000003_create_oauth_table::CreateOAuthAccounts;
 use sea_orm::{
     DeriveIden,
     sea_query::{Alias, IntoIden},
@@ -9,6 +10,7 @@ use sea_orm_migration::{MigrationTrait, MigratorTrait};
 
 mod m20250304_000001_create_user_table;
 mod m20250304_000002_create_session_table;
+mod m20250304_000003_create_oauth_table;
 
 #[allow(dead_code)]
 pub struct Migrator;
@@ -21,7 +23,11 @@ impl MigratorTrait for Migrator {
     }
 
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![Box::new(CreateUsers), Box::new(CreateSessions)]
+        vec![
+            Box::new(CreateUsers),
+            Box::new(CreateSessions),
+            Box::new(CreateOAuthAccounts),
+        ]
     }
 }
 
@@ -45,6 +51,28 @@ pub enum Sessions {
     Token,
     IpAddress,
     UserAgent,
+    ExpiresAt,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum OauthAccounts {
+    Table,
+    Id,
+    UserId,
+    Provider,
+    Subject,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+pub enum PkceVerifiers {
+    Table,
+    Id,
+    CsrfState,
+    Verifier,
     ExpiresAt,
     CreatedAt,
     UpdatedAt,
