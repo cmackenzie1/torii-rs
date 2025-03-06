@@ -1,10 +1,19 @@
 mod entities;
 mod migrations;
+mod password;
 mod session;
 mod user;
 
 use sea_orm::DatabaseConnection;
 use sea_orm_migration::prelude::*;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SeaORMStorageError {
+    #[error(transparent)]
+    Database(#[from] sea_orm::DbErr),
+    #[error("User not found")]
+    UserNotFound,
+}
 
 pub struct SeaORMStorage {
     pool: DatabaseConnection,

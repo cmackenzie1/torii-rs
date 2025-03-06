@@ -1,7 +1,7 @@
 use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
-    schema::{pk_uuid, string, timestamp},
+    schema::{pk_uuid, string, string_null, timestamp, timestamp_null},
 };
 
 use super::Users;
@@ -19,8 +19,9 @@ impl MigrationTrait for CreateUsers {
                     .if_not_exists()
                     .col(pk_uuid(Users::Id).not_null())
                     .col(string(Users::Email).not_null())
-                    .col(string(Users::Name).not_null())
-                    .col(timestamp(Users::EmailVerifiedAt).timestamp())
+                    .col(string_null(Users::Name)) // Nullable since users may not have a name yet...
+                    .col(string_null(Users::PasswordHash)) // Nullable since users may not have a password (i.e. OAuth, Passkey, Magic Link)
+                    .col(timestamp_null(Users::EmailVerifiedAt))
                     .col(
                         timestamp(Users::CreatedAt)
                             .not_null()
