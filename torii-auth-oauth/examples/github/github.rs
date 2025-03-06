@@ -79,7 +79,7 @@ async fn callback_handler(
 
     // Set session cookie
     let jar = jar.add(
-        Cookie::build(("session_id", session.id.to_string()))
+        Cookie::build(("session_id", session.token.to_string()))
             .path("/")
             .http_only(true),
     );

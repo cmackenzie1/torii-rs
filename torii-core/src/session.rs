@@ -73,7 +73,7 @@ impl std::fmt::Display for SessionId {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     /// The unique identifier for the session.
-    pub id: SessionId,
+    pub token: SessionId,
 
     /// The unique identifier for the user.
     pub user_id: UserId,
@@ -154,7 +154,7 @@ impl SessionBuilder {
     pub fn build(self) -> Result<Session, Error> {
         let now = Utc::now();
         Ok(Session {
-            id: self.id.unwrap_or(SessionId::new_random()),
+            token: self.id.unwrap_or(SessionId::new_random()),
             user_id: self.user_id.ok_or(ValidationError::MissingField(
                 "User ID is required".to_string(),
             ))?,
@@ -285,6 +285,6 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(session.id.to_string(), session.id.0.to_string());
+        assert_eq!(session.token.to_string(), session.token.0.to_string());
     }
 }

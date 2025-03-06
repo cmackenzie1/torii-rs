@@ -20,12 +20,10 @@ impl PasskeyStorage for SeaORMStorage {
         passkey_json: &str,
     ) -> Result<(), <Self as PasskeyStorage>::Error> {
         let passkey = passkey::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user_id.to_string()),
             credential_id: Set(credential_id.to_string()),
             data_json: Set(passkey_json.to_string()),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            ..Default::default()
         };
 
         passkey.insert(&self.pool).await?;
@@ -64,12 +62,10 @@ impl PasskeyStorage for SeaORMStorage {
         expires_in: chrono::Duration,
     ) -> Result<(), <Self as PasskeyStorage>::Error> {
         let passkey_challenge = passkey_challenge::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
             challenge_id: Set(challenge_id.to_string()),
             challenge: Set(challenge.to_string()),
             expires_at: Set(Utc::now() + expires_in),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            ..Default::default()
         };
 
         passkey_challenge.insert(&self.pool).await?;

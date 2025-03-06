@@ -18,7 +18,7 @@
 //! Torii currently supports the following storage backends:
 //! - SQLite
 //! - PostgreSQL
-//! - MySQL (In Development)
+//! - MySQL
 //!
 //! ## Warning
 //!
@@ -51,7 +51,6 @@
 use std::sync::Arc;
 
 use chrono::Duration;
-use torii_auth_magic_link::MagicLinkPlugin;
 use torii_core::{
     PluginManager, SessionStorage,
     session::{DefaultSessionManager, SessionManager},
@@ -74,12 +73,23 @@ pub use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
 #[cfg(feature = "passkey")]
 pub use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
 
+#[cfg(feature = "magic-link")]
+pub use torii_auth_magic_link::MagicLinkPlugin;
+
 // Re-export storage backends
 #[cfg(feature = "sqlite")]
 pub use torii_storage_sqlite::SqliteStorage;
 
 #[cfg(feature = "postgres")]
 pub use torii_storage_postgres::PostgresStorage;
+
+#[cfg(any(
+    feature = "seaorm-sqlite",
+    feature = "seaorm-postgres",
+    feature = "seaorm-mysql",
+    feature = "seaorm"
+))]
+pub use torii_storage_seaorm::SeaORMStorage;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ToriiError {

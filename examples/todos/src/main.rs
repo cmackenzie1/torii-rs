@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use std::sync::Arc;
-use torii::{SqliteStorage, Torii};
+use torii::{SeaORMStorage, Torii};
 
 mod routes;
 mod templates;
@@ -10,7 +10,7 @@ mod templates;
 /// - plugin_manager: Coordinates authentication plugins
 #[derive(Clone)]
 pub(crate) struct AppState {
-    torii: Arc<Torii<SqliteStorage, SqliteStorage>>,
+    torii: Arc<Torii<SeaORMStorage, SeaORMStorage>>,
     todos: Arc<DashMap<String, Todo>>,
 }
 
@@ -27,12 +27,12 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let user_storage = Arc::new(
-        SqliteStorage::connect("sqlite://todos.db?mode=rwc")
+        SeaORMStorage::connect("sqlite://todos.db?mode=rwc")
             .await
             .expect("Failed to connect to database"),
     );
     let session_storage = Arc::new(
-        SqliteStorage::connect("sqlite://todos.db?mode=rwc")
+        SeaORMStorage::connect("sqlite://todos.db?mode=rwc")
             .await
             .expect("Failed to connect to database"),
     );

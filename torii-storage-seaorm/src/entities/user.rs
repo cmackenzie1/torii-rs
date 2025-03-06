@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sea_orm::entity::prelude::*;
+use sea_orm::{ActiveValue::Set, entity::prelude::*};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "users")]
@@ -17,4 +17,11 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
+impl ActiveModelBehavior for ActiveModel {
+    fn new() -> Self {
+        Self {
+            id: Set(Uuid::new_v4().to_string()),
+            ..ActiveModelTrait::default()
+        }
+    }
+}

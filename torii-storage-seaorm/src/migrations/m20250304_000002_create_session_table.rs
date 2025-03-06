@@ -1,7 +1,7 @@
 use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
-    schema::{pk_uuid, string, timestamp},
+    schema::{pk_auto, string, string_null, timestamp},
 };
 
 use super::Sessions;
@@ -17,22 +17,14 @@ impl MigrationTrait for CreateSessions {
                 Table::create()
                     .table(Sessions::Table)
                     .if_not_exists()
-                    .col(pk_uuid(Sessions::Id).not_null())
-                    .col(string(Sessions::UserId).not_null())
-                    .col(string(Sessions::Token).not_null())
-                    .col(string(Sessions::IpAddress))
-                    .col(string(Sessions::UserAgent))
-                    .col(timestamp(Sessions::ExpiresAt).timestamp())
-                    .col(
-                        timestamp(Sessions::CreatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(Sessions::UpdatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(pk_auto(Sessions::Id))
+                    .col(string(Sessions::UserId))
+                    .col(string(Sessions::Token))
+                    .col(string_null(Sessions::IpAddress))
+                    .col(string_null(Sessions::UserAgent))
+                    .col(timestamp(Sessions::ExpiresAt))
+                    .col(timestamp(Sessions::CreatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp(Sessions::UpdatedAt).default(Expr::current_timestamp()))
                     .to_owned(),
             )
             .await?;

@@ -14,6 +14,7 @@ use axum_extra::extract::{
 use serde::Deserialize;
 use serde_json::json;
 use torii::{SessionId, User};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
@@ -158,6 +159,8 @@ async fn sign_up_form_handler(
         .register_user_with_password(&params.email, &params.password)
         .await;
 
+    info!("User registered: {:?}", user);
+
     match user {
         Ok(_) => (
             StatusCode::OK,
@@ -189,7 +192,7 @@ async fn sign_in_form_handler(
         .await
         .unwrap();
 
-    let cookie = Cookie::build(("session_id", session.id.to_string()))
+    let cookie = Cookie::build(("session_id", session.token.to_string()))
         .path("/")
         .http_only(true)
         .secure(false) // TODO: Set to true in production

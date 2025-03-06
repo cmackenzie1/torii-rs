@@ -1,7 +1,7 @@
 use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
-    schema::{pk_uuid, string, timestamp},
+    schema::{pk_auto, string, timestamp},
 };
 
 use super::{PasskeyChallenges, Passkeys};
@@ -17,7 +17,7 @@ impl MigrationTrait for CreatePasskeys {
                 Table::create()
                     .table(Passkeys::Table)
                     .if_not_exists()
-                    .col(pk_uuid(Passkeys::Id).not_null())
+                    .col(pk_auto(Passkeys::Id))
                     .col(string(Passkeys::UserId).not_null())
                     .col(string(Passkeys::CredentialId).not_null())
                     .col(string(Passkeys::DataJson).not_null())
@@ -40,24 +40,12 @@ impl MigrationTrait for CreatePasskeys {
                 Table::create()
                     .table(PasskeyChallenges::Table)
                     .if_not_exists()
-                    .col(pk_uuid(PasskeyChallenges::Id).not_null())
-                    .col(string(PasskeyChallenges::ChallengeId).not_null())
-                    .col(string(PasskeyChallenges::Challenge).not_null())
-                    .col(
-                        timestamp(PasskeyChallenges::ExpiresAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(PasskeyChallenges::CreatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(PasskeyChallenges::UpdatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(pk_auto(PasskeyChallenges::Id))
+                    .col(string(PasskeyChallenges::ChallengeId))
+                    .col(string(PasskeyChallenges::Challenge))
+                    .col(timestamp(PasskeyChallenges::ExpiresAt).default(Expr::current_timestamp()))
+                    .col(timestamp(PasskeyChallenges::CreatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp(PasskeyChallenges::UpdatedAt).default(Expr::current_timestamp()))
                     .to_owned(),
             )
             .await?;

@@ -241,7 +241,7 @@ mod tests {
         }
 
         async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
-            self.sessions.insert(session.id.clone(), session.clone());
+            self.sessions.insert(session.token.clone(), session.clone());
             Ok(session.clone())
         }
 
@@ -285,7 +285,7 @@ mod tests {
 
         // Create an expired session
         let expired_session = Session {
-            id: SessionId::new("expired"),
+            token: SessionId::new("expired"),
             user_id: UserId::new("test"),
             user_agent: None,
             ip_address: None,
@@ -300,7 +300,7 @@ mod tests {
 
         // Create a valid session
         let valid_session = Session {
-            id: SessionId::new("valid"),
+            token: SessionId::new("valid"),
             user_id: UserId::new("test"),
             user_agent: None,
             ip_address: None,

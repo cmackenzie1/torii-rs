@@ -8,7 +8,7 @@ publish = false
 # torii
 torii = { path = "../../torii", version = "0.2.3", features = [
     "password",
-    "sqlite",
+    "seaorm-sqlite",
 ] }
 
 # web server
@@ -24,6 +24,6 @@ uuid = { version = "1.13.1", features = ["v4", "v7"] }
 
 # async/runtime
 dashmap = "6.0"
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1.0", features = ["full"] }
 tracing-subscriber = "0.3"
+tracing.workspace = true
