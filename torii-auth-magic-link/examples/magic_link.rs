@@ -136,7 +136,7 @@ async fn verify_magic_link_handler(
         .await
         .expect("create_session failed");
 
-    let cookie = Cookie::build(("session_id", session.id.to_string()))
+    let cookie = Cookie::build(("session_id", session.token.to_string()))
         .path("/")
         .http_only(true)
         .secure(false) // TODO: Set to true in production

@@ -1,6 +1,5 @@
 use chrono::Utc;
 use sea_orm::ActiveValue::Set;
-use sea_orm::prelude::Uuid;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use torii_core::{OAuthAccount, User};
 use torii_core::{UserId, storage::OAuthStorage};
@@ -14,7 +13,7 @@ use crate::entities::user;
 impl From<oauth::Model> for OAuthAccount {
     fn from(value: oauth::Model) -> Self {
         OAuthAccount::builder()
-            .user_id(UserId::new(value.id.as_str()))
+            .user_id(UserId::new(&value.user_id))
             .provider(value.provider)
             .subject(value.subject)
             .build()
@@ -38,12 +37,10 @@ impl OAuthStorage for SeaORMStorage {
 
         if let Some(user) = user {
             let oauth_account = oauth::ActiveModel {
-                id: Set(Uuid::new_v4().to_string()),
                 user_id: Set(user.id),
                 provider: Set(provider.to_string()),
                 subject: Set(subject.to_string()),
-                created_at: Set(Utc::now()),
-                updated_at: Set(Utc::now()),
+                ..Default::default()
             };
             let oauth_account = oauth_account.insert(&self.pool).await?;
 
@@ -112,12 +109,10 @@ impl OAuthStorage for SeaORMStorage {
         };
 
         let oauth_account = oauth::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user.id),
             provider: Set(provider.to_string()),
             subject: Set(subject.to_string()),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            ..Default::default()
         };
         oauth_account.insert(&self.pool).await?;
         Ok(())
@@ -130,12 +125,10 @@ impl OAuthStorage for SeaORMStorage {
         expires_in: chrono::Duration,
     ) -> Result<(), <Self as OAuthStorage>::Error> {
         let pkce_verifier = pkce_verifier::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
             csrf_state: Set(csrf_state.to_string()),
             verifier: Set(pkce_verifier.to_string()),
             expires_at: Set(Utc::now() + expires_in),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            ..Default::default()
         };
         pkce_verifier.insert(&self.pool).await?;
         Ok(())
@@ -215,13 +208,11 @@ mod tests {
 
         // First create a user
         let user = user::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
             email: Set("test@example.com".to_string()),
             name: Set(Some("Test User".to_string())),
             password_hash: Set(None),
             email_verified_at: Set(None),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            ..Default::default()
         };
         let user = user
             .insert(&storage.pool)

@@ -34,7 +34,7 @@ impl From<SqliteSession> for Session {
 impl From<Session> for SqliteSession {
     fn from(session: Session) -> Self {
         SqliteSession {
-            id: session.id.into_inner(),
+            id: session.token.into_inner(),
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
@@ -57,7 +57,7 @@ impl SessionStorage for SqliteStorage {
             RETURNING id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             "#,
         )
-            .bind(session.id.as_str())
+            .bind(session.token.as_str())
             .bind(session.user_id.as_str())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
@@ -200,7 +200,7 @@ pub(crate) mod test {
 
         // Create an already expired session by setting expires_at in the past
         let expired_session = Session {
-            id: SessionId::new("expired"),
+            token: SessionId::new("expired"),
             user_id: UserId::new("1"),
             user_agent: None,
             ip_address: None,

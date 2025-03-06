@@ -17,21 +17,13 @@ impl MigrationTrait for CreateUsers {
                 Table::create()
                     .table(Users::Table)
                     .if_not_exists()
-                    .col(pk_uuid(Users::Id).not_null())
-                    .col(string(Users::Email).not_null())
+                    .col(pk_uuid(Users::Id))
+                    .col(string(Users::Email))
                     .col(string_null(Users::Name)) // Nullable since users may not have a name yet...
                     .col(string_null(Users::PasswordHash)) // Nullable since users may not have a password (i.e. OAuth, Passkey, Magic Link)
                     .col(timestamp_null(Users::EmailVerifiedAt))
-                    .col(
-                        timestamp(Users::CreatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(Users::UpdatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(timestamp(Users::CreatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp(Users::UpdatedAt).default(Expr::current_timestamp()))
                     .to_owned(),
             )
             .await?;

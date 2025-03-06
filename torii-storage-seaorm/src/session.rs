@@ -1,6 +1,6 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
-
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use torii_core::session::SessionId;
 use torii_core::{Session, SessionStorage, UserId};
 
@@ -10,7 +10,7 @@ use crate::entities::session;
 impl From<session::Model> for Session {
     fn from(value: session::Model) -> Self {
         Self {
-            id: SessionId::new(&value.id),
+            token: SessionId::new(&value.token),
             user_id: UserId::new(&value.user_id),
             user_agent: value.user_agent.to_owned(),
             ip_address: value.ip_address.to_owned(),
@@ -30,10 +30,8 @@ impl SessionStorage for SeaORMStorage {
         session: &Session,
     ) -> Result<Session, <Self as SessionStorage>::Error> {
         let s = session::ActiveModel {
-            // TODO: The id should be set by the database (or in ActiveModelBehavior)
-            id: Set(session.id.as_str().to_owned()),
             user_id: Set(session.user_id.to_string()),
-            token: Set(session.id.as_str().to_owned()),
+            token: Set(session.token.as_str().to_owned()),
             ip_address: Set(session.ip_address.to_owned()),
             user_agent: Set(session.user_agent.to_owned()),
             expires_at: Set(session.expires_at.to_owned()),
@@ -49,7 +47,8 @@ impl SessionStorage for SeaORMStorage {
         &self,
         id: &SessionId,
     ) -> Result<Option<Session>, <Self as SessionStorage>::Error> {
-        let session = session::Entity::find_by_id(id.as_str())
+        let session = session::Entity::find()
+            .filter(session::Column::Token.eq(id.as_str()))
             .one(&self.pool)
             .await?
             .map(|s| s.into());
@@ -58,7 +57,8 @@ impl SessionStorage for SeaORMStorage {
     }
 
     async fn delete_session(&self, id: &SessionId) -> Result<(), <Self as SessionStorage>::Error> {
-        session::Entity::delete_by_id(id.as_str())
+        session::Entity::delete_many()
+            .filter(session::Column::Token.eq(id.as_str()))
             .exec(&self.pool)
             .await?;
 
@@ -109,7 +109,7 @@ mod tests {
             .unwrap();
 
         let created_session = storage.create_session(&session).await.unwrap();
-        assert_eq!(created_session.id, session.id);
+        assert_eq!(created_session.token, session.token);
         assert_eq!(created_session.user_id, session.user_id);
         assert_eq!(created_session.user_agent, session.user_agent);
         assert_eq!(created_session.ip_address, session.ip_address);
@@ -132,13 +132,13 @@ mod tests {
             .unwrap();
 
         let created_session = storage.create_session(&session).await.unwrap();
-        assert_eq!(created_session.id, session.id);
+        assert_eq!(created_session.token, session.token);
         assert_eq!(created_session.user_id, session.user_id);
         assert_eq!(created_session.user_agent, session.user_agent);
         assert_eq!(created_session.ip_address, session.ip_address);
 
-        let retrieved_session = storage.get_session(&session.id).await.unwrap().unwrap();
-        assert_eq!(retrieved_session.id, session.id);
+        let retrieved_session = storage.get_session(&session.token).await.unwrap().unwrap();
+        assert_eq!(retrieved_session.token, session.token);
         assert_eq!(retrieved_session.user_id, session.user_id);
         assert_eq!(retrieved_session.user_agent, session.user_agent);
         assert_eq!(retrieved_session.ip_address, session.ip_address);
@@ -157,14 +157,14 @@ mod tests {
             .unwrap();
 
         let created_session = storage.create_session(&session).await.unwrap();
-        assert_eq!(created_session.id, session.id);
+        assert_eq!(created_session.token, session.token);
         assert_eq!(created_session.user_id, session.user_id);
         assert_eq!(created_session.user_agent, session.user_agent);
         assert_eq!(created_session.ip_address, session.ip_address);
 
-        storage.delete_session(&session.id).await.unwrap();
+        storage.delete_session(&session.token).await.unwrap();
 
-        let retrieved_session = storage.get_session(&session.id).await.unwrap();
+        let retrieved_session = storage.get_session(&session.token).await.unwrap();
         assert!(retrieved_session.is_none());
     }
 
@@ -196,14 +196,14 @@ mod tests {
         // Verify both sessions exist
         assert!(
             storage
-                .get_session(&valid_session.id)
+                .get_session(&valid_session.token)
                 .await
                 .unwrap()
                 .is_some()
         );
         assert!(
             storage
-                .get_session(&expired_session.id)
+                .get_session(&expired_session.token)
                 .await
                 .unwrap()
                 .is_some()
@@ -215,14 +215,14 @@ mod tests {
         // Verify expired session was removed but valid session remains
         assert!(
             storage
-                .get_session(&valid_session.id)
+                .get_session(&valid_session.token)
                 .await
                 .unwrap()
                 .is_some()
         );
         assert!(
             storage
-                .get_session(&expired_session.id)
+                .get_session(&expired_session.token)
                 .await
                 .unwrap()
                 .is_none()

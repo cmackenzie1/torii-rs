@@ -34,7 +34,7 @@ impl From<PostgresSession> for Session {
 impl From<Session> for PostgresSession {
     fn from(session: Session) -> Self {
         PostgresSession {
-            id: session.id.into_inner(),
+            id: session.token.into_inner(),
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
@@ -51,7 +51,7 @@ impl SessionStorage for PostgresStorage {
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
         sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)")
-            .bind(session.id.as_str())
+            .bind(session.token.as_str())
             .bind(session.user_id.as_str())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
@@ -65,7 +65,7 @@ impl SessionStorage for PostgresStorage {
                 StorageError::Database("Failed to create session".to_string())
             })?;
 
-        Ok(self.get_session(&session.id).await?.unwrap())
+        Ok(self.get_session(&session.token).await?.unwrap())
     }
 
     async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
@@ -206,7 +206,7 @@ mod test {
         // Create an already expired session by setting expires_at in the past
         let session_id = SessionId::new_random();
         let expired_session = Session {
-            id: SessionId::new_random(),
+            token: SessionId::new_random(),
             user_id: user_id.clone(),
             user_agent: None,
             ip_address: None,
@@ -236,7 +236,7 @@ mod test {
             .expect("Failed to cleanup sessions");
 
         // Verify expired session was removed
-        let expired_session = storage.get_session(&expired_session.id).await;
+        let expired_session = storage.get_session(&expired_session.token).await;
         assert!(expired_session.is_err());
 
         // Verify valid session remains

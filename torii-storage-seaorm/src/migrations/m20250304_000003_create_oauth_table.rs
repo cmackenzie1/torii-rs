@@ -1,7 +1,7 @@
 use sea_orm::{DbErr, DeriveMigrationName, prelude::*, sea_query::Table};
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
-    schema::{pk_uuid, string, timestamp},
+    schema::{pk_auto, string, timestamp},
 };
 
 use super::OauthAccounts;
@@ -17,20 +17,12 @@ impl MigrationTrait for CreateOAuthAccounts {
                 Table::create()
                     .table(OauthAccounts::Table)
                     .if_not_exists()
-                    .col(pk_uuid(OauthAccounts::Id).not_null())
-                    .col(string(OauthAccounts::UserId).not_null())
-                    .col(string(OauthAccounts::Provider).not_null())
-                    .col(string(OauthAccounts::Subject).not_null())
-                    .col(
-                        timestamp(OauthAccounts::CreatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(OauthAccounts::UpdatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(pk_auto(OauthAccounts::Id))
+                    .col(string(OauthAccounts::UserId))
+                    .col(string(OauthAccounts::Provider))
+                    .col(string(OauthAccounts::Subject))
+                    .col(timestamp(OauthAccounts::CreatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp(OauthAccounts::UpdatedAt).default(Expr::current_timestamp()))
                     .to_owned(),
             )
             .await?;
@@ -40,24 +32,12 @@ impl MigrationTrait for CreateOAuthAccounts {
                 Table::create()
                     .table(PkceVerifiers::Table)
                     .if_not_exists()
-                    .col(pk_uuid(PkceVerifiers::Id).not_null())
-                    .col(string(PkceVerifiers::CsrfState).not_null())
-                    .col(string(PkceVerifiers::Verifier).not_null())
-                    .col(
-                        timestamp(PkceVerifiers::ExpiresAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(PkceVerifiers::CreatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
-                    .col(
-                        timestamp(PkceVerifiers::UpdatedAt)
-                            .not_null()
-                            .default(Expr::current_timestamp()),
-                    )
+                    .col(pk_auto(PkceVerifiers::Id))
+                    .col(string(PkceVerifiers::CsrfState))
+                    .col(string(PkceVerifiers::Verifier))
+                    .col(timestamp(PkceVerifiers::ExpiresAt).default(Expr::current_timestamp()))
+                    .col(timestamp(PkceVerifiers::CreatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp(PkceVerifiers::UpdatedAt).default(Expr::current_timestamp()))
                     .to_owned(),
             )
             .await?;

@@ -34,13 +34,11 @@ impl MagicLinkStorage for SeaORMStorage {
         token: &MagicToken,
     ) -> Result<(), <Self as MagicLinkStorage>::Error> {
         let magic_link = magic_link::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
             user_id: Set(token.user_id.to_string()),
             token: Set(token.token.clone()),
             used_at: Set(token.used_at),
             expires_at: Set(token.expires_at),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
+            ..Default::default()
         };
         magic_link.insert(&self.pool).await?;
 

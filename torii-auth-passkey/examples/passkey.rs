@@ -102,7 +102,7 @@ async fn finish_registration_handler(
         .unwrap();
 
     let jar = jar.add(
-        Cookie::build(("session_id", session.id.to_string()))
+        Cookie::build(("session_id", session.token.to_string()))
             .path("/")
             .http_only(true),
     );
@@ -230,7 +230,7 @@ async fn finish_login_handler(
         .unwrap();
 
     let jar = jar.add(
-        Cookie::build(("session_id", session.id.to_string()))
+        Cookie::build(("session_id", session.token.to_string()))
             .path("/")
             .http_only(true),
     );
