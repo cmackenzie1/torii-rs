@@ -52,7 +52,7 @@ impl SessionStorage for PostgresStorage {
     type Error = torii_core::Error;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
-        sqlx::query("INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)")
+        sqlx::query("INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)")
             .bind(session.token.as_str())
             .bind(session.user_id.as_str())
             .bind(&session.user_agent)
@@ -73,7 +73,7 @@ impl SessionStorage for PostgresStorage {
     async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error> {
         let session = sqlx::query_as::<_, PostgresSession>(
             r#"
-            SELECT id, token, user_id::text, user_agent, ip_address, created_at, updated_at, expires_at
+            SELECT id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             FROM sessions
             WHERE token = $1
             "#,
@@ -116,7 +116,7 @@ impl SessionStorage for PostgresStorage {
     }
 
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE user_id::text = $1")
+        sqlx::query("DELETE FROM sessions WHERE user_id = $1")
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await

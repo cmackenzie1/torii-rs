@@ -35,10 +35,6 @@ impl UserId {
         self.0
     }
 
-    pub fn as_uuid(&self) -> Uuid {
-        Uuid::parse_str(&self.0).unwrap()
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
     }

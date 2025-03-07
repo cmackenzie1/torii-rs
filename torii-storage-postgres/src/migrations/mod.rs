@@ -155,7 +155,7 @@ impl Migration<Postgres> for CreateUsersTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
                 name TEXT,
                 email TEXT NOT NULL,
                 email_verified_at TIMESTAMPTZ,
@@ -202,7 +202,7 @@ impl Migration<Postgres> for CreateSessionsTable {
             r#"
             CREATE TABLE IF NOT EXISTS sessions (
                 id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                user_id UUID NOT NULL,
+                user_id TEXT NOT NULL,
                 user_agent TEXT,
                 ip_address TEXT,
                 token TEXT NOT NULL,
@@ -248,7 +248,7 @@ impl Migration<Postgres> for CreateOAuthAccountsTable {
             r#"
             CREATE TABLE IF NOT EXISTS oauth_accounts (
                 id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                user_id UUID NOT NULL,
+                user_id TEXT NOT NULL,
                 provider TEXT NOT NULL,
                 subject TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -294,7 +294,7 @@ impl Migration<Postgres> for CreatePasskeysTable {
             CREATE TABLE IF NOT EXISTS passkeys (
                 id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 credential_id TEXT NOT NULL,
-                user_id UUID NOT NULL,
+                user_id TEXT NOT NULL,
                 public_key TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -479,7 +479,7 @@ impl Migration<Postgres> for CreateMagicLinksTable {
             r#"
             CREATE TABLE IF NOT EXISTS magic_links (
                 id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                user_id UUID NOT NULL,
+                user_id TEXT NOT NULL,
                 token TEXT NOT NULL,
                 used_at TIMESTAMPTZ,
                 expires_at TIMESTAMPTZ NOT NULL,
