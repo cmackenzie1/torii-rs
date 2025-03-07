@@ -27,6 +27,7 @@ serde.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
+testcontainers-modules = {version = "0.11.6", features = ["postgres"]}
 tracing-subscriber = { workspace = true }
 
 [features]

@@ -25,7 +25,7 @@ use torii_core::{
 use torii_migration::Migration;
 use torii_migration::MigrationManager;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PostgresStorage {
     pool: PgPool,
 }
@@ -33,6 +33,15 @@ pub struct PostgresStorage {
 impl PostgresStorage {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    pub async fn connect(database_url: &str) -> Result<Self, StorageError> {
+        let pool = PgPool::connect(database_url).await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to connect to database");
+            StorageError::Database("Failed to connect to database".to_string())
+        })?;
+
+        Ok(Self::new(pool))
     }
 
     pub async fn migrate(&self) -> Result<(), StorageError> {
