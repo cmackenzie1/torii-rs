@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::{Error, error::ValidationError};
 
 /// A unique, stable identifier for a specific user
+/// This value should be treated as opaque, and should not be used as a UUID even if it may look like one
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct UserId(String);
 
