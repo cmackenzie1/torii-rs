@@ -102,9 +102,9 @@ async fn main() {
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
     plugin_manager.register_plugin(OAuthPlugin::github(
-        std::env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID must be set"),
-        std::env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET must be set"),
-        "http://localhost:4000/auth/github/callback".to_string(),
+        &std::env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID must be set"),
+        &std::env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET must be set"),
+        "http://localhost:4000/auth/github/callback",
         user_storage.clone(),
     ));
 

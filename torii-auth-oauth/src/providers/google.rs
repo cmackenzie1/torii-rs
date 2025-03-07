@@ -67,7 +67,7 @@ impl Google {
         ))
     }
 
-    pub async fn get_user_info(&self, access_token: String) -> Result<UserInfo, Error> {
+    pub async fn get_user_info(&self, access_token: &str) -> Result<UserInfo, Error> {
         let http_client = reqwest::ClientBuilder::new()
             // Following redirects opens the client up to SSRF vulnerabilities.
             .redirect(reqwest::redirect::Policy::none())
@@ -102,8 +102,8 @@ impl Google {
 
     pub async fn exchange_code(
         &self,
-        code: String,
-        pkce_verifier: String,
+        code: &str,
+        pkce_verifier: &str,
     ) -> Result<StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>, Error> {
         let client = BasicClient::new(ClientId::new(self.client_id.clone()))
             .set_client_secret(ClientSecret::new(self.client_secret.clone()))
@@ -120,8 +120,8 @@ impl Google {
             .expect("Client should build");
 
         let token_response = client
-            .exchange_code(AuthorizationCode::new(code))
-            .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier))
+            .exchange_code(AuthorizationCode::new(code.to_string()))
+            .set_pkce_verifier(PkceCodeVerifier::new(pkce_verifier.to_string()))
             .request_async(&http_client)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;

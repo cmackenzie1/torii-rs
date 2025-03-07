@@ -6,11 +6,11 @@ use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
 use torii_core::error::AuthError;
-use torii_core::{Error, NewUser, Plugin, User, UserId};
 use torii_core::{
     events::{Event, EventBus},
     storage::OAuthStorage,
 };
+use torii_core::{Error, NewUser, Plugin, User, UserId};
 
 /// A struct containing the necessary information to complete an OAuth2 authorization flow.
 ///
@@ -36,8 +36,11 @@ pub struct AuthorizationUrl {
 }
 
 impl AuthorizationUrl {
-    pub fn new(url: String, csrf_state: String) -> Self {
-        Self { url, csrf_state }
+    pub fn new(url: &str, csrf_state: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            csrf_state: csrf_state.to_string(),
+        }
     }
 
     pub fn url(&self) -> &str {
@@ -63,7 +66,7 @@ where
     U: OAuthStorage,
 {
     fn name(&self) -> String {
-        self.provider.name()
+        self.provider.name().to_string()
     }
 }
 
@@ -122,9 +125,9 @@ where
 
     /// Create a new OAuth plugin for Google
     pub fn google(
-        client_id: String,
-        client_secret: String,
-        redirect_uri: String,
+        client_id: &str,
+        client_secret: &str,
+        redirect_uri: &str,
         user_storage: Arc<U>,
     ) -> Self {
         OAuthPluginBuilder::new(
@@ -134,11 +137,11 @@ where
         .build()
     }
 
-    /// Create a new OAuth plugin for Github
+    /// Create a new OAuth plugin for GitHub
     pub fn github(
-        client_id: String,
-        client_secret: String,
-        redirect_uri: String,
+        client_id: &str,
+        client_secret: &str,
+        redirect_uri: &str,
         user_storage: Arc<U>,
     ) -> Self {
         OAuthPluginBuilder::new(
@@ -275,7 +278,7 @@ where
             "Exchanging code for token"
         );
 
-        let token_response = self.provider.exchange_code(code, pkce_verifier).await?;
+        let token_response = self.provider.exchange_code(&code, &pkce_verifier).await?;
 
         let access_token = token_response.access_token();
 
@@ -284,10 +287,7 @@ where
             "Getting user info"
         );
 
-        let user_info = self
-            .provider
-            .get_user_info(access_token.secret().to_string())
-            .await?;
+        let user_info = self.provider.get_user_info(access_token.secret()).await?;
 
         tracing::debug!(
             user_info = ?user_info,

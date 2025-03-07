@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use axum::{
-    Json, Router,
-    extract::{Query, State},
-    http::StatusCode,
+    extract::{Query, State}, http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::get,
+    Json,
+    Router,
 };
-use axum_extra::extract::{CookieJar, cookie::Cookie};
+use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 use torii_auth_oauth::OAuthPlugin;
-use torii_core::{Session, plugin::PluginManager, storage::SessionStorage};
+use torii_core::{plugin::PluginManager, storage::SessionStorage, Session};
 use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Debug, Deserialize)]
@@ -97,9 +97,9 @@ async fn main() {
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
     plugin_manager.register_plugin(OAuthPlugin::google(
-        std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
-        std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
-        "http://localhost:4000/auth/google/callback".to_string(),
+        &std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
+        &std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
+        "http://localhost:4000/auth/google/callback",
         user_storage.clone(),
     ));
 

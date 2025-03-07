@@ -35,10 +35,10 @@
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-//!     let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+//!     use torii_auth_oauth::providers::Provider;
+//! let storage = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
 //!
-//!     let torii = Torii::new(user_storage, session_storage)
+//!     let torii = Torii::new(storage.clone(), storage.clone())
 //!         .with_password_plugin()
 //!         .with_oauth_provider(Provider::google(
 //!             "client_id",
