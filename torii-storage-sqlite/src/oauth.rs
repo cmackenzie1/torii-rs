@@ -7,6 +7,8 @@ use torii_core::{OAuthAccount, User, UserId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SqliteOAuthAccount {
+    #[allow(dead_code)]
+    id: Option<i64>,
     user_id: String,
     provider: String,
     subject: String,
@@ -34,6 +36,7 @@ impl From<SqliteOAuthAccount> for OAuthAccount {
 impl From<OAuthAccount> for SqliteOAuthAccount {
     fn from(oauth_account: OAuthAccount) -> Self {
         SqliteOAuthAccount {
+            id: None,
             user_id: oauth_account.user_id.into_inner(),
             provider: oauth_account.provider,
             subject: oauth_account.subject,
@@ -58,7 +61,7 @@ impl OAuthStorage for SqliteStorage {
             r#"
             INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?)
-            RETURNING user_id, provider, subject, created_at, updated_at
+            RETURNING id, user_id, provider, subject, created_at, updated_at
             "#,
         )
         .bind(user_id.as_str())
@@ -111,7 +114,7 @@ impl OAuthStorage for SqliteStorage {
     ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
         let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
             r#"
-            SELECT user_id, provider, subject, created_at, updated_at
+            SELECT id, user_id, provider, subject, created_at, updated_at
             FROM oauth_accounts
             WHERE provider = ? AND subject = ?
             "#,

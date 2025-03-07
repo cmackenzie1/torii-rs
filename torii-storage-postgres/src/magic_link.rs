@@ -10,7 +10,7 @@ use crate::PostgresStorage;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PostgresMagicToken {
-    pub id: Option<String>,
+    pub id: Option<i64>,
     pub user_id: String,
     pub token: String,
     pub used_at: Option<DateTime<Utc>>,
@@ -75,7 +75,7 @@ impl MagicLinkStorage for PostgresStorage {
     ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error> {
         let row: Option<PostgresMagicToken> =
             sqlx::query_as(
-                "SELECT id::text, user_id::text, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL",
+                "SELECT id, user_id::text, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL",
             )
             .bind(token)
                 .bind(Utc::now())

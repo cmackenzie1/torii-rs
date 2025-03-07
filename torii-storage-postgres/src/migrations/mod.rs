@@ -201,10 +201,11 @@ impl Migration<Postgres> for CreateSessionsTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS sessions (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 user_id UUID NOT NULL,
                 user_agent TEXT,
                 ip_address TEXT,
+                token TEXT NOT NULL,
                 expires_at TIMESTAMPTZ NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -246,7 +247,7 @@ impl Migration<Postgres> for CreateOAuthAccountsTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS oauth_accounts (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 user_id UUID NOT NULL,
                 provider TEXT NOT NULL,
                 subject TEXT NOT NULL,
@@ -291,7 +292,7 @@ impl Migration<Postgres> for CreatePasskeysTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS passkeys (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 credential_id TEXT NOT NULL,
                 user_id UUID NOT NULL,
                 public_key TEXT NOT NULL,
@@ -335,11 +336,13 @@ impl Migration<Postgres> for CreatePasskeyChallengesTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS passkey_challenges (
-                id TEXT PRIMARY KEY,
+                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                challenge_id TEXT NOT NULL,
                 challenge TEXT NOT NULL,
                 expires_at TIMESTAMPTZ NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(challenge_id)
             );"#,
         )
         .execute(conn)
@@ -475,7 +478,7 @@ impl Migration<Postgres> for CreateMagicLinksTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS magic_links (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 user_id UUID NOT NULL,
                 token TEXT NOT NULL,
                 used_at TIMESTAMPTZ,

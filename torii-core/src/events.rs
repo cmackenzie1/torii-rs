@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 
-use crate::{Session, User, UserId, error::EventError, session::SessionId};
+use crate::{Session, User, UserId, error::EventError, session::SessionToken};
 
 /// Represents events that can be emitted by the event bus
 ///
@@ -19,7 +19,7 @@ pub enum Event {
     UserUpdated(User),
     UserDeleted(UserId),
     SessionCreated(UserId, Session),
-    SessionDeleted(UserId, SessionId),
+    SessionDeleted(UserId, SessionToken),
     SessionsCleared(UserId),
 }
 
@@ -147,7 +147,7 @@ impl EventBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionId;
+    use crate::session::SessionToken;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     struct TestEventHandler {
@@ -269,7 +269,7 @@ mod tests {
             .expect("Failed to build test user");
 
         let test_session = Session::builder()
-            .id(SessionId::new("test"))
+            .token(SessionToken::new("test"))
             .user_id(test_user.id.clone())
             .build()
             .expect("Failed to build test session");

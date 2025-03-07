@@ -135,7 +135,7 @@ impl Default for SessionCleanupConfig {
 mod tests {
     use async_trait::async_trait;
 
-    use crate::{Error, NewUser, Session, User, UserId, session::SessionId};
+    use crate::{Error, NewUser, Session, User, UserId, session::SessionToken};
 
     use super::*;
 
@@ -156,7 +156,7 @@ mod tests {
 
     struct TestStorage {
         users: DashMap<UserId, User>,
-        sessions: DashMap<SessionId, Session>,
+        sessions: DashMap<SessionToken, Session>,
     }
 
     impl TestStorage {
@@ -236,7 +236,7 @@ mod tests {
     impl SessionStorage for TestStorage {
         type Error = Error;
 
-        async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+        async fn get_session(&self, id: &SessionToken) -> Result<Option<Session>, Self::Error> {
             Ok(self.sessions.get(id).map(|s| s.clone()))
         }
 
@@ -245,7 +245,7 @@ mod tests {
             Ok(session.clone())
         }
 
-        async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
+        async fn delete_session(&self, id: &SessionToken) -> Result<(), Self::Error> {
             self.sessions.remove(id);
             Ok(())
         }
@@ -285,7 +285,7 @@ mod tests {
 
         // Create an expired session
         let expired_session = Session {
-            token: SessionId::new("expired"),
+            token: SessionToken::new("expired"),
             user_id: UserId::new("test"),
             user_agent: None,
             ip_address: None,
@@ -300,7 +300,7 @@ mod tests {
 
         // Create a valid session
         let valid_session = Session {
-            token: SessionId::new("valid"),
+            token: SessionToken::new("valid"),
             user_id: UserId::new("test"),
             user_agent: None,
             ip_address: None,

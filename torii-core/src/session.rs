@@ -26,11 +26,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SessionId(String);
+pub struct SessionToken(String);
 
-impl SessionId {
-    pub fn new(id: &str) -> Self {
-        Self(id.to_string())
+impl SessionToken {
+    pub fn new(token: &str) -> Self {
+        Self(token.to_string())
     }
 
     pub fn new_random() -> Self {
@@ -46,25 +46,25 @@ impl SessionId {
     }
 }
 
-impl Default for SessionId {
+impl Default for SessionToken {
     fn default() -> Self {
         Self::new_random()
     }
 }
 
-impl From<String> for SessionId {
+impl From<String> for SessionToken {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
-impl From<&str> for SessionId {
+impl From<&str> for SessionToken {
     fn from(s: &str) -> Self {
         Self(s.to_string())
     }
 }
 
-impl std::fmt::Display for SessionId {
+impl std::fmt::Display for SessionToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -73,7 +73,7 @@ impl std::fmt::Display for SessionId {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     /// The unique identifier for the session.
-    pub token: SessionId,
+    pub token: SessionToken,
 
     /// The unique identifier for the user.
     pub user_id: UserId,
@@ -106,7 +106,7 @@ impl Session {
 
 #[derive(Default)]
 pub struct SessionBuilder {
-    id: Option<SessionId>,
+    token: Option<SessionToken>,
     user_id: Option<UserId>,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -116,8 +116,8 @@ pub struct SessionBuilder {
 }
 
 impl SessionBuilder {
-    pub fn id(mut self, id: SessionId) -> Self {
-        self.id = Some(id);
+    pub fn token(mut self, token: SessionToken) -> Self {
+        self.token = Some(token);
         self
     }
 
@@ -154,7 +154,7 @@ impl SessionBuilder {
     pub fn build(self) -> Result<Session, Error> {
         let now = Utc::now();
         Ok(Session {
-            token: self.id.unwrap_or(SessionId::new_random()),
+            token: self.token.unwrap_or(SessionToken::new_random()),
             user_id: self.user_id.ok_or(ValidationError::MissingField(
                 "User ID is required".to_string(),
             ))?,
@@ -176,8 +176,8 @@ pub trait SessionManager {
         ip_address: Option<String>,
         duration: Duration,
     ) -> Result<Session, Error>;
-    async fn get_session(&self, id: &SessionId) -> Result<Session, Error>;
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Error>;
+    async fn get_session(&self, id: &SessionToken) -> Result<Session, Error>;
+    async fn delete_session(&self, id: &SessionToken) -> Result<(), Error>;
     async fn cleanup_expired_sessions(&self) -> Result<(), Error>;
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
 }
@@ -217,7 +217,7 @@ impl<S: SessionStorage> SessionManager for DefaultSessionManager<S> {
         Ok(session)
     }
 
-    async fn get_session(&self, id: &SessionId) -> Result<Session, Error> {
+    async fn get_session(&self, id: &SessionToken) -> Result<Session, Error> {
         let session = self
             .storage
             .get_session(id)
@@ -235,7 +235,7 @@ impl<S: SessionStorage> SessionManager for DefaultSessionManager<S> {
         }
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Error> {
+    async fn delete_session(&self, id: &SessionToken) -> Result<(), Error> {
         self.storage
             .delete_session(id)
             .await
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_session_id() {
-        let id = SessionId::new_random();
+        let id = SessionToken::new_random();
         assert_eq!(id.to_string(), id.0.to_string());
     }
 

@@ -74,7 +74,7 @@ impl PasskeyStorage for PostgresStorage {
     ) -> Result<(), <Self as PasskeyStorage>::Error> {
         sqlx::query(
             r#"
-            INSERT INTO passkey_challenges (id, challenge, expires_at) 
+            INSERT INTO passkey_challenges (challenge_id, challenge, expires_at) 
             VALUES ($1, $2, $3)
             "#,
         )
@@ -95,7 +95,7 @@ impl PasskeyStorage for PostgresStorage {
             r#"
             SELECT challenge 
             FROM passkey_challenges 
-            WHERE id = $1 AND expires_at > $2
+            WHERE challenge_id = $1 AND expires_at > $2
             "#,
         )
         .bind(challenge_id)

@@ -15,7 +15,7 @@ use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_passkey::PasskeyPlugin;
 use torii_core::{
-    Session, plugin::PluginManager, session::SessionId, storage::SessionStorage,
+    Session, plugin::PluginManager, session::SessionToken, storage::SessionStorage,
     storage::UserStorage,
 };
 use torii_storage_sqlite::SqliteStorage;
@@ -121,7 +121,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
         let session = state
             .plugin_manager
             .session_storage()
-            .get_session(&SessionId::new(&session_id))
+            .get_session(&SessionToken::new(&session_id))
             .await
             .unwrap();
 
@@ -160,7 +160,7 @@ async fn verify_session<B>(
         state
             .plugin_manager
             .session_storage()
-            .get_session(&SessionId::new(&session_id))
+            .get_session(&SessionToken::new(&session_id))
             .await
             .unwrap();
 

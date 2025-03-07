@@ -194,7 +194,8 @@ impl Migration<Sqlite> for CreateSessionsTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
+                token TEXT NOT NULL,
                 user_id TEXT NOT NULL,
                 user_agent TEXT,
                 ip_address TEXT,
@@ -255,7 +256,8 @@ impl Migration<Sqlite> for CreateOAuthAccountsTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS oauth_state (
-                csrf_state TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
+                csrf_state TEXT NOT NULL,
                 pkce_verifier TEXT NOT NULL,
                 expires_at INTEGER NOT NULL,
                 created_at INTEGER DEFAULT (unixepoch()),
@@ -298,7 +300,8 @@ impl Migration<Sqlite> for CreatePasskeysTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS passkeys (
-                id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
+                credential_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
                 public_key TEXT NOT NULL,
                 created_at INTEGER DEFAULT (unixepoch()),
@@ -341,11 +344,13 @@ impl Migration<Sqlite> for CreatePasskeyChallengesTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS passkey_challenges (
-                id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
+                challenge_id TEXT NOT NULL,
                 challenge TEXT NOT NULL,
                 expires_at INTEGER NOT NULL,
                 created_at INTEGER DEFAULT (unixepoch()),
-                updated_at INTEGER DEFAULT (unixepoch())
+                updated_at INTEGER DEFAULT (unixepoch()),
+                UNIQUE(challenge_id)
             );"#,
         )
         .execute(conn)
@@ -453,7 +458,7 @@ impl Migration<Sqlite> for CreateMagicLinksTable {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS magic_links (
-                id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
                 user_id TEXT NOT NULL,
                 token TEXT NOT NULL,
                 used_at INTEGER,

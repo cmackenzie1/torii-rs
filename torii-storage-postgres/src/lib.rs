@@ -246,7 +246,7 @@ mod tests {
     use rand::Rng;
     use sqlx::types::chrono::Utc;
     use std::time::Duration;
-    use torii_core::session::SessionId;
+    use torii_core::session::SessionToken;
     use torii_core::{Session, SessionStorage};
 
     pub(crate) async fn setup_test_db() -> PostgresStorage {
@@ -301,7 +301,7 @@ mod tests {
 
     pub(crate) async fn create_test_session(
         storage: &PostgresStorage,
-        session_id: &SessionId,
+        session_token: &SessionToken,
         user_id: &UserId,
         expires_in: Duration,
     ) -> Result<Session, torii_core::Error> {
@@ -309,7 +309,7 @@ mod tests {
         storage
             .create_session(
                 &Session::builder()
-                    .id(session_id.clone())
+                    .token(session_token.clone())
                     .user_id(user_id.clone())
                     .user_agent(Some("test".to_string()))
                     .ip_address(Some("127.0.0.1".to_string()))

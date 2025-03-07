@@ -2,24 +2,25 @@ use crate::PostgresStorage;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use torii_core::error::StorageError;
-use torii_core::session::SessionId;
+use torii_core::session::SessionToken;
 use torii_core::{Session, SessionStorage, UserId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PostgresSession {
-    id: String,
-    user_id: String,
-    user_agent: Option<String>,
-    ip_address: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    pub id: Option<i64>,
+    pub user_id: String,
+    pub token: String,
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
 }
 
 impl From<PostgresSession> for Session {
     fn from(session: PostgresSession) -> Self {
         Session::builder()
-            .id(SessionId::new(&session.id))
+            .token(SessionToken::new(&session.token))
             .user_id(UserId::new(&session.user_id))
             .user_agent(session.user_agent)
             .ip_address(session.ip_address)
@@ -34,7 +35,8 @@ impl From<PostgresSession> for Session {
 impl From<Session> for PostgresSession {
     fn from(session: Session) -> Self {
         PostgresSession {
-            id: session.token.into_inner(),
+            id: None,
+            token: session.token.into_inner(),
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
@@ -50,7 +52,7 @@ impl SessionStorage for PostgresStorage {
     type Error = torii_core::Error;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
-        sqlx::query("INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)")
+        sqlx::query("INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)")
             .bind(session.token.as_str())
             .bind(session.user_id.as_str())
             .bind(&session.user_agent)
@@ -68,15 +70,15 @@ impl SessionStorage for PostgresStorage {
         Ok(self.get_session(&session.token).await?.unwrap())
     }
 
-    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error> {
         let session = sqlx::query_as::<_, PostgresSession>(
             r#"
-            SELECT id::text, user_id::text, user_agent, ip_address, created_at, updated_at, expires_at
+            SELECT id, token, user_id::text, user_agent, ip_address, created_at, updated_at, expires_at
             FROM sessions
-            WHERE id::text = $1
+            WHERE token = $1
             "#,
         )
-        .bind(id.as_str())
+        .bind(token.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -87,9 +89,9 @@ impl SessionStorage for PostgresStorage {
         Ok(Some(session.into()))
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE id::text = $1")
-            .bind(id.as_str())
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error> {
+        sqlx::query("DELETE FROM sessions WHERE token = $1")
+            .bind(token.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -131,7 +133,7 @@ impl SessionStorage for PostgresStorage {
 mod test {
     use super::*;
     use std::time::Duration;
-    use torii_core::session::SessionId;
+    use torii_core::session::SessionToken;
     use torii_core::{Session, UserId, UserStorage};
 
     #[tokio::test]
@@ -167,7 +169,7 @@ mod test {
     async fn test_postgres_session_storage() {
         let storage = crate::tests::setup_test_db().await;
         let user_id = UserId::new_random();
-        let session_id = SessionId::new_random();
+        let session_id = SessionToken::new_random();
         crate::tests::create_test_user(&storage, &user_id)
             .await
             .expect("Failed to create user");
@@ -204,9 +206,9 @@ mod test {
             .expect("Failed to create user");
 
         // Create an already expired session by setting expires_at in the past
-        let session_id = SessionId::new_random();
+        let session_id = SessionToken::new_random();
         let expired_session = Session {
-            token: SessionId::new_random(),
+            token: SessionToken::new_random(),
             user_id: user_id.clone(),
             user_agent: None,
             ip_address: None,
@@ -262,7 +264,7 @@ mod test {
             .expect("Failed to create user 2");
 
         // Create sessions for user 1
-        let session_id1 = SessionId::new_random();
+        let session_id1 = SessionToken::new_random();
         crate::tests::create_test_session(
             &storage,
             &session_id1,
@@ -271,7 +273,7 @@ mod test {
         )
         .await
         .expect("Failed to create session 1");
-        let session_id2 = SessionId::new_random();
+        let session_id2 = SessionToken::new_random();
         crate::tests::create_test_session(
             &storage,
             &session_id2,
@@ -282,7 +284,7 @@ mod test {
         .expect("Failed to create session 2");
 
         // Create session for user 2
-        let session_id3 = SessionId::new_random();
+        let session_id3 = SessionToken::new_random();
         crate::tests::create_test_session(
             &storage,
             &session_id3,

@@ -2,12 +2,14 @@ use crate::SqliteStorage;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use torii_core::error::StorageError;
-use torii_core::session::SessionId;
+use torii_core::session::SessionToken;
 use torii_core::{Session, SessionStorage, UserId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SqliteSession {
-    id: String,
+    #[allow(dead_code)]
+    id: Option<i64>,
+    token: String,
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -19,7 +21,7 @@ pub struct SqliteSession {
 impl From<SqliteSession> for Session {
     fn from(session: SqliteSession) -> Self {
         Session::builder()
-            .id(SessionId::new(&session.id))
+            .token(SessionToken::new(&session.token))
             .user_id(UserId::new(&session.user_id))
             .user_agent(session.user_agent)
             .ip_address(session.ip_address)
@@ -34,7 +36,8 @@ impl From<SqliteSession> for Session {
 impl From<Session> for SqliteSession {
     fn from(session: Session) -> Self {
         SqliteSession {
-            id: session.token.into_inner(),
+            id: None,
+            token: session.token.into_inner(),
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
@@ -52,9 +55,9 @@ impl SessionStorage for SqliteStorage {
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
         let session = sqlx::query_as::<_, SqliteSession>(
             r#"
-            INSERT INTO sessions (id, user_id, user_agent, ip_address, created_at, updated_at, expires_at)
+            INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            RETURNING id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
+            RETURNING id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             "#,
         )
             .bind(session.token.as_str())
@@ -74,15 +77,15 @@ impl SessionStorage for SqliteStorage {
         Ok(session.into())
     }
 
-    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error> {
+    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error> {
         let session = sqlx::query_as::<_, SqliteSession>(
             r#"
-            SELECT id, user_id, user_agent, ip_address, created_at, updated_at, expires_at
+            SELECT id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             FROM sessions
-            WHERE id = ?
+            WHERE token = ?
             "#,
         )
-        .bind(id.as_str())
+        .bind(token.as_str())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -93,9 +96,9 @@ impl SessionStorage for SqliteStorage {
         Ok(Some(session.into()))
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(id.as_str())
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error> {
+        sqlx::query("DELETE FROM sessions WHERE token = ?")
+            .bind(token.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -149,7 +152,7 @@ pub(crate) mod test {
         storage
             .create_session(
                 &Session::builder()
-                    .id(SessionId::new(session_id))
+                    .token(SessionToken::new(session_id))
                     .user_id(UserId::new(user_id))
                     .user_agent(Some("test".to_string()))
                     .ip_address(Some("127.0.0.1".to_string()))
@@ -176,16 +179,16 @@ pub(crate) mod test {
             .expect("Failed to create session");
 
         let fetched = storage
-            .get_session(&SessionId::new("1"))
+            .get_session(&SessionToken::new("1"))
             .await
             .expect("Failed to get session");
         assert_eq!(fetched.unwrap().user_id, UserId::new("1"));
 
         storage
-            .delete_session(&SessionId::new("1"))
+            .delete_session(&SessionToken::new("1"))
             .await
             .expect("Failed to delete session");
-        let deleted = storage.get_session(&SessionId::new("1")).await;
+        let deleted = storage.get_session(&SessionToken::new("1")).await;
         assert!(deleted.is_err());
     }
 
@@ -200,7 +203,7 @@ pub(crate) mod test {
 
         // Create an already expired session by setting expires_at in the past
         let expired_session = Session {
-            token: SessionId::new("expired"),
+            token: SessionToken::new("expired"),
             user_id: UserId::new("1"),
             user_agent: None,
             ip_address: None,
@@ -225,12 +228,12 @@ pub(crate) mod test {
             .expect("Failed to cleanup sessions");
 
         // Verify expired session was removed
-        let expired_session = storage.get_session(&SessionId::new("expired")).await;
+        let expired_session = storage.get_session(&SessionToken::new("expired")).await;
         assert!(expired_session.is_err());
 
         // Verify valid session remains
         let valid_session = storage
-            .get_session(&SessionId::new("valid"))
+            .get_session(&SessionToken::new("valid"))
             .await
             .expect("Failed to get valid session");
         assert_eq!(valid_session.unwrap().user_id, UserId::new("1"));
@@ -270,14 +273,14 @@ pub(crate) mod test {
             .expect("Failed to delete sessions for user");
 
         // Verify user 1's sessions are deleted
-        let session1 = storage.get_session(&SessionId::new("session1")).await;
+        let session1 = storage.get_session(&SessionToken::new("session1")).await;
         assert!(session1.is_err());
-        let session2 = storage.get_session(&SessionId::new("session2")).await;
+        let session2 = storage.get_session(&SessionToken::new("session2")).await;
         assert!(session2.is_err());
 
         // Verify user 2's session remains
         let session3 = storage
-            .get_session(&SessionId::new("session3"))
+            .get_session(&SessionToken::new("session3"))
             .await
             .expect("Failed to get session 3");
         assert_eq!(session3.unwrap().user_id, UserId::new("2"));

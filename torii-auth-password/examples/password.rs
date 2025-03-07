@@ -20,7 +20,7 @@ use torii_auth_password::PasswordPlugin;
 use torii_core::{
     Session,
     plugin::PluginManager,
-    session::SessionId,
+    session::SessionToken,
     storage::{SessionStorage, UserStorage},
 };
 use torii_storage_sqlite::SqliteStorage;
@@ -179,7 +179,7 @@ async fn verify_session<B>(
         state
             .plugin_manager
             .session_storage()
-            .get_session(&SessionId::new(&session_id))
+            .get_session(&SessionToken::new(&session_id))
             .await
             .unwrap();
 
@@ -201,7 +201,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
         let session = state
             .plugin_manager
             .session_storage()
-            .get_session(&SessionId::new(&session_id))
+            .get_session(&SessionToken::new(&session_id))
             .await
             .unwrap();
 

@@ -10,7 +10,7 @@ use crate::SqliteStorage;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SqliteMagicToken {
-    pub id: Option<String>,
+    pub id: Option<i64>,
     pub user_id: String,
     pub token: String,
     pub used_at: Option<i64>,

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
-use torii_core::session::SessionId;
+use torii_core::session::SessionToken;
 use torii_core::{Session, SessionStorage, UserId};
 
 use crate::SeaORMStorage;
@@ -10,7 +10,7 @@ use crate::entities::session;
 impl From<session::Model> for Session {
     fn from(value: session::Model) -> Self {
         Self {
-            token: SessionId::new(&value.token),
+            token: SessionToken::new(&value.token),
             user_id: UserId::new(&value.user_id),
             user_agent: value.user_agent.to_owned(),
             ip_address: value.ip_address.to_owned(),
@@ -45,7 +45,7 @@ impl SessionStorage for SeaORMStorage {
 
     async fn get_session(
         &self,
-        id: &SessionId,
+        id: &SessionToken,
     ) -> Result<Option<Session>, <Self as SessionStorage>::Error> {
         let session = session::Entity::find()
             .filter(session::Column::Token.eq(id.as_str()))
@@ -56,7 +56,10 @@ impl SessionStorage for SeaORMStorage {
         Ok(session)
     }
 
-    async fn delete_session(&self, id: &SessionId) -> Result<(), <Self as SessionStorage>::Error> {
+    async fn delete_session(
+        &self,
+        id: &SessionToken,
+    ) -> Result<(), <Self as SessionStorage>::Error> {
         session::Entity::delete_many()
             .filter(session::Column::Token.eq(id.as_str()))
             .exec(&self.pool)
