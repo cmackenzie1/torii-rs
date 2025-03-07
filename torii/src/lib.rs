@@ -17,7 +17,7 @@
 //!
 //! Torii currently supports the following storage backends:
 //! - SQLite
-//! - PostgreSQL
+//! - PostgresSQL
 //! - MySQL
 //!
 //! ## Warning

@@ -6,11 +6,11 @@ use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
 use torii_core::error::AuthError;
+use torii_core::{Error, NewUser, Plugin, User, UserId};
 use torii_core::{
     events::{Event, EventBus},
     storage::OAuthStorage,
 };
-use torii_core::{Error, NewUser, Plugin, User, UserId};
 
 /// A struct containing the necessary information to complete an OAuth2 authorization flow.
 ///
@@ -200,7 +200,7 @@ where
         // Check if user exists in database by provider and subject
         let oauth_account = self
             .user_storage
-            .get_oauth_account_by_provider_and_subject(&self.provider.name(), &subject)
+            .get_oauth_account_by_provider_and_subject(self.provider.name(), &subject)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 
@@ -235,7 +235,7 @@ where
 
         // Create link between user and provider
         self.user_storage
-            .create_oauth_account(&self.provider.name(), &subject, &user.id)
+            .create_oauth_account(self.provider.name(), &subject, &user.id)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
 

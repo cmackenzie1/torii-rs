@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State}, http::StatusCode,
+    Json, Router,
+    extract::{Query, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::get,
-    Json,
-    Router,
 };
-use axum_extra::extract::{cookie::Cookie, CookieJar};
+use axum_extra::extract::{CookieJar, cookie::Cookie};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 use torii_auth_oauth::OAuthPlugin;
-use torii_core::{plugin::PluginManager, storage::SessionStorage, Session};
+use torii_core::{Session, plugin::PluginManager, storage::SessionStorage};
 use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Debug, Deserialize)]

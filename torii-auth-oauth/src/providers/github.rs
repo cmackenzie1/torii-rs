@@ -84,7 +84,7 @@ impl Github {
         // Get user info
         let user_info = http_client
             .get("https://api.github.com/user")
-            .bearer_auth(&access_token)
+            .bearer_auth(access_token)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("User-Agent", "torii-auth")
@@ -109,7 +109,7 @@ impl Github {
         // Get user emails
         let emails = http_client
             .get("https://api.github.com/user/emails")
-            .bearer_auth(&access_token)
+            .bearer_auth(access_token)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("User-Agent", "torii-auth")
