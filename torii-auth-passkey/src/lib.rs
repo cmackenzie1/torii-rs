@@ -120,11 +120,12 @@ impl<U: PasskeyStorage> PasskeyPlugin<U> {
     /// Returns a challenge that should be sent to the client.
     pub async fn start_registration(&self, email: &str) -> Result<PasskeyChallenge, PasskeyError> {
         let challenge_id = Uuid::new_v4();
-        let user_id = UserId::new_random();
         // CCR is sent to the client, SKR is stored in the database for verification
+        // We (currently) have no use for the user_unique_id after this point, but the API requires it
+        // https://github.com/kanidm/webauthn-rs/issues/277
         let (ccr, skr) = self
             .webauthn
-            .start_passkey_registration(user_id.as_uuid(), email, email, None)
+            .start_passkey_registration(Uuid::new_v4(), email, email, None)
             .expect("Failed to start registration.");
 
         self.user_storage
@@ -143,7 +144,7 @@ impl<U: PasskeyStorage> PasskeyPlugin<U> {
             })?;
 
         Ok(PasskeyChallenge::new(
-            user_id,
+            UserId::new_random(),
             challenge_id.to_string(),
             serde_json::to_value(&ccr).unwrap_or_else(|e| {
                 tracing::error!(error = ?e, "Failed to serialize challenge");

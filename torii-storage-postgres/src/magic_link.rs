@@ -56,7 +56,7 @@ impl MagicLinkStorage for PostgresStorage {
     ) -> Result<(), <Self as MagicLinkStorage>::Error> {
         let row = PostgresMagicToken::from(token);
 
-        sqlx::query("INSERT INTO magic_links (user_id, token, expires_at, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
+        sqlx::query("INSERT INTO magic_links (user_id, token, expires_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)")
             .bind(row.user_id)
             .bind(row.token)
             .bind(row.expires_at)
@@ -75,7 +75,7 @@ impl MagicLinkStorage for PostgresStorage {
     ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error> {
         let row: Option<PostgresMagicToken> =
             sqlx::query_as(
-                "SELECT id, user_id::text, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL",
+                "SELECT id, user_id, token, used_at, expires_at, created_at, updated_at FROM magic_links WHERE token = $1 AND expires_at > $2 AND used_at IS NULL",
             )
             .bind(token)
                 .bind(Utc::now())

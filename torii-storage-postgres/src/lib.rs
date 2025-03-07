@@ -105,8 +105,8 @@ impl UserStorage for PostgresStorage {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             INSERT INTO users (id, email) 
-            VALUES ($1::uuid, $2) 
-            RETURNING id::text, email, name, email_verified_at, created_at, updated_at
+            VALUES ($1, $2) 
+            RETURNING id, email, name, email_verified_at, created_at, updated_at
             "#,
         )
         .bind(user.id.as_str())
@@ -124,9 +124,9 @@ impl UserStorage for PostgresStorage {
     async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id::text, email, name, email_verified_at, created_at, updated_at 
+            SELECT id, email, name, email_verified_at, created_at, updated_at 
             FROM users 
-            WHERE id::text = $1
+            WHERE id = $1
             "#,
         )
         .bind(id.as_str())
@@ -146,7 +146,7 @@ impl UserStorage for PostgresStorage {
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id::text, email, name, email_verified_at, created_at, updated_at 
+            SELECT id, email, name, email_verified_at, created_at, updated_at 
             FROM users 
             WHERE email = $1
             "#,
@@ -193,8 +193,8 @@ impl UserStorage for PostgresStorage {
             r#"
             UPDATE users 
             SET email = $1, name = $2, email_verified_at = $3, updated_at = $4 
-            WHERE id::text = $5
-            RETURNING id::text, email, name, email_verified_at, created_at, updated_at
+            WHERE id = $5
+            RETURNING id, email, name, email_verified_at, created_at, updated_at
             "#,
         )
         .bind(&user.email)
@@ -213,7 +213,7 @@ impl UserStorage for PostgresStorage {
     }
 
     async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
-        sqlx::query("DELETE FROM users WHERE id::text = $1")
+        sqlx::query("DELETE FROM users WHERE id = $1")
             .bind(id.as_str())
             .execute(&self.pool)
             .await
@@ -226,7 +226,7 @@ impl UserStorage for PostgresStorage {
     }
 
     async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
-        sqlx::query("UPDATE users SET email_verified_at = $1 WHERE id::text = $2")
+        sqlx::query("UPDATE users SET email_verified_at = $1 WHERE id = $2")
             .bind(Utc::now())
             .bind(user_id.as_str())
             .execute(&self.pool)

@@ -128,7 +128,7 @@ impl OAuthStorage for PostgresStorage {
         subject: &str,
         user_id: &UserId,
     ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error> {
-        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
+        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)")
             .bind(user_id.as_str())
             .bind(provider)
             .bind(subject)
@@ -143,9 +143,9 @@ impl OAuthStorage for PostgresStorage {
 
         let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
-            SELECT id, user_id::text, provider, subject, created_at, updated_at
+            SELECT id, user_id, provider, subject, created_at, updated_at
             FROM oauth_accounts
-            WHERE user_id::text = $1
+            WHERE user_id = $1
             "#,
         )
         .bind(user_id.as_str())
@@ -166,7 +166,7 @@ impl OAuthStorage for PostgresStorage {
         expires_in: chrono::Duration,
     ) -> Result<(), <Self as OAuthStorage>::Error> {
         sqlx::query(
-            "INSERT INTO oauth_state (csrf_state, pkce_verifier, expires_at) VALUES ($1::text, $2, $3) RETURNING value",
+            "INSERT INTO oauth_state (csrf_state, pkce_verifier, expires_at) VALUES ($1, $2, $3) RETURNING value",
         )
         .bind(csrf_state)
         .bind(pkce_verifier)
@@ -205,7 +205,7 @@ impl OAuthStorage for PostgresStorage {
     ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
         let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
-            SELECT id, user_id::text, provider, subject, created_at, updated_at
+            SELECT id, user_id, provider, subject, created_at, updated_at
             FROM oauth_accounts
             WHERE provider = $1 AND subject = $2
             "#,
@@ -233,7 +233,7 @@ impl OAuthStorage for PostgresStorage {
     ) -> Result<Option<User>, <Self as OAuthStorage>::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id::text, email, name, email_verified_at, created_at, updated_at
+            SELECT id, email, name, email_verified_at, created_at, updated_at
             FROM users
             WHERE provider = $1 AND subject = $2
             "#,
@@ -260,7 +260,7 @@ impl OAuthStorage for PostgresStorage {
         provider: &str,
         subject: &str,
     ) -> Result<(), <Self as OAuthStorage>::Error> {
-        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1::uuid, $2, $3, $4, $5)")
+        sqlx::query("INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)")
             .bind(user_id.as_str())
             .bind(provider)
             .bind(subject)

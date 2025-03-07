@@ -18,7 +18,7 @@ impl PasskeyStorage for PostgresStorage {
         sqlx::query(
             r#"
             INSERT INTO passkeys (credential_id, user_id, public_key) 
-            VALUES ($1, $2::uuid, $3)
+            VALUES ($1, $2, $3)
             "#,
         )
         .bind(credential_id)
@@ -56,7 +56,7 @@ impl PasskeyStorage for PostgresStorage {
             r#"
             SELECT public_key 
             FROM passkeys 
-            WHERE user_id = $1::uuid
+            WHERE user_id = $1
             "#,
         )
         .bind(user_id.as_str())

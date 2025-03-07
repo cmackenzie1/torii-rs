@@ -13,7 +13,7 @@ impl PasswordStorage for PostgresStorage {
         user_id: &UserId,
         hash: &str,
     ) -> Result<(), <Self as PasswordStorage>::Error> {
-        sqlx::query("UPDATE users SET password_hash = $1 WHERE id::text = $2")
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
             .bind(hash)
             .bind(user_id.as_str())
             .execute(&self.pool)
@@ -26,7 +26,7 @@ impl PasswordStorage for PostgresStorage {
         &self,
         user_id: &UserId,
     ) -> Result<Option<String>, <Self as PasswordStorage>::Error> {
-        let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id::text = $1")
+        let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
             .bind(user_id.as_str())
             .fetch_optional(&self.pool)
             .await
