@@ -20,7 +20,7 @@ use torii_auth_magic_link::MagicLinkPlugin;
 use torii_core::{
     Session,
     plugin::PluginManager,
-    session::SessionId,
+    session::SessionToken,
     storage::{SessionStorage, UserStorage},
 };
 use torii_storage_sqlite::SqliteStorage;
@@ -168,7 +168,7 @@ async fn verify_session<B>(
     state
         .plugin_manager
         .session_storage()
-        .get_session(&SessionId::new(
+        .get_session(&SessionToken::new(
             &session_id.expect("session_id is required"),
         ))
         .await
@@ -197,7 +197,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
     let session = state
         .plugin_manager
         .session_storage()
-        .get_session(&SessionId::new(
+        .get_session(&SessionToken::new(
             &session_id.expect("session_id is required"),
         ))
         .await

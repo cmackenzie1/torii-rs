@@ -13,7 +13,7 @@ use axum_extra::extract::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use torii::{SessionId, User};
+use torii::{SessionToken, User};
 use tracing::info;
 use uuid::Uuid;
 
@@ -219,7 +219,7 @@ async fn add_user_extension(
     if let Some(session_id) = session_id {
         let session = state
             .torii
-            .get_session(&SessionId::new(&session_id))
+            .get_session(&SessionToken::new(&session_id))
             .await
             .expect("Failed to get session");
 
@@ -258,7 +258,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
     if let Some(session_id) = session_id {
         let session = state
             .torii
-            .get_session(&SessionId::new(&session_id))
+            .get_session(&SessionToken::new(&session_id))
             .await
             .expect("Failed to get session");
 

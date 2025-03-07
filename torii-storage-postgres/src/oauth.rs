@@ -44,6 +44,7 @@ impl PostgresOAuthAccountBuilder {
     pub fn build(self) -> Result<PostgresOAuthAccount, torii_core::Error> {
         let now = Utc::now();
         Ok(PostgresOAuthAccount {
+            id: None,
             user_id: self
                 .user_id
                 .ok_or(ValidationError::MissingField(
@@ -64,11 +65,12 @@ impl PostgresOAuthAccountBuilder {
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PostgresOAuthAccount {
-    user_id: String,
-    provider: String,
-    subject: String,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    pub id: Option<i64>,
+    pub user_id: String,
+    pub provider: String,
+    pub subject: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl PostgresOAuthAccount {
@@ -141,7 +143,7 @@ impl OAuthStorage for PostgresStorage {
 
         let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
-            SELECT user_id::text, provider, subject, created_at, updated_at
+            SELECT id, user_id::text, provider, subject, created_at, updated_at
             FROM oauth_accounts
             WHERE user_id::text = $1
             "#,
@@ -203,7 +205,7 @@ impl OAuthStorage for PostgresStorage {
     ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
         let oauth_account = sqlx::query_as::<_, PostgresOAuthAccount>(
             r#"
-            SELECT user_id::text, provider, subject, created_at, updated_at
+            SELECT id, user_id::text, provider, subject, created_at, updated_at
             FROM oauth_accounts
             WHERE provider = $1 AND subject = $2
             "#,

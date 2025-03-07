@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Error, OAuthAccount, Session, User, UserId, error::ValidationError, session::SessionId,
+    Error, OAuthAccount, Session, User, UserId, error::ValidationError, session::SessionToken,
 };
 
 #[async_trait]
@@ -38,8 +38,8 @@ pub trait SessionStorage: Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn create_session(&self, session: &Session) -> Result<Session, Self::Error>;
-    async fn get_session(&self, id: &SessionId) -> Result<Option<Session>, Self::Error>;
-    async fn delete_session(&self, id: &SessionId) -> Result<(), Self::Error>;
+    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error>;
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error>;
     async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error>;
 }

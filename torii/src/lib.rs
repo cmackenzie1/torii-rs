@@ -59,7 +59,7 @@ use torii_core::{
 
 /// Re-export core types
 pub use torii_core::{
-    session::{Session, SessionId},
+    session::{Session, SessionToken},
     user::{User, UserId},
 };
 
@@ -186,7 +186,7 @@ where
     /// # Returns
     ///
     /// Returns the session if found, otherwise `None`
-    pub async fn get_session(&self, session_id: &SessionId) -> Result<Session, ToriiError> {
+    pub async fn get_session(&self, session_id: &SessionToken) -> Result<Session, ToriiError> {
         let session = self
             .session_manager
             .get_session(session_id)

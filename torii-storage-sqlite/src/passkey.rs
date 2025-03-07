@@ -17,7 +17,7 @@ impl PasskeyStorage for SqliteStorage {
     ) -> Result<(), <Self as PasskeyStorage>::Error> {
         sqlx::query(
             r#"
-            INSERT INTO passkeys (id, user_id, public_key) 
+            INSERT INTO passkeys (credential_id, user_id, public_key) 
             VALUES (?, ?, ?)
             "#,
         )
@@ -38,7 +38,7 @@ impl PasskeyStorage for SqliteStorage {
             r#"
             SELECT public_key 
             FROM passkeys 
-            WHERE id = ?
+            WHERE credential_id = ?
             "#,
         )
         .bind(credential_id)
@@ -74,7 +74,7 @@ impl PasskeyStorage for SqliteStorage {
     ) -> Result<(), <Self as PasskeyStorage>::Error> {
         sqlx::query(
             r#"
-            INSERT INTO passkey_challenges (id, challenge, expires_at) 
+            INSERT INTO passkey_challenges (challenge_id, challenge, expires_at) 
             VALUES (?, ?, ?)
             "#,
         )
@@ -95,7 +95,7 @@ impl PasskeyStorage for SqliteStorage {
             r#"
             SELECT challenge 
             FROM passkey_challenges 
-            WHERE id = ? AND expires_at > ?
+            WHERE challenge_id = ? AND expires_at > ?
             "#,
         )
         .bind(challenge_id)
