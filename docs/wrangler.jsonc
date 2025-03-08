@@ -1,0 +1,17 @@
+{
+	"name": "torii-docs",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-01-01",
+	"account_id": "9167117c70d2a9b285caf25f61414eaa",
+	"workers_dev": false,
+	"routes": [
+		{
+			"pattern": "torii.rs",
+			"custom_domain": true
+		}
+	],
+	"assets": {
+		"directory": "./book",
+		"binding": "ASSETS"
+	}
+}

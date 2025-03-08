@@ -1,1 +1,5 @@
-book
+book/
+node_modules/
+.wrangler/
+.DS_Store
+.dist/
