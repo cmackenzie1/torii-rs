@@ -17,6 +17,10 @@ Added a new crate, `torii-storage-seaorm`, which is a storage backend for the to
 
 - `SessionStorage::get_session` now returns a `Result<Option<Session>, Error>` instead of `Result<Session, Error>`. This reverts the change from `0.2.3`.
 
+#### `torii`
+
+- Login methods now accept an optional user agent and ip address parameter which will be stored with the session in the database.
+
 ## [0.2.3] - 2025-03-05
 
 ### Added
