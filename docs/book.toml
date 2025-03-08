@@ -1,0 +1,6 @@
+[book]
+authors = ["Cole MacKenzie"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Torii Documentation"
