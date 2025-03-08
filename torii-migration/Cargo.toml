@@ -12,4 +12,3 @@ async-trait.workspace = true
 chrono.workspace = true
 sqlx = { workspace = true, features = ["any"] }
 thiserror.workspace = true
-tracing.workspace = true

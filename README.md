@@ -18,12 +18,12 @@ Checkout the example [todos](./examples/todos/README.md) to see Torii in action.
 
 ## Features
 
-| Plugin                                          | SQLite | PostgreSQL | MySQL                                                     |
-| ----------------------------------------------- | ------ | ---------- | --------------------------------------------------------- |
-| [Password](./torii-auth-password/README.md)     | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
-| [OAuth2/OIDC](./torii-auth-oauth/README.md)     | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
-| [Passkey](./torii-auth-passkey/README.md)       | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
-| [Magic Link](./torii-auth-magic-link/README.md) | ✅     | ✅         | 🚧 [#4](https://github.com/cmackenzie1/torii-rs/issues/4) |
+| Plugin                                          | SQLite | PostgreSQL | MySQL (using [SeaORM](https://github.com/SeaQL/sea-orm)) |
+|-------------------------------------------------|--------|------------|----------------------------------------------------------|
+| [Password](./torii-auth-password/README.md)     | ✅      | ✅          | ✅                                                        |
+| [OAuth2/OIDC](./torii-auth-oauth/README.md)     | ✅      | ✅          | ✅                                                        |
+| [Passkey](./torii-auth-passkey/README.md)       | ✅      | ✅          | ✅                                                        |
+| [Magic Link](./torii-auth-magic-link/README.md) | ✅      | ✅          | ✅                                                        |
 
 ✅ = Supported
 🚧 = Planned/In Development

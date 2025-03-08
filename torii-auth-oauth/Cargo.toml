@@ -12,11 +12,9 @@ torii-core = { path = "../torii-core", version = "0.2.2" }
 oauth2 = { version = "5.0.0" }
 reqwest = { version = "0.12", features = ["json"] }
 chrono.workspace = true
-async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-uuid.workspace = true
 
 [dev-dependencies]
 axum = { version = "0.8", features = ["macros"] }

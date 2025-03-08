@@ -12,7 +12,6 @@ torii-migration = { path = "../torii-migration", version = "0.2.2" }
 async-trait.workspace = true
 chrono.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
-thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

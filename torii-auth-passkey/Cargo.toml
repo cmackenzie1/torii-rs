@@ -9,7 +9,6 @@ license.workspace = true
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.2.2" }
 
-async-trait.workspace = true
 chrono.workspace = true
 webauthn-rs = { version = "0.5.1", features = [
     "danger-allow-state-serialisation",

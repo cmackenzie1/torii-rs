@@ -17,7 +17,7 @@
 //!
 //! Torii currently supports the following storage backends:
 //! - SQLite
-//! - PostgresSQL
+//! - Postgres
 //! - MySQL
 //!
 //! ## Warning
@@ -52,9 +52,9 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use torii_core::{
-    PluginManager, SessionStorage,
-    session::{DefaultSessionManager, SessionManager},
-    storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
+    session::{DefaultSessionManager, SessionManager}, storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
+    PluginManager,
+    SessionStorage,
 };
 
 /// Re-export core types
@@ -63,12 +63,14 @@ pub use torii_core::{
     user::{User, UserId},
 };
 
+
 /// Re-export auth plugins
 #[cfg(feature = "password")]
 pub use torii_auth_password::PasswordPlugin;
 
+
 #[cfg(feature = "oauth")]
-pub use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
+pub use torii_auth_oauth::{providers::Provider, AuthorizationUrl, OAuthPlugin};
 
 #[cfg(feature = "passkey")]
 pub use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};

@@ -8,13 +8,13 @@ license.workspace = true
 
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.2.2" }
-async-trait.workspace = true
 chrono.workspace = true
 password-auth = { version = "1", features = ["argon2"] }
 regex.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 serde_json.workspace = true

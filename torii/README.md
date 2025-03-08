@@ -15,8 +15,8 @@ Torii is a powerful authentication framework for Rust applications that gives yo
 - Full data sovereignty - store user data where you want
 - Multiple storage backends:
   - SQLite
-  - PostgreSQL
-  - MySQL ([#4](https://github.com/cmackenzie1/torii-rs/issues/4))
+  - Postgres
+  - MySQL
 
 ## Quick Start
 
