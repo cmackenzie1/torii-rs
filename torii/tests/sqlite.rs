@@ -16,7 +16,7 @@ async fn test_sqlite_password_auth() {
 
     // Login the user without verifying the email, should fail
     let result = torii
-        .login_user_with_password("test@example.com", "password")
+        .login_user_with_password("test@example.com", "password", None, None)
         .await;
     assert!(result.is_err());
 
@@ -25,7 +25,7 @@ async fn test_sqlite_password_auth() {
 
     // Login the user again, should succeed
     let (user, session) = torii
-        .login_user_with_password("test@example.com", "password")
+        .login_user_with_password("test@example.com", "password", None, None)
         .await
         .unwrap();
     assert_eq!(user.email, "test@example.com");

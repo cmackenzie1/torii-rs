@@ -19,7 +19,7 @@ async fn test_password_auth_flow(storage: Arc<SeaORMStorage>) {
 
     // Attempt to login without verifying email (should fail)
     let result = torii
-        .login_user_with_password("test@example.com", "password")
+        .login_user_with_password("test@example.com", "password", None, None)
         .await;
     assert!(result.is_err(), "Login should fail with unverified email");
 
@@ -31,7 +31,7 @@ async fn test_password_auth_flow(storage: Arc<SeaORMStorage>) {
 
     // Login after email verification (should succeed)
     let (user, session) = torii
-        .login_user_with_password("test@example.com", "password")
+        .login_user_with_password("test@example.com", "password", None, None)
         .await
         .expect("Failed to login user");
     assert_eq!(user.email, "test@example.com");
