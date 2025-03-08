@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    body::Body,
     extract::{Request, State},
     http::StatusCode,
     middleware::{self, Next},
@@ -83,7 +82,7 @@ async fn finish_registration_handler(
         .unwrap();
 
     let user = plugin
-        .complete_registration(&email, &passkey_challenge_id, &body.challenge_response)
+        .complete_registration(&email, passkey_challenge_id, &body.challenge_response)
         .await
         .map_err(|e| {
             tracing::error!("Failed to complete registration: {:?}", e);
@@ -145,7 +144,7 @@ async fn whoami_handler(State(state): State<AppState>, jar: CookieJar) -> Respon
 
 /// Middleware to protect routes that require authentication
 /// Checks for valid session cookie and redirects to sign-in if missing/invalid
-async fn verify_session<B>(
+async fn verify_session(
     State(state): State<AppState>,
     jar: CookieJar,
     request: Request,
@@ -252,8 +251,8 @@ async fn main() {
 
     let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
     plugin_manager.register_plugin(PasskeyPlugin::new(
-        &"localhost",
-        &"http://localhost:4000",
+        "localhost",
+        "http://localhost:4000",
         user_storage.clone(),
     ));
 
@@ -265,7 +264,7 @@ async fn main() {
         .route("/whoami", get(whoami_handler))
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
-            verify_session::<Body>,
+            verify_session,
         ))
         .route(
             "/",

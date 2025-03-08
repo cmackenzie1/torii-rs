@@ -585,7 +585,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_migrations() -> Result<(), MigrationError> {
-        let manager = setup_test().await.map_err(|e| MigrationError::Sqlx(e))?;
+        let manager = setup_test().await.map_err(MigrationError::Sqlx)?;
 
         // Test up migrations
         let migrations: Vec<Box<dyn Migration<Postgres>>> = vec![
@@ -615,7 +615,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_up_down_up() -> Result<(), MigrationError> {
-        let manager = setup_test().await.map_err(|e| MigrationError::Sqlx(e))?;
+        let manager = setup_test().await.map_err(MigrationError::Sqlx)?;
 
         // Test up migrations
         let migrations: Vec<Box<dyn Migration<Postgres>>> = vec![
