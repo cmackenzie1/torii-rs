@@ -11,7 +11,8 @@ jobs:
     name: Build documentation
     runs-on: ubuntu-latest
     env:
-      MDBOOK_VERSION: v0.4.45
+      MDBOOK_VERSION: v0.4.45 # https://github.com/rust-lang/mdBook/releases
+      WRANGLER_VERSION: 3.114.0 # https://www.npmjs.com/package/wrangler
     steps:
       - uses: actions/checkout@v4
 
@@ -31,4 +32,5 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
           workingDirectory: "docs"
