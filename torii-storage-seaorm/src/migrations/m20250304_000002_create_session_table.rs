@@ -5,7 +5,7 @@ use sea_orm::{
 };
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
-    schema::{pk_auto, string, string_null, timestamp},
+    schema::{pk_auto, string, string_null, timestamp_with_time_zone},
 };
 
 use super::Sessions;
@@ -21,14 +21,20 @@ impl MigrationTrait for CreateSessions {
                 Table::create()
                     .table(Sessions::Table)
                     .if_not_exists()
-                    .col(pk_auto(Sessions::Id))
+                    .col(pk_auto(Sessions::Id).big_integer())
                     .col(string(Sessions::UserId))
                     .col(string(Sessions::Token))
                     .col(string_null(Sessions::IpAddress))
                     .col(string_null(Sessions::UserAgent))
-                    .col(timestamp(Sessions::ExpiresAt))
-                    .col(timestamp(Sessions::CreatedAt).default(Expr::current_timestamp()))
-                    .col(timestamp(Sessions::UpdatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp_with_time_zone(Sessions::ExpiresAt))
+                    .col(
+                        timestamp_with_time_zone(Sessions::CreatedAt)
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        timestamp_with_time_zone(Sessions::UpdatedAt)
+                            .default(Expr::current_timestamp()),
+                    )
                     .to_owned(),
             )
             .await?;

@@ -44,6 +44,7 @@ impl SeaORMStorage {
 
     pub async fn connect(url: &str) -> Result<Self, SeaORMStorageError> {
         let pool = Database::connect(url).await?;
+        pool.ping().await?;
 
         Ok(Self::new(pool))
     }
