@@ -1,0 +1,14 @@
+{
+  "name": "torii-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Torii Documentation",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "mdbook build",
+    "deploy": "mdbook build && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.114.0"
+  }
+}
