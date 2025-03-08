@@ -70,7 +70,7 @@ mod tests {
         migrations.iter().for_each(|m| {
             println!("{}: {}", m.name(), m.status());
         });
-        let _ = Migrator::up(&pool, None).await.unwrap();
+        Migrator::up(&pool, None).await.unwrap();
         let migrations = Migrator::get_pending_migrations(&pool).await.unwrap();
         migrations.iter().for_each(|m| {
             println!("{}: {}", m.name(), m.status());

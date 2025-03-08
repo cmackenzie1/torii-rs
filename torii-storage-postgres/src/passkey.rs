@@ -133,7 +133,7 @@ mod tests {
         let credential_id = Uuid::new_v4().to_string();
         let passkey_json = "passkey_json";
         storage
-            .add_passkey(&user.id, &credential_id, &passkey_json)
+            .add_passkey(&user.id, &credential_id, passkey_json)
             .await
             .unwrap();
 
@@ -150,7 +150,7 @@ mod tests {
         let challenge = "challenge";
         let expires_in = Duration::minutes(5);
         storage
-            .set_passkey_challenge(&challenge_id, &challenge, expires_in)
+            .set_passkey_challenge(&challenge_id, challenge, expires_in)
             .await
             .unwrap();
 

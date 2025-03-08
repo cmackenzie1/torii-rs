@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{
     Form, Json, Router,
-    body::Body,
     extract::{Request, State},
     http::{StatusCode, header},
     middleware::{self, Next},
@@ -164,7 +163,7 @@ async fn sign_in_handler() -> impl IntoResponse {
 
 /// Middleware to protect routes that require authentication
 /// Checks for valid session cookie and redirects to sign-in if missing/invalid
-async fn verify_session<B>(
+async fn verify_session(
     State(state): State<AppState>,
     jar: CookieJar,
     request: Request,
@@ -246,7 +245,7 @@ async fn main() {
         .route("/whoami", get(whoami_handler))
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
-            verify_session::<Body>,
+            verify_session,
         ))
         .route("/", get(|| async { "Hello, World!" }))
         .route("/sign-up", get(sign_up_handler))
