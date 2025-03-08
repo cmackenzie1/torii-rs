@@ -5,7 +5,7 @@ use sea_orm::{
 };
 use sea_orm_migration::{
     MigrationTrait, SchemaManager,
-    schema::{string, string_null, timestamp, timestamp_null},
+    schema::{string, string_null, timestamp_with_time_zone, timestamp_with_time_zone_null},
 };
 
 use super::Users;
@@ -25,9 +25,15 @@ impl MigrationTrait for CreateUsers {
                     .col(string(Users::Email))
                     .col(string_null(Users::Name)) // Nullable since users may not have a name yet...
                     .col(string_null(Users::PasswordHash)) // Nullable since users may not have a password (i.e. OAuth, Passkey, Magic Link)
-                    .col(timestamp_null(Users::EmailVerifiedAt))
-                    .col(timestamp(Users::CreatedAt).default(Expr::current_timestamp()))
-                    .col(timestamp(Users::UpdatedAt).default(Expr::current_timestamp()))
+                    .col(timestamp_with_time_zone_null(Users::EmailVerifiedAt))
+                    .col(
+                        timestamp_with_time_zone(Users::CreatedAt)
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        timestamp_with_time_zone(Users::UpdatedAt)
+                            .default(Expr::current_timestamp()),
+                    )
                     .to_owned(),
             )
             .await?;

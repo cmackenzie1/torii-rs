@@ -21,7 +21,7 @@ impl MigrationTrait for CreateMagicLinks {
                 Table::create()
                     .table(MagicLinks::Table)
                     .if_not_exists()
-                    .col(pk_auto(MagicLinks::Id))
+                    .col(pk_auto(MagicLinks::Id).big_integer())
                     .col(string(MagicLinks::UserId))
                     .col(string(MagicLinks::Token))
                     .col(timestamp_null(MagicLinks::UsedAt))
