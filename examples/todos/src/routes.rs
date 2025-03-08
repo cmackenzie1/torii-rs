@@ -1,15 +1,21 @@
+use std::net::SocketAddr;
+
 use askama::Template;
 use axum::{
-    extract::{Form, Path, Request, State},
+    extract::{ConnectInfo, Form, Path, Request, State},
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
     Extension, Json, Router,
 };
-use axum_extra::extract::{
-    cookie::{Cookie, SameSite},
-    CookieJar,
+use axum_extra::{
+    extract::{
+        cookie::{Cookie, SameSite},
+        CookieJar,
+    },
+    headers::UserAgent,
+    TypedHeader,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -57,6 +63,7 @@ pub fn create_router(app_state: AppState) -> Router {
             app_state.clone(),
             add_user_extension,
         ))
+        .layer(middleware::from_fn(add_connection_info_extension))
         .with_state(app_state)
 }
 
@@ -184,11 +191,15 @@ async fn sign_up_form_handler(
 #[axum::debug_handler]
 async fn sign_in_form_handler(
     State(state): State<AppState>,
+    Extension(connection_info): Extension<ConnectionInfo>,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
+    let user_agent = connection_info.user_agent;
+    let ip_address = connection_info.ip;
+
     let (_, session) = state
         .torii
-        .login_user_with_password(&params.email, &params.password)
+        .login_user_with_password(&params.email, &params.password, user_agent, ip_address)
         .await
         .unwrap();
 
@@ -298,4 +309,23 @@ async fn toggle_todo_handler(
         }
     }
     StatusCode::NOT_FOUND.into_response()
+}
+
+#[derive(Clone, Debug)]
+struct ConnectionInfo {
+    ip: Option<String>,
+    user_agent: Option<String>,
+}
+
+async fn add_connection_info_extension(
+    user_agent: Option<TypedHeader<UserAgent>>,
+    addr: ConnectInfo<SocketAddr>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    request.extensions_mut().insert(ConnectionInfo {
+        ip: Some(addr.ip().to_string()),
+        user_agent: user_agent.map(|u| u.to_string()),
+    });
+    next.run(request).await
 }

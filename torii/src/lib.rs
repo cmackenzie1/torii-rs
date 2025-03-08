@@ -52,9 +52,9 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use torii_core::{
-    session::{DefaultSessionManager, SessionManager}, storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
-    PluginManager,
-    SessionStorage,
+    PluginManager, SessionStorage,
+    session::{DefaultSessionManager, SessionManager},
+    storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
 };
 
 /// Re-export core types
@@ -63,14 +63,12 @@ pub use torii_core::{
     user::{User, UserId},
 };
 
-
 /// Re-export auth plugins
 #[cfg(feature = "password")]
 pub use torii_auth_password::PasswordPlugin;
 
-
 #[cfg(feature = "oauth")]
-pub use torii_auth_oauth::{providers::Provider, AuthorizationUrl, OAuthPlugin};
+pub use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
 
 #[cfg(feature = "passkey")]
 pub use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
@@ -101,6 +99,30 @@ pub enum ToriiError {
     AuthError(String),
     #[error("Storage error: {0}")]
     StorageError(String),
+}
+
+/// The configuration for a session.
+///
+/// This struct is used to configure the session for a user.
+/// It is used to set the expiration time for the session.
+///
+/// # Example
+///
+/// ```rust
+/// use torii::SessionConfig;
+///
+/// let config = SessionConfig::default();
+/// ```
+pub struct SessionConfig {
+    pub expires_in: Duration,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            expires_in: Duration::days(30),
+        }
+    }
 }
 
 /// The main authentication coordinator that manages plugins and storage.
@@ -142,6 +164,7 @@ where
     user_storage: Arc<U>,
     session_manager: Arc<DefaultSessionManager<S>>,
     manager: PluginManager<U, S>,
+    session_config: SessionConfig,
 }
 
 impl<U, S> Torii<U, S>
@@ -157,7 +180,18 @@ where
             user_storage,
             session_manager,
             manager,
+            session_config: SessionConfig::default(),
         }
+    }
+
+    /// Set the session config
+    ///
+    /// # Arguments
+    ///
+    /// * `config`: The session config to set
+    pub fn with_session_config(mut self, config: SessionConfig) -> Self {
+        self.session_config = config;
+        self
     }
 
     /// Get a user by their ID
@@ -179,6 +213,37 @@ where
         Ok(user)
     }
 
+    /// Create a new session for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to create a session for
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
+    ///
+    /// # Returns
+    ///
+    /// Returns the created session
+    pub async fn create_session(
+        &self,
+        user_id: &UserId,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<Session, ToriiError> {
+        let session = self
+            .session_manager
+            .create_session(
+                user_id,
+                user_agent,
+                ip_address,
+                self.session_config.expires_in,
+            )
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+        Ok(session)
+    }
+
     /// Get a session by its ID
     ///
     /// # Arguments
@@ -196,6 +261,18 @@ where
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
         Ok(session)
+    }
+
+    /// Delete a session by its ID
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id`: The ID of the session to delete
+    pub async fn delete_session(&self, session_id: &SessionToken) -> Result<(), ToriiError> {
+        self.session_manager
+            .delete_session(session_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
 }
 
@@ -258,6 +335,8 @@ where
         &self,
         email: &str,
         password: &str,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
         let password_plugin = self
             .manager
@@ -270,10 +349,8 @@ where
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         let session = self
-            .session_manager
-            .create_session(&user.id, None, None, Duration::days(30))
-            .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
 
         Ok((user, session))
     }
@@ -354,6 +431,8 @@ where
         provider: &str,
         code: &str,
         csrf_state: &str,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
         let oauth_plugin = self
             .manager
@@ -366,10 +445,8 @@ where
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         let session = self
-            .session_manager
-            .create_session(&user.id, None, None, Duration::days(30))
-            .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
 
         Ok((user, session))
     }
@@ -488,6 +565,8 @@ where
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
         let passkey_plugin = self
             .manager
@@ -500,10 +579,8 @@ where
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         let session = self
-            .session_manager
-            .create_session(&user.id, None, None, Duration::days(30))
-            .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
 
         Ok((user, session))
     }
@@ -559,7 +636,12 @@ where
     /// # Returns
     ///
     /// Returns the user and session if the magic link is verified successfully
-    pub async fn verify_magic_token(&self, token: &str) -> Result<(User, Session), ToriiError> {
+    pub async fn verify_magic_token(
+        &self,
+        token: &str,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<(User, Session), ToriiError> {
         let magic_link_plugin = self
             .manager
             .get_plugin::<MagicLinkPlugin<U>>("magic-link")
@@ -578,11 +660,8 @@ where
 
         if let Some(user) = user {
             let session = self
-                .session_manager
-                .create_session(&user.id, None, None, Duration::days(30))
-                .await
-                .map_err(|e| ToriiError::StorageError(e.to_string()))?;
-
+                .create_session(&user.id, user_agent, ip_address)
+                .await?;
             Ok((user, session))
         } else {
             Err(ToriiError::AuthError("User not found".to_string()))

@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use torii::{SeaORMStorage, Torii};
 
 mod routes;
@@ -64,7 +64,12 @@ async fn main() {
             "Listening on {}",
             listener.local_addr().expect("Failed to get local address")
         );
-        axum::serve(listener, app).await.expect("Server error");
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .expect("Server error");
     });
 
     println!("Please open the following URL in your browser: http://localhost:4000/");
