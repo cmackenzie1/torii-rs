@@ -49,6 +49,12 @@ pub enum SessionError {
 
     #[error("Session already exists")]
     AlreadyExists,
+
+    #[error("Invalid token: {0}")]
+    InvalidToken(String),
+
+    #[error("JWT verification failed: {0}")]
+    JwtVerification(String),
 }
 
 #[derive(Debug, Error)]
