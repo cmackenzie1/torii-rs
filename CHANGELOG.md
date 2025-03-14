@@ -9,17 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-Added a new crate, `torii-storage-seaorm`, which is a storage backend for the torii authentication ecosystem that uses SeaORM to target SQLite, Postgres, and MySQL.
+- Added a new crate, `torii-storage-seaorm`, which is a storage backend for the torii authentication ecosystem that uses SeaORM to target SQLite, Postgres, and MySQL.
+- Added JWT-based session support with configurable expiry time.
+  - `JwtSessionManager`: A session manager that uses JWTs to store session data without requiring database lookup.
+  - JWT sessions can store user metadata (IP, user agent) directly in the token.
+  - JWT sessions can be configured with a custom issuer and expiration time.
+  - Support for both RS256 (RSA+SHA256) and HS256 (HMAC+SHA256) algorithms:
+    - RS256: Uses asymmetric cryptography with separate signing and verification keys
+    - HS256: Uses symmetric cryptography with a single secret key
 
 ### Changed
 
 #### `torii-core`
 
 - `SessionStorage::get_session` now returns a `Result<Option<Session>, Error>` instead of `Result<Session, Error>`. This reverts the change from `0.2.3`.
+- `SessionToken` type now supports both simple UUID tokens and JWT tokens.
+- Added `JwtConfig` for configuring JWT session parameters.
 
 #### `torii`
 
 - Login methods now accept an optional user agent and ip address parameter which will be stored with the session in the database.
+- Added new methods to configure session type:
+  - `with_jwt_sessions()`: Configure Torii to use JWT sessions exclusively
+- Session configuration now supports JWT settings through `SessionConfig`.
 
 ## [0.2.3] - 2025-03-05
 

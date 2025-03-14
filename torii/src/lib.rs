@@ -53,7 +53,7 @@ use std::sync::Arc;
 use chrono::Duration;
 use torii_core::{
     PluginManager, SessionStorage,
-    session::{DefaultSessionManager, SessionManager},
+    session::{DefaultSessionManager, JwtConfig, JwtSessionManager, SessionManager},
     storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
 };
 
@@ -104,7 +104,7 @@ pub enum ToriiError {
 /// The configuration for a session.
 ///
 /// This struct is used to configure the session for a user.
-/// It is used to set the expiration time for the session.
+/// It includes settings for session expiration and JWT options.
 ///
 /// # Example
 ///
@@ -114,14 +114,32 @@ pub enum ToriiError {
 /// let config = SessionConfig::default();
 /// ```
 pub struct SessionConfig {
+    /// The duration until the session expires
     pub expires_in: Duration,
+    /// JWT configuration (if using JWT sessions)
+    pub jwt_config: Option<JwtConfig>,
 }
 
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
             expires_in: Duration::days(30),
+            jwt_config: None,
         }
+    }
+}
+
+impl SessionConfig {
+    /// Create a new session config with JWT support
+    pub fn with_jwt(mut self, jwt_config: JwtConfig) -> Self {
+        self.jwt_config = Some(jwt_config);
+        self
+    }
+
+    /// Set the session expiration time
+    pub fn expires_in(mut self, duration: Duration) -> Self {
+        self.expires_in = duration;
+        self
     }
 }
 
@@ -133,6 +151,7 @@ impl Default for SessionConfig {
 /// The type parameters represent:
 /// - `U`: The user storage implementation
 /// - `S`: The session storage implementation
+/// - `M`: The session manager implementation
 ///
 /// # Example
 ///
@@ -156,18 +175,20 @@ impl Default for SessionConfig {
 ///     let user = torii.get_user(&user_id).await?;
 /// }
 /// ```
-pub struct Torii<U, S>
+pub struct Torii<U, S, M = DefaultSessionManager<S>>
 where
     U: UserStorage,
     S: SessionStorage,
+    M: SessionManager + 'static,
 {
     user_storage: Arc<U>,
-    session_manager: Arc<DefaultSessionManager<S>>,
+    session_storage: Arc<S>,
+    session_manager: Arc<M>,
     manager: PluginManager<U, S>,
     session_config: SessionConfig,
 }
 
-impl<U, S> Torii<U, S>
+impl<U, S> Torii<U, S, DefaultSessionManager<S>>
 where
     U: UserStorage,
     S: SessionStorage,
@@ -178,12 +199,37 @@ where
 
         Self {
             user_storage,
+            session_storage,
             session_manager,
             manager,
             session_config: SessionConfig::default(),
         }
     }
 
+    /// Configure Torii to use JWT sessions with HS256 or RS256 signing algorithm
+    /// This will enable stateless sessions that don't require database lookups for session validation.
+    /// The trade-off here is that sessions are not revocable, and a compromised JWT cannot be revoked, so a
+    /// short lifetime is recommended.
+    pub fn with_jwt_sessions(self, jwt_config: JwtConfig) -> Torii<U, S, JwtSessionManager> {
+        let session_manager = Arc::new(JwtSessionManager::new(jwt_config.clone()));
+        let manager = PluginManager::new(self.user_storage.clone(), self.session_storage.clone());
+
+        Torii {
+            user_storage: self.user_storage,
+            session_storage: self.session_storage,
+            session_manager,
+            manager,
+            session_config: self.session_config.with_jwt(jwt_config),
+        }
+    }
+}
+
+impl<U, S, M> Torii<U, S, M>
+where
+    U: UserStorage,
+    S: SessionStorage,
+    M: SessionManager + 'static,
+{
     /// Set the session config
     ///
     /// # Arguments
@@ -274,13 +320,26 @@ where
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
+
+    /// Delete all sessions for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to delete sessions for
+    pub async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), ToriiError> {
+        self.session_manager
+            .delete_sessions_for_user(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
 }
 
 #[cfg(feature = "password")]
-impl<U, S> Torii<U, S>
+impl<U, S, M> Torii<U, S, M>
 where
     U: PasswordStorage + Clone,
     S: SessionStorage + Clone,
+    M: SessionManager + 'static,
 {
     /// Add a password plugin to the Torii instance
     ///
@@ -369,10 +428,11 @@ where
 }
 
 #[cfg(feature = "oauth")]
-impl<U, S> Torii<U, S>
+impl<U, S, M> Torii<U, S, M>
 where
     U: OAuthStorage + Clone,
     S: SessionStorage + Clone,
+    M: SessionManager + 'static,
 {
     /// Add an OAuth provider to the Torii instance
     ///
@@ -453,10 +513,11 @@ where
 }
 
 #[cfg(feature = "passkey")]
-impl<U, S> Torii<U, S>
+impl<U, S, M> Torii<U, S, M>
 where
     U: PasskeyStorage + Clone,
     S: SessionStorage + Clone,
+    M: SessionManager + 'static,
 {
     /// Add a passkey plugin to the Torii instance
     ///
@@ -587,10 +648,11 @@ where
 }
 
 #[cfg(feature = "magic-link")]
-impl<U, S> Torii<U, S>
+impl<U, S, M> Torii<U, S, M>
 where
     U: MagicLinkStorage + Clone,
     S: SessionStorage + Clone,
+    M: SessionManager + 'static,
 {
     /// Add a magic link plugin to the Torii instance
     ///
