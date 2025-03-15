@@ -382,36 +382,10 @@ async fn main() {
                     <button onclick="beginRegistration()">Begin Registration</button>
                     <button onclick="beginLogin()">Begin Login</button>
 
+                    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
                     <script>
-                        // Helper functions for dealing with WebAuthn encoding
-                        function base64UrlDecode(base64Url) {
-                            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-                            const padding = base64.length % 4;
-                            if (padding) {
-                                base64 += '='.repeat(4 - padding);
-                            }
-                            return atob(base64);
-                        }
-
-                        function base64UrlToBuffer(base64Url) {
-                            const binary = base64UrlDecode(base64Url);
-                            const bytes = new Uint8Array(binary.length);
-                            for (let i = 0; i < binary.length; i++) {
-                                bytes[i] = binary.charCodeAt(i);
-                            }
-                            return bytes.buffer;
-                        }
-
-                        // Ensure WebAuthn challenge is in the correct format
-                        function ensureChallenge(options) {
-                            if (options && options.challenge) {
-                                // If challenge is not a proper ArrayBuffer/Base64URL, convert it
-                                if (typeof options.challenge === 'string') {
-                                    options.challenge = base64UrlToBuffer(options.challenge);
-                                }
-                            }
-                            return options;
-                        }
+                        // Access the SimpleWebAuthn browser library
+                        const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
                         async function beginRegistration() {
                         try {
                             const email = document.getElementById('email').value;
@@ -452,25 +426,10 @@ async fn main() {
                                 return;
                             }
                             
-                            // Create credentials using WebAuthn API
                             console.log("Creating credentials with options:", publicKeyOptions);
-                            let finalOptions;
                             
-                            try {
-                                // First try with the parseCreationOptionsFromJSON method
-                                finalOptions = PublicKeyCredential.parseCreationOptionsFromJSON(publicKeyOptions);
-                                console.log("Parsed options:", finalOptions);
-                            } catch (error) {
-                                console.warn("Failed to parse options with built-in method, using custom parsing:", error);
-                                // If that fails, try manual conversion of challenge
-                                finalOptions = ensureChallenge(publicKeyOptions);
-                                console.log("Manually converted options:", finalOptions);
-                            }
-                            
-                            const credential = await navigator.credentials.create({
-                                publicKey: finalOptions
-                            });
-
+                            // Use SimpleWebAuthn to handle the registration
+                            const credential = await startRegistration(publicKeyOptions);
                             console.log("Created credential:", credential);
 
                             // Complete registration
@@ -549,25 +508,9 @@ async fn main() {
                                 return;
                             }
                             
-                            // Create credentials using WebAuthn API
+                            // Use SimpleWebAuthn to handle the authentication
                             console.log("Getting credentials with options:", publicKeyOptions);
-                            let finalOptions;
-                            
-                            try {
-                                // First try with the parseRequestOptionsFromJSON method
-                                finalOptions = PublicKeyCredential.parseRequestOptionsFromJSON(publicKeyOptions);
-                                console.log("Parsed options:", finalOptions);
-                            } catch (error) {
-                                console.warn("Failed to parse options with built-in method, using custom parsing:", error);
-                                // If that fails, try manual conversion of challenge
-                                finalOptions = ensureChallenge(publicKeyOptions);
-                                console.log("Manually converted options:", finalOptions);
-                            }
-                            
-                            const credential = await navigator.credentials.get({
-                                publicKey: finalOptions
-                            });
-
+                            const credential = await startAuthentication(publicKeyOptions);
                             console.log("Retrieved credential:", credential);
 
                             // Complete login
