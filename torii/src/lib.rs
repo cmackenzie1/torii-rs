@@ -62,6 +62,7 @@ use torii_core::{
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
     session::{Session, SessionToken},
+    storage::MagicToken,
     user::{User, UserId},
 };
 
@@ -720,36 +721,45 @@ where
 
     /// Generate a magic token for email authentication
     ///
+    /// This method generates a secure one-time use token for the given email and stores it.
+    /// You can use this token to create a magic link to send to the user's email.
+    ///
     /// # Arguments
     ///
     /// * `email` - The email of the user to generate the token for
     ///
     /// # Returns
     ///
-    /// Returns Ok(()) if the token was generated successfully
-    pub async fn generate_magic_token(&self, email: &str) -> Result<(), ToriiError> {
+    /// Returns the generated MagicToken if successful, which contains the token string
+    /// that can be used to construct a magic link
+    pub async fn generate_magic_token(&self, email: &str) -> Result<MagicToken, ToriiError> {
         let magic_link_plugin = self
             .manager
-            .get_plugin::<MagicLinkPlugin<U>>("magic-link")
-            .ok_or(ToriiError::PluginNotFound("magic-link".to_string()))?;
+            .get_plugin::<MagicLinkPlugin<U>>("magic_link")
+            .ok_or(ToriiError::PluginNotFound("magic_link".to_string()))?;
 
-        magic_link_plugin
+        let token = magic_link_plugin
             .generate_magic_token(email)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
-        Ok(())
+        Ok(token)
     }
 
-    /// Verify a magic link
+    /// Verify a magic token and create a session
+    ///
+    /// This method validates the provided token, marks it as used, and creates a new session
+    /// for the associated user if the token is valid.
     ///
     /// # Arguments
     ///
-    /// * `token`: The token to verify
+    /// * `token` - The magic token string to verify
+    /// * `user_agent` - Optional user agent information for the session
+    /// * `ip_address` - Optional IP address information for the session
     ///
     /// # Returns
     ///
-    /// Returns the user and session if the magic link is verified successfully
+    /// Returns the user and a new session if the token is valid and not expired
     pub async fn verify_magic_token(
         &self,
         token: &str,
@@ -758,8 +768,8 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let magic_link_plugin = self
             .manager
-            .get_plugin::<MagicLinkPlugin<U>>("magic-link")
-            .ok_or(ToriiError::PluginNotFound("magic-link".to_string()))?;
+            .get_plugin::<MagicLinkPlugin<U>>("magic_link")
+            .ok_or(ToriiError::PluginNotFound("magic_link".to_string()))?;
 
         let user = magic_link_plugin
             .verify_magic_token(token)
