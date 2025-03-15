@@ -9,7 +9,7 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_passkey::{
@@ -74,6 +74,7 @@ async fn begin_registration_handler(
 #[derive(Debug, Deserialize)]
 struct RegistrationCompletionRequest {
     email: String,
+    #[allow(dead_code)]
     challenge_id: Option<String>,
     response: serde_json::Value,
 }
@@ -132,11 +133,11 @@ async fn finish_registration_handler(
     .await
     .map_err(|e| {
         tracing::error!("Failed to complete registration: {:?}", e);
-        return (
+        (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to complete registration: {}", e),
         )
-            .into_response();
+            .into_response()
     })
     .unwrap();
 
@@ -258,6 +259,7 @@ async fn begin_login_handler(
 #[derive(Debug, Deserialize)]
 struct LoginCompletionRequest {
     email: String,
+    #[allow(dead_code)]
     challenge_id: Option<String>,
     response: serde_json::Value,
 }

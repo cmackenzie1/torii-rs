@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use torii::{MagicToken, SqliteStorage, Torii};
+use torii::{SqliteStorage, Torii};
 
 #[cfg(all(feature = "magic-link", feature = "sqlite"))]
 #[tokio::test]
@@ -17,9 +17,9 @@ async fn test_magic_link_auth() {
     let magic_token = torii.generate_magic_token(email).await.unwrap();
 
     // Verify the token contains expected data
-    assert_eq!(magic_token.token.is_empty(), false);
+    assert!(!magic_token.token.is_empty());
     assert!(magic_token.token.len() > 32); // Should be a reasonably long token
-    assert_eq!(magic_token.used(), false); // Token should not be used yet
+    assert!(!magic_token.used()); // Token should not be used yet
     assert!(magic_token.expires_at > chrono::Utc::now()); // Should expire in the future
 
     // Verify the magic token
