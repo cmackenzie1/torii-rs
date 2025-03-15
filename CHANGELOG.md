@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added new methods to configure session type:
   - `with_jwt_sessions()`: Configure Torii to use JWT sessions exclusively
 - Session configuration now supports JWT settings through `SessionConfig`.
+- **Magic Link API**: Fixed `generate_magic_token()` to return the generated token rather than discarding it
+  - The method now returns `Result<MagicToken, ToriiError>` instead of `Result<(), ToriiError>`
+  - Consistently use `"magic_link"` for plugin name (was inconsistently using `"magic-link"`)
+  - Added re-export of the `MagicToken` type from `torii_core`
+  - Improved documentation for both token generation and verification
 
 ## [0.2.3] - 2025-03-05
 
