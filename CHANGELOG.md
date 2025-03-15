@@ -17,18 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Support for both RS256 (RSA+SHA256) and HS256 (HMAC+SHA256) algorithms:
     - RS256: Uses asymmetric cryptography with separate signing and verification keys
     - HS256: Uses symmetric cryptography with a single secret key
+- Updated passkey example to use SimpleWebAuthn browser library from the CDN for improved WebAuthn support
 
 ### Changed
 
 #### `torii-core`
 
 - `SessionStorage::get_session` now returns a `Result<Option<Session>, Error>` instead of `Result<Session, Error>`. This reverts the change from `0.2.3`.
-- `SessionToken` type now supports both simple UUID tokens and JWT tokens.
+- `SessionToken` type now supports both opaque tokens and JWT tokens.
 - Added `JwtConfig` for configuring JWT session parameters.
 
 #### `torii-auth-passkey`
 
-- Completely redesigned the passkey authentication API for improved type safety and usability:
+- **BREAKING CHANGE**: Completely redesigned the passkey authentication API for improved type safety and usability:
   - Added a `PasskeyAuthPlugin` trait to define standardized authentication methods
   - Replaced string and JSON value parameters with proper strongly-typed structures:
     - `PasskeyRegistrationRequest` and `PasskeyRegistrationCompletion`
@@ -38,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `PasskeyCredentialCreationOptions`
     - `PasskeyCredentialRequestOptions`
   - Enhanced error handling with detailed context information using `PasskeyErrorContext`
-  - **BREAKING CHANGE**: Removed the deprecated `PasskeyChallenge` structure and the old method signatures
   - Updated the `torii` integration to use the new API with both structured types and convenient alternatives
 
 #### `torii`
