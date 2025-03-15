@@ -5,7 +5,7 @@ use torii::{SeaORMStorage, Torii};
 /// Sets up Torii with password authentication and tests the basic authentication flow.
 async fn test_password_auth_flow(storage: Arc<SeaORMStorage>) {
     // Set up Torii with the storage
-    let torii = Torii::new(storage.clone(), storage.clone()).with_password_plugin();
+    let torii = Torii::new(storage.clone()).with_password_plugin();
 
     // Ensure database is migrated
     storage.migrate().await.expect("Failed to migrate storage");

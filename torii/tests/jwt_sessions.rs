@@ -23,7 +23,7 @@ async fn test_jwt_session_manager() {
         .with_metadata(true);
 
     // Create a Torii instance with JWT sessions
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_jwt_sessions(jwt_config.clone());
+    let torii = Torii::new(sqlite.clone()).with_jwt_sessions(jwt_config.clone());
 
     // Create a JWT session
     let user_id = UserId::new_random();
@@ -59,7 +59,7 @@ async fn test_jwt_expiration() {
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
 
     // Create Torii with a JWT session manager and short expiration
-    let torii = Torii::new(sqlite.clone(), sqlite.clone())
+    let torii = Torii::new(sqlite.clone())
         .with_jwt_sessions(jwt_config.clone())
         .with_session_config(SessionConfig {
             expires_in: Duration::seconds(1),
@@ -94,7 +94,7 @@ async fn test_password_auth_with_jwt() {
         .with_metadata(true);
 
     // Create Torii with JWT sessions
-    let torii = Torii::new(sqlite.clone(), sqlite.clone())
+    let torii = Torii::new(sqlite.clone())
         .with_jwt_sessions(jwt_config)
         .with_password_plugin();
 

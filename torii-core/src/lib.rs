@@ -19,4 +19,4 @@ pub use error::Error;
 pub use plugin::{Plugin, PluginManager};
 pub use session::Session;
 pub use storage::{NewUser, SessionStorage, UserStorage};
-pub use user::{OAuthAccount, User, UserId};
+pub use user::{DefaultUserManager, OAuthAccount, User, UserId, UserManager};

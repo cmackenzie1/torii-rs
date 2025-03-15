@@ -36,9 +36,9 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     use torii_auth_oauth::providers::Provider;
-//! let storage = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
+//!     let storage = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
 //!
-//!     let torii = Torii::new(storage.clone(), storage.clone())
+//!     let torii = Torii::new(storage.clone())
 //!         .with_password_plugin()
 //!         .with_oauth_provider(Provider::google(
 //!             "client_id",
@@ -52,9 +52,12 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use torii_core::{
-    PluginManager, SessionStorage,
+    DefaultUserManager, PluginManager, UserManager,
     session::{DefaultSessionManager, JwtConfig, JwtSessionManager, SessionManager},
-    storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
+    storage::{
+        MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, SessionStorage,
+        UserStorage,
+    },
 };
 
 /// Re-export core types from torii_core
@@ -182,9 +185,8 @@ impl SessionConfig {
 /// It coordinates between different authentication plugins and provides access to user/session storage.
 ///
 /// The type parameters represent:
-/// - `U`: The user storage implementation
-/// - `S`: The session storage implementation
-/// - `M`: The session manager implementation
+/// - `US`: The storage implementation for user data
+/// - `SS`: The storage implementation for session data (defaults to the same as US)
 ///
 /// # Example
 ///
@@ -192,60 +194,59 @@ impl SessionConfig {
 /// use torii::Torii;
 /// use torii_storage_sqlite::SqliteStorage;
 /// use std::sync::Arc;
-/// use sqlx::{Pool, Sqlite};
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let pool = Pool::<Sqlite>::connect("sqlite::memory:").await.unwrap();
-///     let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
-///     let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
+///     let storage = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
 ///
-///     // Create a new Torii instance and configure plugins
-///     let torii = Torii::new(user_storage, session_storage)
+///     // Create a new Torii instance with just the storage
+///     let torii = Torii::new(storage.clone())
 ///         .with_password_plugin();
 ///
 ///     // Use torii to manage authentication
 ///     let user = torii.get_user(&user_id).await?;
 /// }
 /// ```
-pub struct Torii<U, S, M = DefaultSessionManager<S>>
+pub struct Torii<US, SS = US>
 where
-    U: UserStorage,
-    S: SessionStorage,
-    M: SessionManager + 'static,
+    US: UserStorage + 'static,
+    SS: SessionStorage + 'static,
 {
-    user_storage: Arc<U>,
-    session_storage: Arc<S>,
-    session_manager: Arc<M>,
-    manager: PluginManager<U, S>,
+    user_storage: Arc<US>,
+    session_storage: Arc<SS>,
+    user_manager: Arc<dyn UserManager + Send + Sync>,
+    session_manager: Arc<dyn SessionManager + Send + Sync>,
+    manager: PluginManager<US, SS>,
     session_config: SessionConfig,
 }
 
-impl<U, S> Torii<U, S, DefaultSessionManager<S>>
+impl<S> Torii<S, S>
 where
-    U: UserStorage,
-    S: SessionStorage,
+    S: UserStorage + SessionStorage + 'static,
 {
-    /// Create a new Torii instance with the given user and session storage
+    /// Create a new Torii instance with a single storage backend
     ///
-    /// This constructor initializes Torii with a default session manager that uses
-    /// the provided session storage for tracking user sessions.
+    /// This constructor initializes Torii with default user and session managers
+    /// using the provided storage for both user and session data.
     ///
     /// # Arguments
     ///
-    /// * `user_storage` - The storage implementation for user data
-    /// * `session_storage` - The storage implementation for session data
+    /// * `storage` - The storage implementation for both user and session data
     ///
     /// # Returns
     ///
-    /// A new Torii instance with the default session manager
-    pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
-        let session_manager = Arc::new(DefaultSessionManager::new(session_storage.clone()));
-        let manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+    /// A new Torii instance with default managers
+    pub fn new(storage: Arc<S>) -> Self {
+        let user_manager: Arc<dyn UserManager + Send + Sync> =
+            Arc::new(DefaultUserManager::new(storage.clone()));
+        let session_manager: Arc<dyn SessionManager + Send + Sync> =
+            Arc::new(DefaultSessionManager::new(storage.clone()));
+        let manager = PluginManager::new(storage.clone(), storage.clone());
 
         Self {
-            user_storage,
-            session_storage,
+            user_storage: storage.clone(),
+            session_storage: storage,
+            user_manager,
             session_manager,
             manager,
             session_config: SessionConfig::default(),
@@ -265,13 +266,16 @@ where
     /// # Returns
     ///
     /// A new Torii instance configured to use JWT sessions
-    pub fn with_jwt_sessions(self, jwt_config: JwtConfig) -> Torii<U, S, JwtSessionManager> {
-        let session_manager = Arc::new(JwtSessionManager::new(jwt_config.clone()));
+    pub fn with_jwt_sessions(self, jwt_config: JwtConfig) -> Self {
+        let user_manager = self.user_manager;
+        let session_manager: Arc<dyn SessionManager + Send + Sync> =
+            Arc::new(JwtSessionManager::new(jwt_config.clone()));
         let manager = PluginManager::new(self.user_storage.clone(), self.session_storage.clone());
 
-        Torii {
+        Self {
             user_storage: self.user_storage,
             session_storage: self.session_storage,
+            user_manager,
             session_manager,
             manager,
             session_config: self.session_config.with_jwt(jwt_config),
@@ -279,12 +283,147 @@ where
     }
 }
 
-impl<U, S, M> Torii<U, S, M>
+impl<US, SS> Torii<US, SS>
 where
-    U: UserStorage,
-    S: SessionStorage,
-    M: SessionManager + 'static,
+    US: UserStorage + 'static,
+    SS: SessionStorage + 'static,
 {
+    /// Create a new Torii instance with separate storage backends
+    ///
+    /// This constructor initializes Torii with default user and session managers
+    /// using separate storage backends for user and session data.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_storage` - The storage implementation for user data
+    /// * `session_storage` - The storage implementation for session data
+    ///
+    /// # Returns
+    ///
+    /// A new Torii instance with default managers using separate storage backends
+    pub fn with_storages(user_storage: Arc<US>, session_storage: Arc<SS>) -> Self {
+        let user_manager: Arc<dyn UserManager + Send + Sync> =
+            Arc::new(DefaultUserManager::new(user_storage.clone()));
+        let session_manager: Arc<dyn SessionManager + Send + Sync> =
+            Arc::new(DefaultSessionManager::new(session_storage.clone()));
+        let manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+
+        Self {
+            user_storage,
+            session_storage,
+            user_manager,
+            session_manager,
+            manager,
+            session_config: SessionConfig::default(),
+        }
+    }
+
+    /// Create a new Torii instance with custom user and session managers
+    ///
+    /// This constructor allows full customization of the user and session managers.
+    /// Note that storage instances are still needed for plugins to work properly.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_storage` - The storage implementation for user data (used by plugins)
+    /// * `session_storage` - The storage implementation for session data (used by plugins)
+    /// * `user_manager` - The user manager implementation
+    /// * `session_manager` - The session manager implementation
+    ///
+    /// # Returns
+    ///
+    /// A new Torii instance with the specified managers
+    pub fn with_managers(
+        user_storage: Arc<US>,
+        session_storage: Arc<SS>,
+        user_manager: Arc<dyn UserManager + Send + Sync>,
+        session_manager: Arc<dyn SessionManager + Send + Sync>,
+    ) -> Self {
+        let manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+
+        Self {
+            user_storage,
+            session_storage,
+            user_manager,
+            session_manager,
+            manager,
+            session_config: SessionConfig::default(),
+        }
+    }
+
+    /// Create a new Torii instance with custom managers only
+    ///
+    /// This constructor allows providing only custom managers without needing to
+    /// provide the storage instances separately. The managers are responsible
+    /// for encapsulating their own storage access.
+    ///
+    /// Note: Plugins will not work with this constructor since they need direct
+    /// storage access.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_manager` - The user manager implementation
+    /// * `session_manager` - The session manager implementation
+    ///
+    /// # Returns
+    ///
+    /// A new Torii instance with the specified managers, but no plugin support
+    pub fn with_custom_managers<UnitType>(
+        user_manager: Arc<dyn UserManager + Send + Sync>,
+        session_manager: Arc<dyn SessionManager + Send + Sync>,
+    ) -> Torii<UnitType, UnitType>
+    where
+        UnitType: UserStorage + SessionStorage + Default + Clone + 'static,
+    {
+        // Create minimal storages just for type constraints
+        let user_storage = Arc::new(UnitType::default());
+        let session_storage = Arc::new(UnitType::default());
+        let manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+
+        Torii {
+            user_storage,
+            session_storage,
+            user_manager,
+            session_manager,
+            manager,
+            session_config: SessionConfig::default(),
+        }
+    }
+
+    /// Alternative constructor that uses the same storage for both users and sessions
+    ///
+    /// This constructor is a convenience method for situations where the same storage
+    /// implementation is used for both user and session data.
+    ///
+    /// # Arguments
+    ///
+    /// * `storage` - The storage implementation for both user and session data
+    /// * `user_manager` - The user manager implementation
+    /// * `session_manager` - The session manager implementation
+    ///
+    /// # Returns
+    ///
+    /// A new Torii instance with the specified managers
+    pub fn with_shared_storage<S>(
+        storage: Arc<S>,
+        user_manager: Arc<dyn UserManager + Send + Sync>,
+        session_manager: Arc<dyn SessionManager + Send + Sync>,
+    ) -> Torii<S, S>
+    where
+        S: UserStorage + SessionStorage + 'static,
+    {
+        let manager = PluginManager::new(storage.clone(), storage.clone());
+
+        Torii {
+            user_storage: storage.clone(),
+            session_storage: storage,
+            user_manager,
+            session_manager,
+            manager,
+            session_config: SessionConfig::default(),
+        }
+    }
+
     /// Set the session configuration
     ///
     /// This method allows customization of session parameters such as
@@ -308,13 +447,10 @@ where
     ///
     /// Returns the user if found, otherwise `None`
     pub async fn get_user(&self, user_id: &UserId) -> Result<Option<User>, ToriiError> {
-        let user = self
-            .user_storage
+        self.user_manager
             .get_user(user_id)
             .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
-
-        Ok(user)
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
 
     /// Create a new session for a user
@@ -393,11 +529,10 @@ where
 }
 
 #[cfg(feature = "password")]
-impl<U, S, M> Torii<U, S, M>
+impl<US, SS> Torii<US, SS>
 where
-    U: PasswordStorage + Clone,
-    S: SessionStorage + Clone,
-    M: SessionManager + 'static,
+    US: UserStorage + PasswordStorage + Clone + 'static,
+    SS: SessionStorage + 'static,
 {
     /// Add a password plugin to the Torii instance
     ///
@@ -427,7 +562,7 @@ where
     ) -> Result<User, ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<PasswordPlugin<U>>("password")
+            .get_plugin::<PasswordPlugin<US>>("password")
             .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
 
         let user = password_plugin
@@ -457,7 +592,7 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<PasswordPlugin<U>>("password")
+            .get_plugin::<PasswordPlugin<US>>("password")
             .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
 
         let user = password_plugin
@@ -478,7 +613,7 @@ where
     ///
     /// * `user_id`: The ID of the user to set the email as verified
     pub async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), ToriiError> {
-        self.user_storage
+        self.user_manager
             .set_user_email_verified(user_id)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
@@ -486,11 +621,10 @@ where
 }
 
 #[cfg(feature = "oauth")]
-impl<U, S, M> Torii<U, S, M>
+impl<US, SS> Torii<US, SS>
 where
-    U: OAuthStorage + Clone,
-    S: SessionStorage + Clone,
-    M: SessionManager + 'static,
+    US: UserStorage + OAuthStorage + Clone + 'static,
+    SS: SessionStorage + 'static,
 {
     /// Add an OAuth provider to the Torii instance
     ///
@@ -522,7 +656,7 @@ where
     ) -> Result<AuthorizationUrl, ToriiError> {
         let oauth_plugin = self
             .manager
-            .get_plugin::<OAuthPlugin<U>>(provider)
+            .get_plugin::<OAuthPlugin<US>>(provider)
             .ok_or(ToriiError::PluginNotFound(provider.to_string()))?;
 
         let url = oauth_plugin
@@ -554,7 +688,7 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let oauth_plugin = self
             .manager
-            .get_plugin::<OAuthPlugin<U>>(provider)
+            .get_plugin::<OAuthPlugin<US>>(provider)
             .ok_or(ToriiError::PluginNotFound(provider.to_string()))?;
 
         let user = oauth_plugin
@@ -571,11 +705,10 @@ where
 }
 
 #[cfg(feature = "passkey")]
-impl<U, S, M> Torii<U, S, M>
+impl<US, SS> Torii<US, SS>
 where
-    U: PasskeyStorage + Clone,
-    S: SessionStorage + Clone,
-    M: SessionManager + 'static,
+    US: UserStorage + PasskeyStorage + Clone + 'static,
+    SS: SessionStorage + 'static,
 {
     /// Add a passkey plugin to the Torii instance
     ///
@@ -608,14 +741,14 @@ where
     ) -> Result<PasskeyCredentialCreationOptions, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U>>("passkey")
+            .get_plugin::<PasskeyPlugin<US>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
         let request = PasskeyRegistrationRequest {
             email: email.to_string(),
         };
 
-        <PasskeyPlugin<U> as PasskeyAuthPlugin>::start_registration(
+        <PasskeyPlugin<US> as PasskeyAuthPlugin>::start_registration(
             passkey_plugin.as_ref(),
             &request,
         )
@@ -638,10 +771,10 @@ where
     ) -> Result<User, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U>>("passkey")
+            .get_plugin::<PasskeyPlugin<US>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        <PasskeyPlugin<U> as PasskeyAuthPlugin>::complete_registration(
+        <PasskeyPlugin<US> as PasskeyAuthPlugin>::complete_registration(
             passkey_plugin.as_ref(),
             completion,
         )
@@ -695,14 +828,14 @@ where
     ) -> Result<PasskeyCredentialRequestOptions, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U>>("passkey")
+            .get_plugin::<PasskeyPlugin<US>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
         let request = PasskeyLoginRequest {
             email: email.to_string(),
         };
 
-        <PasskeyPlugin<U> as PasskeyAuthPlugin>::start_login(passkey_plugin.as_ref(), &request)
+        <PasskeyPlugin<US> as PasskeyAuthPlugin>::start_login(passkey_plugin.as_ref(), &request)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))
     }
@@ -726,10 +859,10 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<U>>("passkey")
+            .get_plugin::<PasskeyPlugin<US>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        let user = <PasskeyPlugin<U> as PasskeyAuthPlugin>::complete_login(
+        let user = <PasskeyPlugin<US> as PasskeyAuthPlugin>::complete_login(
             passkey_plugin.as_ref(),
             completion,
         )
@@ -781,11 +914,10 @@ where
 }
 
 #[cfg(feature = "magic-link")]
-impl<U, S, M> Torii<U, S, M>
+impl<US, SS> Torii<US, SS>
 where
-    U: MagicLinkStorage + Clone,
-    S: SessionStorage + Clone,
-    M: SessionManager + 'static,
+    US: UserStorage + MagicLinkStorage + Clone + 'static,
+    SS: SessionStorage + 'static,
 {
     /// Add a magic link plugin to the Torii instance
     ///
@@ -814,7 +946,7 @@ where
     pub async fn generate_magic_token(&self, email: &str) -> Result<MagicToken, ToriiError> {
         let magic_link_plugin = self
             .manager
-            .get_plugin::<MagicLinkPlugin<U>>("magic_link")
+            .get_plugin::<MagicLinkPlugin<US>>("magic_link")
             .ok_or(ToriiError::PluginNotFound("magic_link".to_string()))?;
 
         let token = magic_link_plugin
@@ -847,17 +979,17 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let magic_link_plugin = self
             .manager
-            .get_plugin::<MagicLinkPlugin<U>>("magic_link")
+            .get_plugin::<MagicLinkPlugin<US>>("magic_link")
             .ok_or(ToriiError::PluginNotFound("magic_link".to_string()))?;
 
-        let user = magic_link_plugin
+        let magic_token = magic_link_plugin
             .verify_magic_token(token)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         let user = self
-            .user_storage
-            .get_user(&user.user_id)
+            .user_manager
+            .get_user(&magic_token.user_id)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 

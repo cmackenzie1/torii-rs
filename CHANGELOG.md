@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SessionStorage::get_session` now returns a `Result<Option<Session>, Error>` instead of `Result<Session, Error>`. This reverts the change from `0.2.3`.
 - `SessionToken` type now supports both opaque tokens and JWT tokens.
 - Added `JwtConfig` for configuring JWT session parameters.
+- Added `UserManager` trait to standardize user management operations.
+- Added `DefaultUserManager` implementation that wraps a `UserStorage`.
 
 #### `torii-auth-passkey`
 
@@ -42,6 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated the `torii` integration to use the new API with both structured types and convenient alternatives
 
 #### `torii`
+
+- **BREAKING CHANGE**: Redesigned Torii struct to simplify type parameters and support separate storage backends:
+  - Reduced generic parameters from 3 to 2, keeping only storage types and using trait objects for managers
+  - Added more flexible constructors:
+    - `new(storage)`: Simplest case with single storage for both users and sessions
+    - `with_storages(user_storage, session_storage)`: For separate storage backends
+    - `with_managers(user_storage, session_storage, user_manager, session_manager)`: For custom managers with plugin support
+    - `with_custom_managers(user_manager, session_manager)`: For standalone managers without plugin support
+  - Added explanatory documentation for each approach
+  - Updated example application to demonstrate the different usage patterns
 
 - Login methods now accept an optional user agent and ip address parameter which will be stored with the session in the database.
 - Added new methods to configure session type:
