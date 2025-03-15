@@ -57,13 +57,17 @@ use torii_core::{
     storage::{MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, UserStorage},
 };
 
-/// Re-export core types
+/// Re-export core types from torii_core
+///
+/// These types are commonly used when working with the Torii API.
 pub use torii_core::{
     session::{Session, SessionToken},
     user::{User, UserId},
 };
 
-/// Re-export auth plugins
+/// Re-export authentication plugins
+///
+/// These plugins provide various authentication methods when the corresponding feature is enabled.
 #[cfg(feature = "password")]
 pub use torii_auth_password::PasswordPlugin;
 
@@ -76,7 +80,9 @@ pub use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
 #[cfg(feature = "magic-link")]
 pub use torii_auth_magic_link::MagicLinkPlugin;
 
-// Re-export storage backends
+/// Re-export storage backends
+///
+/// These storage implementations are available when the corresponding feature is enabled.
 #[cfg(feature = "sqlite")]
 pub use torii_storage_sqlite::SqliteStorage;
 
@@ -91,12 +97,18 @@ pub use torii_storage_postgres::PostgresStorage;
 ))]
 pub use torii_storage_seaorm::SeaORMStorage;
 
+/// Errors that can occur when using Torii.
+///
+/// This enum represents the various error types that can occur when using the Torii authentication framework.
 #[derive(Debug, thiserror::Error)]
 pub enum ToriiError {
+    /// Error when a plugin is not found
     #[error("Plugin not found: {0}")]
     PluginNotFound(String),
+    /// Error during authentication
     #[error("Auth error: {0}")]
     AuthError(String),
+    /// Error when interacting with storage
     #[error("Storage error: {0}")]
     StorageError(String),
 }
@@ -131,12 +143,28 @@ impl Default for SessionConfig {
 
 impl SessionConfig {
     /// Create a new session config with JWT support
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt_config` - The JWT configuration to use
+    ///
+    /// # Returns
+    ///
+    /// The updated session configuration with JWT support enabled
     pub fn with_jwt(mut self, jwt_config: JwtConfig) -> Self {
         self.jwt_config = Some(jwt_config);
         self
     }
 
     /// Set the session expiration time
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The duration until the session expires
+    ///
+    /// # Returns
+    ///
+    /// The updated session configuration with the new expiration time
     pub fn expires_in(mut self, duration: Duration) -> Self {
         self.expires_in = duration;
         self
@@ -193,6 +221,19 @@ where
     U: UserStorage,
     S: SessionStorage,
 {
+    /// Create a new Torii instance with the given user and session storage
+    ///
+    /// This constructor initializes Torii with a default session manager that uses
+    /// the provided session storage for tracking user sessions.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_storage` - The storage implementation for user data
+    /// * `session_storage` - The storage implementation for session data
+    ///
+    /// # Returns
+    ///
+    /// A new Torii instance with the default session manager
     pub fn new(user_storage: Arc<U>, session_storage: Arc<S>) -> Self {
         let session_manager = Arc::new(DefaultSessionManager::new(session_storage.clone()));
         let manager = PluginManager::new(user_storage.clone(), session_storage.clone());
@@ -207,9 +248,18 @@ where
     }
 
     /// Configure Torii to use JWT sessions with HS256 or RS256 signing algorithm
-    /// This will enable stateless sessions that don't require database lookups for session validation.
-    /// The trade-off here is that sessions are not revocable, and a compromised JWT cannot be revoked, so a
-    /// short lifetime is recommended.
+    ///
+    /// This method enables stateless sessions that don't require database lookups for session validation.
+    /// The trade-off is that sessions are not revocable, and a compromised JWT cannot be revoked,
+    /// so a short lifetime is recommended.
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt_config` - The JWT configuration settings including secret key or RSA keys
+    ///
+    /// # Returns
+    ///
+    /// A new Torii instance configured to use JWT sessions
     pub fn with_jwt_sessions(self, jwt_config: JwtConfig) -> Torii<U, S, JwtSessionManager> {
         let session_manager = Arc::new(JwtSessionManager::new(jwt_config.clone()));
         let manager = PluginManager::new(self.user_storage.clone(), self.session_storage.clone());
@@ -230,11 +280,14 @@ where
     S: SessionStorage,
     M: SessionManager + 'static,
 {
-    /// Set the session config
+    /// Set the session configuration
+    ///
+    /// This method allows customization of session parameters such as
+    /// expiration time and JWT settings.
     ///
     /// # Arguments
     ///
-    /// * `config`: The session config to set
+    /// * `config` - The session configuration to use
     pub fn with_session_config(mut self, config: SessionConfig) -> Self {
         self.session_config = config;
         self
@@ -290,15 +343,15 @@ where
         Ok(session)
     }
 
-    /// Get a session by its ID
+    /// Get a session by its token
     ///
     /// # Arguments
     ///
-    /// * `session_id`: The ID of the session to retrieve
+    /// * `session_id` - The token of the session to retrieve
     ///
     /// # Returns
     ///
-    /// Returns the session if found, otherwise `None`
+    /// Returns the session if found and valid, otherwise returns an error
     pub async fn get_session(&self, session_id: &SessionToken) -> Result<Session, ToriiError> {
         let session = self
             .session_manager
@@ -665,16 +718,15 @@ where
         self
     }
 
-    /// Send a magic link to a user
+    /// Generate a magic token for email authentication
     ///
     /// # Arguments
     ///
-    /// * `email`: The email of the user to send the magic link to
-    /// * `redirect_uri`: The redirect URI to send the magic link to
+    /// * `email` - The email of the user to generate the token for
     ///
     /// # Returns
     ///
-    /// Returns the user and session if the magic link is sent successfully
+    /// Returns Ok(()) if the token was generated successfully
     pub async fn generate_magic_token(&self, email: &str) -> Result<(), ToriiError> {
         let magic_link_plugin = self
             .manager
