@@ -2,13 +2,22 @@
 
 Torii is built around several core concepts that form the foundation of the authentication system. Understanding these concepts is essential for effectively implementing and extending Torii in your applications.
 
+## Main Components
+
+The Torii framework consists of several key components:
+
+1. **The Torii Coordinator**: The main `Torii` struct that coordinates all authentication activities
+2. **Storage Backends**: Implementations for persisting user and session data
+3. **Authentication Plugins**: Modules for different authentication methods
+4. **User and Session Management**: APIs for creating and verifying sessions
+
 ## Users
 
 Users are the central entity in the Torii authentication system. Each user represents an individual who can authenticate with your application.
 
 ### User Structure
 
-The core User struct contains the following fields:
+The core `User` struct contains the following fields:
 
 | Field             | Type                    | Description                                    |
 | ----------------- | ----------------------- | ---------------------------------------------- |
@@ -21,33 +30,19 @@ The core User struct contains the following fields:
 
 ### User IDs
 
-Each user has a unique UserId that identifies them in the system. This ID is:
+Each user has a unique `UserId` that identifies them in the system. This ID is:
 
 - Stable and will not change during the user's lifetime
-- Treated as an opaque string rather than a specific format (though it uses UUIDs internally by default)
+- Treated as an opaque identifier rather than a specific format (though it uses UUIDs internally by default)
 - Used to link user accounts to authentication methods, sessions, and application data
 
-### OAuth Accounts
-
-For OAuth-based authentication, Torii maintains OAuthAccount records that link a user to their external provider identities:
-
-| Field      | Type            | Description                              |
-| ---------- | --------------- | ---------------------------------------- |
-| user_id    | `UserId`        | The Torii user ID                        |
-| provider   | `String`        | The OAuth provider (e.g., "google")      |
-| subject    | `String`        | The unique ID from the provider          |
-| created_at | `DateTime<Utc>` | Timestamp when the link was created      |
-| updated_at | `DateTime<Utc>` | Timestamp when the link was last updated |
-
-This allows a single user to authenticate with multiple OAuth providers while maintaining a unified identity within your application.
-
-### Sessions
+## Sessions
 
 Sessions represent authenticated user sessions and are created when a user successfully logs in.
 
-#### Session Structure
+### Session Structure
 
-The Session struct contains the following fields:
+The `Session` struct contains the following fields:
 
 | Field      | Type             | Description                                           |
 | ---------- | ---------------- | ----------------------------------------------------- |
@@ -56,34 +51,112 @@ The Session struct contains the following fields:
 | user_agent | `Option<String>` | The user agent of the client that created the session |
 | ip_address | `Option<String>` | The IP address of the client that created the session |
 | created_at | `DateTime<Utc>`  | Timestamp when the session was created                |
-| updated_at | `DateTime<Utc>`  | Timestamp when the session was last updated           |
 | expires_at | `DateTime<Utc>`  | Timestamp when the session will expire                |
 
-#### Session Tokens
+### Session Tokens
 
-Each session is identified by a unique SessionToken that:
+Each session is identified by a unique `SessionToken` that:
 
 - Functions as a bearer token or cookie for authentication
-- Should be kept secret and transmitted securely (e.g. HTTPS)
+- Should be kept secret and transmitted securely (e.g., via HTTPS)
 - Has an expiration time after which it will no longer be valid
 - Can be revoked to force a user to log out
 
-### Session Management
+### Session Types
 
-Torii provides several methods for managing sessions:
+Torii supports two types of sessions:
 
-- Creating sessions: Generate new sessions when users log in
-- Verifying sessions: Validate session tokens on subsequent requests
-- Expiring sessions: Sessions automatically expire after their configured lifetime
-- Revoking sessions: Explicitly invalidate sessions to force logout
-  - Cleaning up: Remove expired sessions to maintain database hygiene
+1. **Database Sessions** (default): Sessions are stored in your database and can be individually revoked
+2. **JWT Sessions** (optional): Stateless sessions using JWT tokens that don't require database lookups but cannot be individually revoked
 
-### Relationship Between Users and Sessions
+## Authentication Methods
 
-In Torii:
+Torii provides several authentication methods through its plugin system:
 
-- One-to-many relationship: A user can have multiple active sessions (login from different devices)
-- Session verification: When a session token is verified, Torii returns both the session and associated user
-- Session cleanup: When a user is deleted, all associated sessions are automatically removed
-- User lookup: Sessions store the user ID for efficient user lookup during authentication
-  Understanding these core concepts provides the foundation for working with Torii's authentication flows, which we'll explore in the subsequent sections.
+### Password Authentication
+
+Traditional email/password authentication with secure password hashing.
+
+Key features:
+- Argon2id password hashing
+- Email verification capabilities
+- Password reset functionality
+
+### OAuth Authentication
+
+Social login and OpenID Connect support for external identity providers.
+
+Supported providers:
+- Google
+- GitHub
+- More providers can be added
+
+### Passkey Authentication (WebAuthn)
+
+Passwordless authentication using the Web Authentication API (WebAuthn).
+
+Key features:
+- FIDO2-compliant
+- Supports hardware security keys, platform authenticators (Windows Hello, Touch ID, etc.)
+- Challenge-response authentication flow
+
+### Magic Link Authentication
+
+Email-based passwordless authentication using one-time tokens.
+
+Key features:
+- Generates secure tokens
+- Time-limited validation
+- Simple user experience
+
+## Storage System
+
+Torii abstracts the storage layer through traits, allowing different storage backend implementations:
+
+### Available Storage Backends
+
+1. **SQLite**: For development, testing, or small applications
+2. **PostgreSQL**: For production-ready applications requiring a robust database
+3. **SeaORM**: Supporting SQLite, PostgreSQL, and MySQL through the SeaORM ORM
+
+Each storage backend implements the following core storage traits:
+- `UserStorage`: For user management
+- `SessionStorage`: For session management
+- `PasswordStorage`: For password authentication
+- `OAuthStorage`: For OAuth accounts
+- `PasskeyStorage`: For WebAuthn credentials
+- `MagicLinkStorage`: For magic link tokens
+
+## Initialization Patterns
+
+Torii provides several ways to initialize the system based on your application's needs:
+
+1. **Single Storage**: Use the same storage for users and sessions
+   ```rust
+   Torii::new(storage)
+   ```
+
+2. **Split Storage**: Use different storage backends for users and sessions
+   ```rust
+   Torii::with_storages(user_storage, session_storage)
+   ```
+
+3. **Custom Managers**: Provide custom user and session managers
+   ```rust
+   Torii::with_managers(user_storage, session_storage, user_manager, session_manager)
+   ```
+
+4. **Stateless Managers**: Use custom managers without storage
+   ```rust
+   Torii::with_custom_managers(user_manager, session_manager)
+   ```
+
+## Error Handling
+
+Torii uses a structured error system with the `ToriiError` enum that includes:
+
+- `PluginNotFound`: When an authentication plugin is not available
+- `AuthError`: When authentication fails
+- `StorageError`: When there's an issue with the storage backend
+
+Understanding these core concepts provides the foundation for working with Torii's authentication flows in your applications.
