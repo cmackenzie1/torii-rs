@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 torii-core = { path = "../torii-core", version = "0.2.2" }
 
+async-trait.workspace = true
 chrono.workspace = true
 webauthn-rs = { version = "0.5.1", features = [
     "danger-allow-state-serialisation",
@@ -17,6 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+uuid = { workspace = true, features = ["v4", "serde"] }
 
 [dev-dependencies]
 axum = { version = "0.8", features = ["macros"] }
