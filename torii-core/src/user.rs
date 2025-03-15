@@ -12,11 +12,12 @@
 //! | `email_verified_at` | `Option<DateTime>` | The timestamp when the user's email was verified. |
 //! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
 //! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{Error, error::ValidationError};
+use crate::{Error, error::ValidationError, storage::NewUser};
 
 /// A unique, stable identifier for a specific user
 /// This value should be treated as opaque, and should not be used as a UUID even if it may look like one
@@ -63,6 +64,34 @@ impl std::fmt::Display for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+/// The central manager for user operations
+///
+/// This trait defines core functionality for managing users. Implementations
+/// should provide efficient means of creating, retrieving, and updating users.
+#[async_trait]
+pub trait UserManager: Send + Sync + 'static {
+    /// Create a new user
+    async fn create_user(&self, user: &NewUser) -> Result<User, Error>;
+
+    /// Get a user by ID
+    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Error>;
+
+    /// Get a user by email
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Error>;
+
+    /// Get an existing user or create a new one if not found
+    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Error>;
+
+    /// Update a user's information
+    async fn update_user(&self, user: &User) -> Result<User, Error>;
+
+    /// Delete a user by ID
+    async fn delete_user(&self, id: &UserId) -> Result<(), Error>;
+
+    /// Mark a user's email as verified
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
 /// Representation of a user in Torii. This is the user object returned by all authentication plugins.
@@ -154,6 +183,82 @@ impl UserBuilder {
             created_at: self.created_at.unwrap_or(now),
             updated_at: self.updated_at.unwrap_or(now),
         })
+    }
+}
+
+/// Default implementation of the UserManager trait
+///
+/// This implementation wraps a UserStorage implementation and provides
+/// the core user management functionality needed by authentication systems.
+pub struct DefaultUserManager<S>
+where
+    S: crate::storage::UserStorage,
+{
+    storage: std::sync::Arc<S>,
+}
+
+impl<S> DefaultUserManager<S>
+where
+    S: crate::storage::UserStorage,
+{
+    /// Create a new DefaultUserManager with the specified storage
+    pub fn new(storage: std::sync::Arc<S>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait]
+impl<S> UserManager for DefaultUserManager<S>
+where
+    S: crate::storage::UserStorage,
+{
+    async fn create_user(&self, user: &NewUser) -> Result<User, Error> {
+        self.storage
+            .create_user(user)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
+    }
+
+    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Error> {
+        self.storage
+            .get_user(id)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
+    }
+
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Error> {
+        self.storage
+            .get_user_by_email(email)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
+    }
+
+    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Error> {
+        self.storage
+            .get_or_create_user_by_email(email)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
+    }
+
+    async fn update_user(&self, user: &User) -> Result<User, Error> {
+        self.storage
+            .update_user(user)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
+    }
+
+    async fn delete_user(&self, id: &UserId) -> Result<(), Error> {
+        self.storage
+            .delete_user(id)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
+    }
+
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Error> {
+        self.storage
+            .set_user_email_verified(user_id)
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Database(e.to_string())))
     }
 }
 

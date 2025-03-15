@@ -13,7 +13,7 @@ async fn test_postgres_password_auth() {
         &format!("postgres://postgres:postgres@127.0.0.1:{host_port}/postgres",);
 
     let storage = Arc::new(PostgresStorage::connect(connection_string).await.unwrap());
-    let torii = Torii::new(storage.clone(), storage.clone()).with_password_plugin();
+    let torii = Torii::new(storage.clone()).with_password_plugin();
     storage.migrate().await.unwrap(); // TODO(now): Move this to Torii::initialize()
 
     let user = torii

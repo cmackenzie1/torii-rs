@@ -5,7 +5,7 @@ use torii::{SqliteStorage, Torii};
 #[tokio::test]
 async fn test_sqlite_password_auth() {
     let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_password_plugin();
+    let torii = Torii::new(sqlite.clone()).with_password_plugin();
     sqlite.migrate().await.unwrap(); // TODO(now): Move this to Torii::initialize()
 
     let user = torii

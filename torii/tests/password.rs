@@ -17,7 +17,7 @@ async fn test_register_user_with_password() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with password plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_password_plugin();
+    let torii = Torii::new(sqlite.clone()).with_password_plugin();
 
     // Register a user
     let email = "test@example.com";
@@ -47,7 +47,7 @@ async fn test_login_with_password() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with password plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_password_plugin();
+    let torii = Torii::new(sqlite.clone()).with_password_plugin();
 
     // Register a user and verify email
     let email = "test@example.com";
@@ -95,7 +95,7 @@ async fn test_login_with_unverified_email() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with password plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_password_plugin();
+    let torii = Torii::new(sqlite.clone()).with_password_plugin();
 
     // Register a user without verifying email
     let email = "unverified@example.com";
@@ -126,7 +126,7 @@ async fn test_session_expiration() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with password plugin and short session expiration
-    let torii = Torii::new(sqlite.clone(), sqlite.clone())
+    let torii = Torii::new(sqlite.clone())
         .with_password_plugin()
         .with_session_config(SessionConfig {
             expires_in: Duration::seconds(1), // Short expiry for testing
@@ -168,7 +168,7 @@ async fn test_multiple_sessions() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with password plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_password_plugin();
+    let torii = Torii::new(sqlite.clone()).with_password_plugin();
 
     // Register a user and verify email
     let email = "test@example.com";
@@ -242,7 +242,7 @@ async fn test_password_auth_with_jwt() {
         .with_metadata(true);
 
     // Create Torii with JWT sessions
-    let torii = Torii::new(sqlite.clone(), sqlite.clone())
+    let torii = Torii::new(sqlite.clone())
         .with_jwt_sessions(jwt_config)
         .with_password_plugin();
 

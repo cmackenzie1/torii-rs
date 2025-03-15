@@ -10,7 +10,7 @@ async fn test_magic_link_auth() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with magic link plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_magic_link_plugin();
+    let torii = Torii::new(sqlite.clone()).with_magic_link_plugin();
 
     // Generate a token for a test email
     let email = "test@example.com";
@@ -54,7 +54,7 @@ async fn test_magic_link_expired_token() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with magic link plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone())
+    let torii = Torii::new(sqlite.clone())
         .with_magic_link_plugin()
         .with_session_config(torii::SessionConfig {
             expires_in: Duration::seconds(2), // Short expiry for testing
@@ -99,7 +99,7 @@ async fn test_magic_link_connection_info() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with magic link plugin
-    let torii = Torii::new(sqlite.clone(), sqlite.clone()).with_magic_link_plugin();
+    let torii = Torii::new(sqlite.clone()).with_magic_link_plugin();
 
     // Generate a token
     let email = "connection@example.com";

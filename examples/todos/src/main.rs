@@ -7,10 +7,10 @@ mod templates;
 
 /// Application state shared between route handlers
 /// Contains references to:
-/// - plugin_manager: Coordinates authentication plugins
+/// - torii: Coordinates authentication plugins
 #[derive(Clone)]
 pub(crate) struct AppState {
-    torii: Arc<Torii<SeaORMStorage, SeaORMStorage>>,
+    torii: Arc<Torii<SeaORMStorage>>,
     todos: Arc<DashMap<String, Todo>>,
 }
 
@@ -26,28 +26,37 @@ pub struct Todo {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let user_storage = Arc::new(
-        SeaORMStorage::connect("sqlite://todos.db?mode=rwc")
-            .await
-            .expect("Failed to connect to database"),
-    );
-    let session_storage = Arc::new(
+    // Create a new storage instance for our application
+    let storage = Arc::new(
         SeaORMStorage::connect("sqlite://todos.db?mode=rwc")
             .await
             .expect("Failed to connect to database"),
     );
 
-    // TODO: Move this into a torii init function
-    user_storage
-        .migrate()
-        .await
-        .expect("Failed to migrate user storage");
-    session_storage
-        .migrate()
-        .await
-        .expect("Failed to migrate session storage");
+    // Migrate the storage schema
+    storage.migrate().await.expect("Failed to migrate storage");
 
-    let torii = Torii::new(user_storage, session_storage).with_password_plugin();
+    // For demonstration, we can use different approaches:
+
+    // 1. Simplest approach with a single storage backend
+    let torii = Torii::new(storage).with_password_plugin();
+
+    // Alternative Options:
+    //
+    // 2. If you want separate storage for sessions (e.g., Redis):
+    // let user_storage = storage.clone();
+    // let session_storage = Arc::new(RedisStorage::connect("redis://localhost").await.unwrap());
+    // let torii = Torii::with_storages(user_storage, session_storage).with_password_plugin();
+    //
+    // 3. If you need custom managers for additional behavior:
+    // let user_manager: Arc<dyn UserManager + Send + Sync> = Arc::new(CustomUserManager::new(storage.clone()));
+    // let session_manager: Arc<dyn SessionManager + Send + Sync> = Arc::new(DefaultSessionManager::new(storage.clone()));
+    // let torii = Torii::with_managers(storage.clone(), storage.clone(), user_manager, session_manager);
+    //
+    // 4. If your managers fully encapsulate their storage and you don't need plugins:
+    // let user_manager: Arc<dyn UserManager + Send + Sync> = Arc::new(MyUserManager::new(my_db_conn.clone()));
+    // let session_manager: Arc<dyn SessionManager + Send + Sync> = Arc::new(RedisSessionManager::new("redis://localhost"));
+    // let torii = Torii::<()>::with_custom_managers(user_manager, session_manager);
 
     let app_state = AppState {
         torii: Arc::new(torii),
