@@ -9,89 +9,136 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::{CookieJar, cookie::Cookie};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
-use torii_auth_passkey::PasskeyPlugin;
+use torii_auth_passkey::{
+    ChallengeId, PasskeyAuthPlugin, PasskeyLoginCompletion, PasskeyLoginRequest, PasskeyPlugin,
+    PasskeyRegistrationCompletion, PasskeyRegistrationRequest,
+};
 use torii_core::{
     Session, plugin::PluginManager, session::SessionToken, storage::SessionStorage,
     storage::UserStorage,
 };
 use torii_storage_sqlite::SqliteStorage;
+use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 #[derive(Clone)]
 struct AppState {
     plugin_manager: Arc<PluginManager<SqliteStorage, SqliteStorage>>,
 }
 
-#[derive(Debug, Deserialize)]
-struct BeginRegistrationBody {
-    email: String,
-}
-
 #[axum::debug_handler]
 async fn begin_registration_handler(
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(params): Json<BeginRegistrationBody>,
+    Json(params): Json<PasskeyRegistrationRequest>,
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
         .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
         .unwrap();
 
-    let challenge = plugin
-        .start_registration(&params.email)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to start registration: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to start registration",
-            )
-        })
-        .expect("Failed to start registration");
+    let options = <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::start_registration(
+        plugin.as_ref(),
+        &params,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to start registration: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to start registration",
+        )
+    })
+    .expect("Failed to start registration");
+
+    // Debug the options structure
+    tracing::info!("Registration options: {:?}", options);
+    tracing::info!("Options.options: {:?}", options.options);
+
+    // Convert options.options to a string for detailed debugging
+    if let Ok(json_str) = serde_json::to_string_pretty(&options.options) {
+        tracing::info!("Options.options as JSON:\n{}", json_str);
+    }
 
     let jar = jar.add(
-        Cookie::build(("passkey_challenge_id", challenge.challenge_id().to_string()))
+        Cookie::build(("passkey_challenge_id", options.challenge_id.to_string()))
             .path("/")
             .http_only(true),
     );
 
-    (jar, Json(challenge.challenge())).into_response()
+    (jar, Json(options.options)).into_response()
 }
 
 #[derive(Debug, Deserialize)]
-struct FinishRegistrationBody {
+struct RegistrationCompletionRequest {
     email: String,
-    challenge_response: serde_json::Value,
+    challenge_id: Option<String>,
+    response: serde_json::Value,
 }
 
 #[axum::debug_handler]
 async fn finish_registration_handler(
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(body): Json<FinishRegistrationBody>,
+    Json(body): Json<RegistrationCompletionRequest>,
 ) -> impl IntoResponse {
-    let email = body.email;
-    let passkey_challenge_id = jar.get("passkey_challenge_id").unwrap().value();
+    // Debug the request body
+    tracing::info!("Registration completion raw body: {:#?}", body);
+
+    // Get the challenge_id from the cookie
+    let challenge_id = if let Some(cookie) = jar.get("passkey_challenge_id") {
+        let cookie_value = cookie.value().to_string();
+        tracing::info!("Found challenge_id in cookie: {}", cookie_value);
+        ChallengeId::new(cookie_value)
+    } else {
+        tracing::error!("Missing challenge ID cookie");
+        return (StatusCode::BAD_REQUEST, "Missing challenge ID cookie").into_response();
+    };
+
+    // Convert the raw JSON response to the proper WebAuthn type
+    let response =
+        match serde_json::from_value::<RegisterPublicKeyCredential>(body.response.clone()) {
+            Ok(credential) => credential,
+            Err(e) => {
+                tracing::error!("Failed to deserialize credential: {}", e);
+                return (
+                    StatusCode::BAD_REQUEST,
+                    format!("Invalid credential: {}", e),
+                )
+                    .into_response();
+            }
+        };
+
+    // Create the proper PasskeyRegistrationCompletion object
+    let completion = PasskeyRegistrationCompletion {
+        email: body.email,
+        challenge_id,
+        response,
+    };
+
+    tracing::info!("Created PasskeyRegistrationCompletion: {:#?}", completion);
 
     let plugin = state
         .plugin_manager
         .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
         .unwrap();
 
-    let user = plugin
-        .complete_registration(&email, passkey_challenge_id, &body.challenge_response)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to complete registration: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to complete registration",
-            )
-        })
-        .unwrap();
+    let user = <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::complete_registration(
+        plugin.as_ref(),
+        &completion,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to complete registration: {:?}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to complete registration: {}", e),
+        )
+            .into_response();
+    })
+    .unwrap();
 
     let session = state
         .plugin_manager
@@ -170,56 +217,111 @@ async fn verify_session(
     Redirect::to("/").into_response()
 }
 
-#[derive(Debug, Deserialize)]
-struct BeginLoginBody {
-    email: String,
-}
-
 #[axum::debug_handler]
 async fn begin_login_handler(
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(params): Json<BeginLoginBody>,
+    Json(params): Json<PasskeyLoginRequest>,
 ) -> Response {
     let plugin = state
         .plugin_manager
         .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
         .unwrap();
 
-    let challenge = plugin.start_login(&params.email).await.unwrap();
+    let options =
+        <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::start_login(plugin.as_ref(), &params)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to start login: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to start login").into_response()
+            })
+            .unwrap();
+
+    // Debug the options structure
+    tracing::info!("Login options: {:?}", options);
+    tracing::info!("Options.options: {:?}", options.options);
+
+    // Convert options.options to a string for detailed debugging
+    if let Ok(json_str) = serde_json::to_string_pretty(&options.options) {
+        tracing::info!("Options.options as JSON:\n{}", json_str);
+    }
 
     let jar = jar.add(
-        Cookie::build(("passkey_challenge_id", challenge.challenge_id().to_string()))
+        Cookie::build(("passkey_challenge_id", options.challenge_id.to_string()))
             .path("/")
             .http_only(true),
     );
 
-    (jar, Json(challenge.challenge())).into_response()
+    (jar, Json(options.options)).into_response()
 }
 
 #[derive(Debug, Deserialize)]
-struct FinishLoginBody {
+struct LoginCompletionRequest {
     email: String,
-    challenge_response: serde_json::Value,
+    challenge_id: Option<String>,
+    response: serde_json::Value,
 }
 
 #[axum::debug_handler]
 async fn finish_login_handler(
     State(state): State<AppState>,
     jar: CookieJar,
-    Json(body): Json<FinishLoginBody>,
+    Json(body): Json<LoginCompletionRequest>,
 ) -> Response {
+    // Debug the request body
+    tracing::info!("Login completion raw body: {:#?}", body);
+
+    // Get the challenge_id from the cookie
+    let challenge_id = if let Some(cookie) = jar.get("passkey_challenge_id") {
+        let cookie_value = cookie.value().to_string();
+        tracing::info!("Found challenge_id in cookie: {}", cookie_value);
+        ChallengeId::new(cookie_value)
+    } else {
+        tracing::error!("Missing challenge ID cookie");
+        return (StatusCode::BAD_REQUEST, "Missing challenge ID cookie").into_response();
+    };
+
+    // Convert the raw JSON response to the proper WebAuthn type
+    let response = match serde_json::from_value::<PublicKeyCredential>(body.response.clone()) {
+        Ok(credential) => credential,
+        Err(e) => {
+            tracing::error!("Failed to deserialize credential: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid credential: {}", e),
+            )
+                .into_response();
+        }
+    };
+
+    // Create the proper PasskeyLoginCompletion object
+    let completion = PasskeyLoginCompletion {
+        email: body.email,
+        challenge_id,
+        response,
+    };
+
+    tracing::info!("Created PasskeyLoginCompletion: {:#?}", completion);
+
     let plugin = state
         .plugin_manager
         .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
         .unwrap();
 
-    let passkey_challenge_id = jar.get("passkey_challenge_id").unwrap().value();
-
-    let user = plugin
-        .complete_login(&body.email, passkey_challenge_id, &body.challenge_response)
-        .await
-        .unwrap();
+    let user = <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::complete_login(
+        plugin.as_ref(),
+        &completion,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to complete login: {:?}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to complete login: {}", e),
+        )
+            .into_response()
+    })
+    .unwrap();
 
     let session = state
         .plugin_manager
@@ -236,6 +338,7 @@ async fn finish_login_handler(
 
     (jar, Json(user)).into_response()
 }
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -280,112 +383,227 @@ async fn main() {
                     <button onclick="beginLogin()">Begin Login</button>
 
                     <script>
+                        // Helper functions for dealing with WebAuthn encoding
+                        function base64UrlDecode(base64Url) {
+                            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                            const padding = base64.length % 4;
+                            if (padding) {
+                                base64 += '='.repeat(4 - padding);
+                            }
+                            return atob(base64);
+                        }
+
+                        function base64UrlToBuffer(base64Url) {
+                            const binary = base64UrlDecode(base64Url);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            return bytes.buffer;
+                        }
+
+                        // Ensure WebAuthn challenge is in the correct format
+                        function ensureChallenge(options) {
+                            if (options && options.challenge) {
+                                // If challenge is not a proper ArrayBuffer/Base64URL, convert it
+                                if (typeof options.challenge === 'string') {
+                                    options.challenge = base64UrlToBuffer(options.challenge);
+                                }
+                            }
+                            return options;
+                        }
                         async function beginRegistration() {
-                        const email = document.getElementById('email').value;
-                        
-                        // Start registration flow
-                        const response = await fetch('/auth/passkey/begin-registration', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ email })
-                        });
+                        try {
+                            const email = document.getElementById('email').value;
+                            
+                            if (!email) {
+                                alert('Please enter an email address');
+                                return;
+                            }
+                            
+                            // Start registration flow
+                            console.log("Starting registration with email:", email);
+                            const response = await fetch('/auth/passkey/begin-registration', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ email })
+                            });
 
-                        if (!response.ok) {
-                            console.error('Failed to begin registration');
-                            return;
+                            if (!response.ok) {
+                                const errorText = await response.text();
+                                console.error('Failed to begin registration:', errorText);
+                                alert(`Failed to begin registration: ${errorText}`);
+                                return;
+                            }
+
+                            // Parse the registration options
+                            const responseData = await response.json();
+                            console.log("Registration response:", responseData);
+                            
+                            // The server might be sending {publicKey: {...}} or directly the publicKey content
+                            const publicKeyOptions = responseData.publicKey || responseData;
+                            console.log("Public key options:", publicKeyOptions);
+                            
+                            if (!publicKeyOptions || !publicKeyOptions.challenge) {
+                                console.error('Invalid registration options - no challenge found');
+                                alert('Failed to start registration: Invalid server response (no challenge)');
+                                return;
+                            }
+                            
+                            // Create credentials using WebAuthn API
+                            console.log("Creating credentials with options:", publicKeyOptions);
+                            let finalOptions;
+                            
+                            try {
+                                // First try with the parseCreationOptionsFromJSON method
+                                finalOptions = PublicKeyCredential.parseCreationOptionsFromJSON(publicKeyOptions);
+                                console.log("Parsed options:", finalOptions);
+                            } catch (error) {
+                                console.warn("Failed to parse options with built-in method, using custom parsing:", error);
+                                // If that fails, try manual conversion of challenge
+                                finalOptions = ensureChallenge(publicKeyOptions);
+                                console.log("Manually converted options:", finalOptions);
+                            }
+                            
+                            const credential = await navigator.credentials.create({
+                                publicKey: finalOptions
+                            });
+
+                            console.log("Created credential:", credential);
+
+                            // Complete registration
+                            // Get the challenge_id from the cookie or from the options
+                            const challenge_id = document.cookie
+                                .split('; ')
+                                .find(row => row.startsWith('passkey_challenge_id='))
+                                ?.split('=')[1];
+                                
+                            console.log("Challenge ID for completion:", challenge_id);
+                            
+                            const result = await fetch('/auth/passkey/finish-registration', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    email,
+                                    challenge_id,
+                                    response: credential
+                                })
+                            });
+
+                            if (!result.ok) {
+                                const errorText = await result.text();
+                                console.error('Failed to complete registration:', errorText);
+                                alert(`Failed to complete registration: ${errorText}`);
+                                return;
+                            }
+
+                            alert('Registration successful!');
+                            window.location.href = '/whoami';
+                        } catch (error) {
+                            console.error('Registration error:', error);
+                            alert(`Registration error: ${error.message}`);
                         }
-
-                        
-                        const challenge = await response.json();
-                        /* 
-                        NOTE: The server returns a base64 encoded challenge but the WebAuthn API expects an ArrayBuffer. Using atob() doesn't work 
-                        because no one can agree on what base64 standard to use.
-
-                        Your mileage may vary and you may need to do something different.
-                        */
-                        const opts = PublicKeyCredential.parseCreationOptionsFromJSON(challenge.publicKey);
-                        console.log(opts);
-                        
-                        // Create credentials using WebAuthn API
-                        const credential = await navigator.credentials.create({
-                            publicKey: opts
-                        });
-
-                        console.log(credential);
-
-                        // Complete registration
-                        const result = await fetch('/auth/passkey/finish-registration', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                email,
-                                challenge_response: credential
-                            })
-                        });
-
-                        if (!result.ok) {
-                            console.error('Failed to complete registration');
-                            return;
-                        }
-
-                        window.location.href = '/whoami';
                     }
 
                     async function beginLogin() {
-                        const email = document.getElementById('email').value;
-                        const response = await fetch('/auth/passkey/begin-login', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ email })
-                        });
+                        try {
+                            const email = document.getElementById('email').value;
+                            
+                            if (!email) {
+                                alert('Please enter an email address');
+                                return;
+                            }
+                            
+                            // Start login flow
+                            console.log("Starting login with email:", email);
+                            const response = await fetch('/auth/passkey/begin-login', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ email })
+                            });
 
-                        if (!response.ok) {
-                            console.error('Failed to begin login');
-                            return;
+                            if (!response.ok) {
+                                const errorText = await response.text();
+                                console.error('Failed to begin login:', errorText);
+                                alert(`Failed to begin login: ${errorText}`);
+                                return;
+                            }
+
+                            // Parse the login options
+                            const responseData = await response.json();
+                            console.log("Login response:", responseData);
+                            
+                            // The server might be sending {publicKey: {...}} or directly the publicKey content
+                            const publicKeyOptions = responseData.publicKey || responseData;
+                            console.log("Public key options:", publicKeyOptions);
+                            
+                            if (!publicKeyOptions || !publicKeyOptions.challenge) {
+                                console.error('Invalid login options - no challenge found');
+                                alert('Failed to start login: Invalid server response (no challenge)');
+                                return;
+                            }
+                            
+                            // Create credentials using WebAuthn API
+                            console.log("Getting credentials with options:", publicKeyOptions);
+                            let finalOptions;
+                            
+                            try {
+                                // First try with the parseRequestOptionsFromJSON method
+                                finalOptions = PublicKeyCredential.parseRequestOptionsFromJSON(publicKeyOptions);
+                                console.log("Parsed options:", finalOptions);
+                            } catch (error) {
+                                console.warn("Failed to parse options with built-in method, using custom parsing:", error);
+                                // If that fails, try manual conversion of challenge
+                                finalOptions = ensureChallenge(publicKeyOptions);
+                                console.log("Manually converted options:", finalOptions);
+                            }
+                            
+                            const credential = await navigator.credentials.get({
+                                publicKey: finalOptions
+                            });
+
+                            console.log("Retrieved credential:", credential);
+
+                            // Complete login
+                            // Get the challenge_id from the cookie or from the options
+                            const challenge_id = document.cookie
+                                .split('; ')
+                                .find(row => row.startsWith('passkey_challenge_id='))
+                                ?.split('=')[1];
+                                
+                            console.log("Challenge ID for login completion:", challenge_id);
+                            
+                            const result = await fetch('/auth/passkey/finish-login', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },  
+                                body: JSON.stringify({
+                                    email,
+                                    challenge_id,
+                                    response: credential
+                                })
+                            });
+
+                            if (!result.ok) {
+                                const errorText = await result.text();
+                                console.error('Failed to complete login:', errorText);
+                                alert(`Failed to complete login: ${errorText}`);
+                                return;
+                            }
+
+                            alert('Login successful!');
+                            window.location.href = '/whoami';
+                        } catch (error) {
+                            console.error('Login error:', error);
+                            alert(`Login error: ${error.message}`);
                         }
-
-                        const challenge = await response.json();
-                        console.log(challenge);
- /* 
-                        NOTE: The server returns a base64 encoded challenge but the WebAuthn API expects an ArrayBuffer. Using atob() doesn't work 
-                        because no one can agree on what base64 standard to use.
-
-                        Your mileage may vary and you may need to do something different.
-                        */
-                        const opts = PublicKeyCredential.parseRequestOptionsFromJSON(challenge.publicKey);
-                        console.log(opts);
-                        
-                        // Create credentials using WebAuthn API
-                        const credential = await navigator.credentials.get({
-                            publicKey: opts
-                        });
-
-                        console.log(credential);
-
-                        // Start login flow
-                        const result = await fetch('/auth/passkey/finish-login', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },  
-                            body: JSON.stringify({
-                                email,
-                                challenge_response: credential
-                            })
-                        });
-
-                        if (!result.ok) {
-                            console.error('Failed to complete login');
-                            return;
-                        }
-
-                        window.location.href = '/whoami';
                     }
                     </script>
                 </body>

@@ -76,7 +76,11 @@ pub use torii_auth_password::PasswordPlugin;
 pub use torii_auth_oauth::{AuthorizationUrl, OAuthPlugin, providers::Provider};
 
 #[cfg(feature = "passkey")]
-pub use torii_auth_passkey::{PasskeyChallenge, PasskeyPlugin};
+pub use torii_auth_passkey::{
+    ChallengeId, PasskeyAuthPlugin, PasskeyCredentialCreationOptions,
+    PasskeyCredentialRequestOptions, PasskeyLoginCompletion, PasskeyLoginRequest, PasskeyPlugin,
+    PasskeyRegistrationCompletion, PasskeyRegistrationRequest,
+};
 
 #[cfg(feature = "magic-link")]
 pub use torii_auth_magic_link::MagicLinkPlugin;
@@ -597,23 +601,55 @@ where
     ///
     /// # Returns
     ///
-    /// Returns a [`PasskeyChallenge`] struct containing the challenge ID and challenge response.
+    /// Returns a [`PasskeyCredentialCreationOptions`] struct containing the challenge ID and WebAuthn options.
     pub async fn begin_passkey_registration(
         &self,
         email: &str,
-    ) -> Result<PasskeyChallenge, ToriiError> {
+    ) -> Result<PasskeyCredentialCreationOptions, ToriiError> {
         let passkey_plugin = self
             .manager
             .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        passkey_plugin
-            .start_registration(email)
-            .await
-            .map_err(|e| ToriiError::AuthError(e.to_string()))
+        let request = PasskeyRegistrationRequest {
+            email: email.to_string(),
+        };
+
+        <PasskeyPlugin<U> as PasskeyAuthPlugin>::start_registration(
+            passkey_plugin.as_ref(),
+            &request,
+        )
+        .await
+        .map_err(|e| ToriiError::AuthError(e.to_string()))
     }
 
     /// Complete a passkey registration
+    ///
+    /// # Arguments
+    ///
+    /// * `completion`: The registration completion data containing email, challenge ID, and response
+    ///
+    /// # Returns
+    ///
+    /// Returns the registered user if the registration is successful
+    pub async fn complete_passkey_registration(
+        &self,
+        completion: &PasskeyRegistrationCompletion,
+    ) -> Result<User, ToriiError> {
+        let passkey_plugin = self
+            .manager
+            .get_plugin::<PasskeyPlugin<U>>("passkey")
+            .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
+
+        <PasskeyPlugin<U> as PasskeyAuthPlugin>::complete_registration(
+            passkey_plugin.as_ref(),
+            completion,
+        )
+        .await
+        .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Alternative complete passkey registration that accepts individual parameters
     ///
     /// # Arguments
     ///
@@ -623,24 +659,25 @@ where
     ///
     /// # Returns
     ///
-    /// Returns the registered user and session if the registration is successful
-    pub async fn complete_passkey_registration(
+    /// Returns the registered user if the registration is successful
+    pub async fn complete_passkey_registration_with_params(
         &self,
         email: &str,
         challenge_id: &str,
         challenge_response: &serde_json::Value,
     ) -> Result<User, ToriiError> {
-        let passkey_plugin = self
-            .manager
-            .get_plugin::<PasskeyPlugin<U>>("passkey")
-            .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
+        // Parse the challenge response
+        let response = serde_json::from_value(challenge_response.clone()).map_err(|e| {
+            ToriiError::AuthError(format!("Invalid challenge response format: {}", e))
+        })?;
 
-        let user = passkey_plugin
-            .complete_registration(email, challenge_id, challenge_response)
-            .await
-            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+        let completion = PasskeyRegistrationCompletion {
+            email: email.to_string(),
+            challenge_id: ChallengeId::new(challenge_id.to_string()),
+            response,
+        };
 
-        Ok(user)
+        self.complete_passkey_registration(&completion).await
     }
 
     /// Begin a passkey login
@@ -651,15 +688,21 @@ where
     ///
     /// # Returns
     ///
-    /// Returns a [`PasskeyChallenge`] struct containing the challenge ID and challenge response.
-    pub async fn begin_passkey_login(&self, email: &str) -> Result<PasskeyChallenge, ToriiError> {
+    /// Returns a [`PasskeyCredentialRequestOptions`] struct containing the challenge ID and WebAuthn options.
+    pub async fn begin_passkey_login(
+        &self,
+        email: &str,
+    ) -> Result<PasskeyCredentialRequestOptions, ToriiError> {
         let passkey_plugin = self
             .manager
             .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        passkey_plugin
-            .start_login(email)
+        let request = PasskeyLoginRequest {
+            email: email.to_string(),
+        };
+
+        <PasskeyPlugin<U> as PasskeyAuthPlugin>::start_login(passkey_plugin.as_ref(), &request)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))
     }
@@ -668,18 +711,16 @@ where
     ///
     /// # Arguments
     ///
-    /// * `email`: The email of the user to login
-    /// * `challenge_id`: The challenge ID of the passkey
-    /// * `challenge_response`: The challenge response of the passkey
+    /// * `completion`: The login completion data containing email, challenge ID, and response
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
     ///
     /// # Returns
     ///
     /// Returns the user and session if the login is successful
     pub async fn complete_passkey_login(
         &self,
-        email: &str,
-        challenge_id: &str,
-        challenge_response: &serde_json::Value,
+        completion: &PasskeyLoginCompletion,
         user_agent: Option<String>,
         ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
@@ -688,16 +729,54 @@ where
             .get_plugin::<PasskeyPlugin<U>>("passkey")
             .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        let user = passkey_plugin
-            .complete_login(email, challenge_id, challenge_response)
-            .await
-            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+        let user = <PasskeyPlugin<U> as PasskeyAuthPlugin>::complete_login(
+            passkey_plugin.as_ref(),
+            completion,
+        )
+        .await
+        .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         let session = self
             .create_session(&user.id, user_agent, ip_address)
             .await?;
 
         Ok((user, session))
+    }
+
+    /// Alternative complete passkey login that accepts individual parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email of the user to login
+    /// * `challenge_id`: The challenge ID of the passkey
+    /// * `challenge_response`: The challenge response of the passkey
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
+    ///
+    /// # Returns
+    ///
+    /// Returns the user and session if the login is successful
+    pub async fn complete_passkey_login_with_params(
+        &self,
+        email: &str,
+        challenge_id: &str,
+        challenge_response: &serde_json::Value,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<(User, Session), ToriiError> {
+        // Parse the challenge response
+        let response = serde_json::from_value(challenge_response.clone()).map_err(|e| {
+            ToriiError::AuthError(format!("Invalid challenge response format: {}", e))
+        })?;
+
+        let completion = PasskeyLoginCompletion {
+            email: email.to_string(),
+            challenge_id: ChallengeId::new(challenge_id.to_string()),
+            response,
+        };
+
+        self.complete_passkey_login(&completion, user_agent, ip_address)
+            .await
     }
 }
 

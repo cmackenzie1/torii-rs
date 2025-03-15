@@ -26,6 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SessionToken` type now supports both simple UUID tokens and JWT tokens.
 - Added `JwtConfig` for configuring JWT session parameters.
 
+#### `torii-auth-passkey`
+
+- Completely redesigned the passkey authentication API for improved type safety and usability:
+  - Added a `PasskeyAuthPlugin` trait to define standardized authentication methods
+  - Replaced string and JSON value parameters with proper strongly-typed structures:
+    - `PasskeyRegistrationRequest` and `PasskeyRegistrationCompletion`
+    - `PasskeyLoginRequest` and `PasskeyLoginCompletion`
+    - `ChallengeId` type for better type safety
+  - Created separate public-facing credential types:
+    - `PasskeyCredentialCreationOptions`
+    - `PasskeyCredentialRequestOptions`
+  - Enhanced error handling with detailed context information using `PasskeyErrorContext`
+  - **BREAKING CHANGE**: Removed the deprecated `PasskeyChallenge` structure and the old method signatures
+  - Updated the `torii` integration to use the new API with both structured types and convenient alternatives
+
 #### `torii`
 
 - Login methods now accept an optional user agent and ip address parameter which will be stored with the session in the database.
