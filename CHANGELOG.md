@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `UserManager` trait to standardize user management operations.
 - Added `DefaultUserManager` implementation that wraps a `UserStorage`.
 
+#### Authentication Plugins
+
+- **BREAKING CHANGE**: Refactored all auth plugins to support the new UserManager architecture:
+  - `PasswordPlugin` now accepts a UserManager and PasswordStorage
+  - `OAuthPlugin` now accepts a UserManager and OAuthStorage
+  - `PasskeyPlugin` now accepts a UserManager and PasskeyStorage
+  - `MagicLinkPlugin` now accepts a UserManager and MagicLinkStorage
+  - All plugins now delegate user operations to the UserManager and use storage for auth-specific operations
+  - Updated examples to demonstrate proper usage with the new architecture
+
 #### `torii-auth-passkey`
 
 - **BREAKING CHANGE**: Completely redesigned the passkey authentication API for improved type safety and usability:

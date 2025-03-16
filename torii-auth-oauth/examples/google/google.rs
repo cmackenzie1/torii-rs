@@ -11,7 +11,7 @@ use axum_extra::extract::{CookieJar, cookie::Cookie};
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 use torii_auth_oauth::OAuthPlugin;
-use torii_core::{Session, plugin::PluginManager, storage::SessionStorage};
+use torii_core::{DefaultUserManager, Session, plugin::PluginManager, storage::SessionStorage};
 use torii_storage_sqlite::SqliteStorage;
 
 #[derive(Debug, Deserialize)]
@@ -29,7 +29,7 @@ struct AppState {
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> (CookieJar, Redirect) {
     let plugin = state
         .plugin_manager
-        .get_plugin::<OAuthPlugin<SqliteStorage>>("google")
+        .get_plugin::<OAuthPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("google")
         .unwrap();
 
     let auth_url = plugin.get_authorization_url().await.unwrap();
@@ -57,7 +57,7 @@ async fn callback_handler(
 
     let plugin = state
         .plugin_manager
-        .get_plugin::<OAuthPlugin<SqliteStorage>>("google")
+        .get_plugin::<OAuthPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("google")
         .unwrap();
 
     let user = plugin
@@ -89,18 +89,22 @@ async fn main() {
         .await
         .unwrap();
 
-    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let storage = Arc::new(SqliteStorage::new(pool.clone()));
     let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
 
-    user_storage.migrate().await.unwrap();
+    storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
-    let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+    // Create user manager
+    let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+
+    let mut plugin_manager = PluginManager::new(storage.clone(), session_storage.clone());
     plugin_manager.register_plugin(OAuthPlugin::google(
         &std::env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set"),
         &std::env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set"),
         "http://localhost:4000/auth/google/callback",
-        user_storage.clone(),
+        user_manager.clone(),
+        storage.clone(),
     ));
 
     let app = Router::new()

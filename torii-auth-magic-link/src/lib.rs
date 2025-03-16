@@ -14,18 +14,29 @@
 //!
 //! ```rust,no_run
 //! use torii_auth_magic_link::MagicLinkPlugin;
-//! use torii_core::plugin::PluginManager;
+//! use torii_core::{DefaultUserManager, plugin::PluginManager};
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let user_storage = Arc::new(torii_storage_sqlite::SqliteStorage::connect("sqlite::memory:").await.unwrap());
+//! # let session_storage = user_storage.clone();
+//! # user_storage.migrate().await.unwrap();
+//!
+//! // Create user manager
+//! let user_manager = Arc::new(DefaultUserManager::new(user_storage.clone()));
 //!
 //! // Register the plugin with your PluginManager
 //! let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-//! plugin_manager.register_plugin(MagicLinkPlugin::new(user_storage.clone()));
+//! plugin_manager.register_plugin(MagicLinkPlugin::new(user_manager, user_storage.clone()));
 //!
 //! // Generate a magic link token
-//! let plugin = plugin_manager.get_plugin::<MagicLinkPlugin>("magic_link").unwrap();
+//! let plugin = plugin_manager.get_plugin::<MagicLinkPlugin<DefaultUserManager<_>, _>>("magic_link").unwrap();
 //! let token = plugin.generate_magic_token("user@example.com").await?;
 //!
 //! // Verify the token when user clicks the link
 //! let user = plugin.verify_magic_token(&token.token).await?;
+//! # Ok(())
+//! # }
 //! ```
 use std::sync::Arc;
 
@@ -33,7 +44,7 @@ use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::Utc;
 use rand::TryRngCore;
 use torii_core::{
-    Plugin, UserStorage,
+    Plugin, User, UserManager,
     storage::{MagicLinkStorage, MagicToken},
 };
 
@@ -67,43 +78,64 @@ pub enum MagicLinkError {
 ///
 /// ```rust,no_run
 /// use torii_auth_magic_link::MagicLinkPlugin;
-/// use torii_core::plugin::PluginManager;
+/// use torii_core::{DefaultUserManager, plugin::PluginManager};
+/// use std::sync::Arc;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # let user_storage = Arc::new(torii_storage_sqlite::SqliteStorage::connect("sqlite::memory:").await.unwrap());
+/// # let session_storage = user_storage.clone();
+/// # user_storage.migrate().await.unwrap();
+///
+/// // Create user manager
+/// let user_manager = Arc::new(DefaultUserManager::new(user_storage.clone()));
 ///
 /// // Register the plugin with your PluginManager
 /// let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-/// plugin_manager.register_plugin(MagicLinkPlugin::new(user_storage.clone()));
+/// plugin_manager.register_plugin(MagicLinkPlugin::new(user_manager, user_storage.clone()));
 ///
 /// // Generate a magic link token
-/// let plugin = plugin_manager.get_plugin::<MagicLinkPlugin>("magic_link").unwrap();
+/// let plugin = plugin_manager.get_plugin::<MagicLinkPlugin<DefaultUserManager<_>, _>>("magic_link").unwrap();
 /// let token = plugin.generate_magic_token("user@example.com").await?;
 ///
 /// // Verify the token when user clicks the link
 /// let user = plugin.verify_magic_token(&token.token).await?;
+/// # Ok(())
+/// # }
 /// ```
-pub struct MagicLinkPlugin<U: UserStorage> {
-    user_storage: Arc<U>,
+pub struct MagicLinkPlugin<M, S>
+where
+    M: UserManager,
+    S: MagicLinkStorage,
+{
+    user_manager: Arc<M>,
+    magic_link_storage: Arc<S>,
 }
 
-impl<U> Plugin for MagicLinkPlugin<U>
+impl<M, S> Plugin for MagicLinkPlugin<M, S>
 where
-    U: UserStorage,
+    M: UserManager,
+    S: MagicLinkStorage,
 {
     fn name(&self) -> String {
         "magic_link".to_string()
     }
 }
 
-impl<U> MagicLinkPlugin<U>
+impl<M, S> MagicLinkPlugin<M, S>
 where
-    U: MagicLinkStorage,
+    M: UserManager,
+    S: MagicLinkStorage,
 {
-    pub fn new(user_storage: Arc<U>) -> Self {
-        Self { user_storage }
+    pub fn new(user_manager: Arc<M>, magic_link_storage: Arc<S>) -> Self {
+        Self {
+            user_manager,
+            magic_link_storage,
+        }
     }
 
     pub async fn generate_magic_token(&self, email: &str) -> Result<MagicToken, MagicLinkError> {
         let user = self
-            .user_storage
+            .user_manager
             .get_or_create_user_by_email(email)
             .await
             .map_err(|e| MagicLinkError::StorageError(e.to_string()))?;
@@ -118,7 +150,7 @@ where
             now,
         );
 
-        self.user_storage
+        self.magic_link_storage
             .save_magic_token(&token)
             .await
             .map_err(|e| MagicLinkError::StorageError(e.to_string()))?;
@@ -126,28 +158,36 @@ where
         Ok(token)
     }
 
-    pub async fn verify_magic_token(&self, token: &str) -> Result<MagicToken, MagicLinkError> {
-        let token = self
-            .user_storage
+    pub async fn verify_magic_token(&self, token: &str) -> Result<User, MagicLinkError> {
+        let magic_token = self
+            .magic_link_storage
             .get_magic_token(token)
             .await
             .map_err(|e| MagicLinkError::StorageError(e.to_string()))?
             .ok_or(MagicLinkError::UserNotFound)?;
 
-        if token.expires_at < Utc::now() {
+        if magic_token.expires_at < Utc::now() {
             return Err(MagicLinkError::TokenExpired);
         }
 
-        if token.used() {
+        if magic_token.used() {
             return Err(MagicLinkError::TokenAlreadyUsed);
         }
 
-        self.user_storage
-            .set_magic_token_used(&token.token)
+        self.magic_link_storage
+            .set_magic_token_used(&magic_token.token)
             .await
             .map_err(|e| MagicLinkError::StorageError(e.to_string()))?;
 
-        Ok(token)
+        // Get the user
+        let user = self
+            .user_manager
+            .get_user(&magic_token.user_id)
+            .await
+            .map_err(|e| MagicLinkError::StorageError(e.to_string()))?
+            .ok_or(MagicLinkError::UserNotFound)?;
+
+        Ok(user)
     }
 }
 
@@ -178,6 +218,7 @@ fn encode_token(token: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use torii_core::DefaultUserManager;
     use torii_storage_sqlite::SqliteStorage;
 
     use super::*;
@@ -190,15 +231,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_magic_link_plugin() {
-        let user_storage = setup_sqlite_storage().await;
-        let plugin = MagicLinkPlugin::new(user_storage);
+        let storage = setup_sqlite_storage().await;
+        let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+        let plugin = MagicLinkPlugin::new(user_manager, storage);
         assert_eq!(plugin.name(), "magic_link");
     }
 
     #[tokio::test]
     async fn test_generate_magic_token() {
-        let user_storage = setup_sqlite_storage().await;
-        let plugin = MagicLinkPlugin::new(user_storage);
+        let storage = setup_sqlite_storage().await;
+        let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+        let plugin = MagicLinkPlugin::new(user_manager, storage);
         let token = plugin
             .generate_magic_token("test@example.com")
             .await
@@ -208,13 +251,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_magic_token() {
-        let user_storage = setup_sqlite_storage().await;
-        let plugin = MagicLinkPlugin::new(user_storage);
+        let storage = setup_sqlite_storage().await;
+        let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+        let plugin = MagicLinkPlugin::new(user_manager, storage);
         let token = plugin
             .generate_magic_token("test@example.com")
             .await
             .unwrap();
-        let verified_token = plugin.verify_magic_token(&token.token).await.unwrap();
-        assert_eq!(token, verified_token);
+        let user = plugin.verify_magic_token(&token.token).await.unwrap();
+        assert_eq!(user.id, token.user_id);
     }
 }

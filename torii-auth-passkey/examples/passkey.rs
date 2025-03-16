@@ -17,8 +17,8 @@ use torii_auth_passkey::{
     PasskeyRegistrationCompletion, PasskeyRegistrationRequest,
 };
 use torii_core::{
-    Session, plugin::PluginManager, session::SessionToken, storage::SessionStorage,
-    storage::UserStorage,
+    DefaultUserManager, Session, plugin::PluginManager, session::SessionToken,
+    storage::SessionStorage, storage::UserStorage,
 };
 use torii_storage_sqlite::SqliteStorage;
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
@@ -36,10 +36,10 @@ async fn begin_registration_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("passkey")
         .unwrap();
 
-    let options = <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::start_registration(
+    let options = <PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage> as PasskeyAuthPlugin>::start_registration(
         plugin.as_ref(),
         &params,
     )
@@ -123,10 +123,10 @@ async fn finish_registration_handler(
 
     let plugin = state
         .plugin_manager
-        .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("passkey")
         .unwrap();
 
-    let user = <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::complete_registration(
+    let user = <PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage> as PasskeyAuthPlugin>::complete_registration(
         plugin.as_ref(),
         &completion,
     )
@@ -226,11 +226,11 @@ async fn begin_login_handler(
 ) -> Response {
     let plugin = state
         .plugin_manager
-        .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("passkey")
         .unwrap();
 
     let options =
-        <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::start_login(plugin.as_ref(), &params)
+        <PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage> as PasskeyAuthPlugin>::start_login(plugin.as_ref(), &params)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to start login: {:?}", e);
@@ -307,10 +307,10 @@ async fn finish_login_handler(
 
     let plugin = state
         .plugin_manager
-        .get_plugin::<PasskeyPlugin<SqliteStorage>>("passkey")
+        .get_plugin::<PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("passkey")
         .unwrap();
 
-    let user = <PasskeyPlugin<SqliteStorage> as PasskeyAuthPlugin>::complete_login(
+    let user = <PasskeyPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage> as PasskeyAuthPlugin>::complete_login(
         plugin.as_ref(),
         &completion,
     )
@@ -348,17 +348,21 @@ async fn main() {
         .await
         .unwrap();
 
-    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let storage = Arc::new(SqliteStorage::new(pool.clone()));
     let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
 
-    user_storage.migrate().await.unwrap();
+    storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
-    let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
+    // Create user manager
+    let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+
+    let mut plugin_manager = PluginManager::new(storage.clone(), session_storage.clone());
     plugin_manager.register_plugin(PasskeyPlugin::new(
         "localhost",
         "http://localhost:4000",
-        user_storage.clone(),
+        user_manager.clone(),
+        storage.clone(),
     ));
 
     let app_state = AppState {

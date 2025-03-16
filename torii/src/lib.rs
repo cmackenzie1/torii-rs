@@ -540,7 +540,8 @@ where
     ///
     /// Returns the updated Torii instance with the password plugin registered
     pub fn with_password_plugin(mut self) -> Self {
-        let plugin = PasswordPlugin::new(self.user_storage.clone());
+        let user_manager = DefaultUserManager::new(self.user_storage.clone());
+        let plugin = PasswordPlugin::new(Arc::new(user_manager), self.user_storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -562,8 +563,8 @@ where
     ) -> Result<User, ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<PasswordPlugin<US>>("password")
-            .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
+            .get_plugin::<PasswordPlugin<DefaultUserManager<US>, US>>("password")
+            .ok_or_else(|| ToriiError::PluginNotFound("password".to_string()))?;
 
         let user = password_plugin
             .register_user_with_password(email, password, None)
@@ -592,8 +593,8 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let password_plugin = self
             .manager
-            .get_plugin::<PasswordPlugin<US>>("password")
-            .ok_or(ToriiError::PluginNotFound("password".to_string()))?;
+            .get_plugin::<PasswordPlugin<DefaultUserManager<US>, US>>("password")
+            .ok_or_else(|| ToriiError::PluginNotFound("password".to_string()))?;
 
         let user = password_plugin
             .login_user_with_password(email, password)
@@ -636,7 +637,8 @@ where
     ///
     /// Returns the updated Torii instance with the OAuth provider registered
     pub fn with_oauth_provider(mut self, provider: Provider) -> Self {
-        let plugin = OAuthPlugin::new(provider, self.user_storage.clone());
+        let user_manager = DefaultUserManager::new(self.user_storage.clone());
+        let plugin = OAuthPlugin::new(provider, Arc::new(user_manager), self.user_storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -656,8 +658,8 @@ where
     ) -> Result<AuthorizationUrl, ToriiError> {
         let oauth_plugin = self
             .manager
-            .get_plugin::<OAuthPlugin<US>>(provider)
-            .ok_or(ToriiError::PluginNotFound(provider.to_string()))?;
+            .get_plugin::<OAuthPlugin<DefaultUserManager<US>, US>>(provider)
+            .ok_or_else(|| ToriiError::PluginNotFound(provider.to_string()))?;
 
         let url = oauth_plugin
             .get_authorization_url()
@@ -688,8 +690,8 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let oauth_plugin = self
             .manager
-            .get_plugin::<OAuthPlugin<US>>(provider)
-            .ok_or(ToriiError::PluginNotFound(provider.to_string()))?;
+            .get_plugin::<OAuthPlugin<DefaultUserManager<US>, US>>(provider)
+            .ok_or_else(|| ToriiError::PluginNotFound(provider.to_string()))?;
 
         let user = oauth_plugin
             .exchange_code(code.to_string(), csrf_state.to_string())
@@ -721,7 +723,13 @@ where
     ///
     /// Returns the updated Torii instance with the passkey plugin registered
     pub fn with_passkey_plugin(mut self, rp_id: &str, rp_origin: &str) -> Self {
-        let plugin = PasskeyPlugin::new(rp_id, rp_origin, self.user_storage.clone());
+        let user_manager = DefaultUserManager::new(self.user_storage.clone());
+        let plugin = PasskeyPlugin::new(
+            rp_id,
+            rp_origin,
+            Arc::new(user_manager),
+            self.user_storage.clone(),
+        );
         self.manager.register_plugin(plugin);
         self
     }
@@ -741,14 +749,14 @@ where
     ) -> Result<PasskeyCredentialCreationOptions, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<US>>("passkey")
-            .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
+            .get_plugin::<PasskeyPlugin<DefaultUserManager<US>, US>>("passkey")
+            .ok_or_else(|| ToriiError::PluginNotFound("passkey".to_string()))?;
 
         let request = PasskeyRegistrationRequest {
             email: email.to_string(),
         };
 
-        <PasskeyPlugin<US> as PasskeyAuthPlugin>::start_registration(
+        <PasskeyPlugin<DefaultUserManager<US>, US> as PasskeyAuthPlugin>::start_registration(
             passkey_plugin.as_ref(),
             &request,
         )
@@ -771,10 +779,10 @@ where
     ) -> Result<User, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<US>>("passkey")
-            .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
+            .get_plugin::<PasskeyPlugin<DefaultUserManager<US>, US>>("passkey")
+            .ok_or_else(|| ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        <PasskeyPlugin<US> as PasskeyAuthPlugin>::complete_registration(
+        <PasskeyPlugin<DefaultUserManager<US>, US> as PasskeyAuthPlugin>::complete_registration(
             passkey_plugin.as_ref(),
             completion,
         )
@@ -828,16 +836,19 @@ where
     ) -> Result<PasskeyCredentialRequestOptions, ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<US>>("passkey")
-            .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
+            .get_plugin::<PasskeyPlugin<DefaultUserManager<US>, US>>("passkey")
+            .ok_or_else(|| ToriiError::PluginNotFound("passkey".to_string()))?;
 
         let request = PasskeyLoginRequest {
             email: email.to_string(),
         };
 
-        <PasskeyPlugin<US> as PasskeyAuthPlugin>::start_login(passkey_plugin.as_ref(), &request)
-            .await
-            .map_err(|e| ToriiError::AuthError(e.to_string()))
+        <PasskeyPlugin<DefaultUserManager<US>, US> as PasskeyAuthPlugin>::start_login(
+            passkey_plugin.as_ref(),
+            &request,
+        )
+        .await
+        .map_err(|e| ToriiError::AuthError(e.to_string()))
     }
 
     /// Complete a passkey login
@@ -859,15 +870,16 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let passkey_plugin = self
             .manager
-            .get_plugin::<PasskeyPlugin<US>>("passkey")
-            .ok_or(ToriiError::PluginNotFound("passkey".to_string()))?;
+            .get_plugin::<PasskeyPlugin<DefaultUserManager<US>, US>>("passkey")
+            .ok_or_else(|| ToriiError::PluginNotFound("passkey".to_string()))?;
 
-        let user = <PasskeyPlugin<US> as PasskeyAuthPlugin>::complete_login(
-            passkey_plugin.as_ref(),
-            completion,
-        )
-        .await
-        .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+        let user =
+            <PasskeyPlugin<DefaultUserManager<US>, US> as PasskeyAuthPlugin>::complete_login(
+                passkey_plugin.as_ref(),
+                completion,
+            )
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         let session = self
             .create_session(&user.id, user_agent, ip_address)
@@ -925,7 +937,8 @@ where
     ///
     /// Returns the updated Torii instance with the magic link plugin registered
     pub fn with_magic_link_plugin(mut self) -> Self {
-        let plugin = MagicLinkPlugin::new(self.user_storage.clone());
+        let user_manager = DefaultUserManager::new(self.user_storage.clone());
+        let plugin = MagicLinkPlugin::new(Arc::new(user_manager), self.user_storage.clone());
         self.manager.register_plugin(plugin);
         self
     }
@@ -946,8 +959,8 @@ where
     pub async fn generate_magic_token(&self, email: &str) -> Result<MagicToken, ToriiError> {
         let magic_link_plugin = self
             .manager
-            .get_plugin::<MagicLinkPlugin<US>>("magic_link")
-            .ok_or(ToriiError::PluginNotFound("magic_link".to_string()))?;
+            .get_plugin::<MagicLinkPlugin<DefaultUserManager<US>, US>>("magic_link")
+            .ok_or_else(|| ToriiError::PluginNotFound("magic_link".to_string()))?;
 
         let token = magic_link_plugin
             .generate_magic_token(email)
@@ -979,27 +992,18 @@ where
     ) -> Result<(User, Session), ToriiError> {
         let magic_link_plugin = self
             .manager
-            .get_plugin::<MagicLinkPlugin<US>>("magic_link")
-            .ok_or(ToriiError::PluginNotFound("magic_link".to_string()))?;
+            .get_plugin::<MagicLinkPlugin<DefaultUserManager<US>, US>>("magic_link")
+            .ok_or_else(|| ToriiError::PluginNotFound("magic_link".to_string()))?;
 
-        let magic_token = magic_link_plugin
+        let user = magic_link_plugin
             .verify_magic_token(token)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
-        let user = self
-            .user_manager
-            .get_user(&magic_token.user_id)
-            .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+        let session = self
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
 
-        if let Some(user) = user {
-            let session = self
-                .create_session(&user.id, user_agent, ip_address)
-                .await?;
-            Ok((user, session))
-        } else {
-            Err(ToriiError::AuthError("User not found".to_string()))
-        }
+        Ok((user, session))
     }
 }

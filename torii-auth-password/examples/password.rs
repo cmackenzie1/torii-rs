@@ -17,7 +17,7 @@ use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_password::PasswordPlugin;
 use torii_core::{
-    Session,
+    DefaultUserManager, Session,
     plugin::PluginManager,
     session::SessionToken,
     storage::{SessionStorage, UserStorage},
@@ -72,7 +72,7 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<PasswordPlugin<SqliteStorage>>("email_password")
+        .get_plugin::<PasswordPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("password")
         .unwrap();
 
     match plugin
@@ -103,9 +103,9 @@ async fn sign_in_form_handler(
     State(state): State<AppState>,
     Form(params): Form<SignInForm>,
 ) -> impl IntoResponse {
-    let plugin: Arc<PasswordPlugin<SqliteStorage>> = state
+    let plugin = state
         .plugin_manager
-        .get_plugin::<PasswordPlugin<SqliteStorage>>("email_password")
+        .get_plugin::<PasswordPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("password")
         .unwrap();
 
     let user = plugin
@@ -227,14 +227,21 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let pool = Pool::<Sqlite>::connect("sqlite::memory:").await.unwrap();
 
-    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let storage = Arc::new(SqliteStorage::new(pool.clone()));
     let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
 
-    user_storage.migrate().await.unwrap();
+    storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
-    let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_plugin(PasswordPlugin::new(user_storage.clone()));
+    // Create user manager
+    let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+
+    // Initialize plugin manager
+    let mut plugin_manager = PluginManager::new(storage.clone(), session_storage.clone());
+
+    // Register password plugin with user manager and storage
+    plugin_manager.register_plugin(PasswordPlugin::new(user_manager.clone(), storage.clone()));
+
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {
