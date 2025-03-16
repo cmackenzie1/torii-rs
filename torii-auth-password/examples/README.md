@@ -8,6 +8,16 @@ This example demonstrates how to use the Password plugin to authenticate a user 
 cargo run --example password
 ```
 
+## Key Concepts
+
+This example demonstrates:
+
+1. Setting up a `PasswordPlugin` with a user manager and password storage
+2. User registration with email and password
+3. Login authentication with email and password
+4. Session management for authenticated users
+5. Protected routes that require authentication
+
 ## Accessing the example
 
 The example will start a server on `http://localhost:4000`. You can access the example by opening a browser and navigating to `http://localhost:4000/sign-up` and completing the form to create a new user.

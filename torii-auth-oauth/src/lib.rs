@@ -6,7 +6,7 @@ use oauth2::TokenResponse;
 
 use providers::{Provider, UserInfo};
 use torii_core::error::AuthError;
-use torii_core::{Error, NewUser, Plugin, User, UserId};
+use torii_core::{Error, NewUser, Plugin, User, UserId, UserManager};
 use torii_core::{
     events::{Event, EventBus},
     storage::OAuthStorage,
@@ -52,39 +52,53 @@ impl AuthorizationUrl {
     }
 }
 
-pub struct OAuthPlugin<U: OAuthStorage> {
+pub struct OAuthPlugin<M, S>
+where
+    M: UserManager,
+    S: OAuthStorage,
+{
     /// The provider.
     provider: Provider,
-    /// The storage instance.
-    user_storage: Arc<U>,
+    /// The user manager.
+    user_manager: Arc<M>,
+    /// The OAuth storage.
+    oauth_storage: Arc<S>,
     /// The event bus.
     event_bus: Option<EventBus>,
 }
 
-impl<U> Plugin for OAuthPlugin<U>
+impl<M, S> Plugin for OAuthPlugin<M, S>
 where
-    U: OAuthStorage,
+    M: UserManager,
+    S: OAuthStorage,
 {
     fn name(&self) -> String {
         self.provider.name().to_string()
     }
 }
 
-pub struct OAuthPluginBuilder<U: OAuthStorage> {
+pub struct OAuthPluginBuilder<M, S>
+where
+    M: UserManager,
+    S: OAuthStorage,
+{
     provider: Provider,
-    user_storage: Arc<U>,
+    user_manager: Arc<M>,
+    oauth_storage: Arc<S>,
     event_bus: Option<EventBus>,
 }
 
-impl<U> OAuthPluginBuilder<U>
+impl<M, S> OAuthPluginBuilder<M, S>
 where
-    U: OAuthStorage,
+    M: UserManager,
+    S: OAuthStorage,
 {
-    pub fn new(provider: Provider, user_storage: Arc<U>) -> Self {
+    pub fn new(provider: Provider, user_manager: Arc<M>, oauth_storage: Arc<S>) -> Self {
         Self {
             provider,
+            user_manager,
+            oauth_storage,
             event_bus: None,
-            user_storage,
         }
     }
 
@@ -93,28 +107,35 @@ where
         self
     }
 
-    pub fn build(self) -> OAuthPlugin<U> {
+    pub fn build(self) -> OAuthPlugin<M, S> {
         OAuthPlugin {
             provider: self.provider,
+            user_manager: self.user_manager,
+            oauth_storage: self.oauth_storage,
             event_bus: self.event_bus,
-            user_storage: self.user_storage,
         }
     }
 }
 
-impl<U> OAuthPlugin<U>
+impl<M, S> OAuthPlugin<M, S>
 where
-    U: OAuthStorage,
+    M: UserManager,
+    S: OAuthStorage,
 {
-    pub fn builder(provider: Provider, user_storage: Arc<U>) -> OAuthPluginBuilder<U> {
-        OAuthPluginBuilder::new(provider, user_storage)
+    pub fn builder(
+        provider: Provider,
+        user_manager: Arc<M>,
+        oauth_storage: Arc<S>,
+    ) -> OAuthPluginBuilder<M, S> {
+        OAuthPluginBuilder::new(provider, user_manager, oauth_storage)
     }
 
-    pub fn new(provider: Provider, user_storage: Arc<U>) -> Self {
+    pub fn new(provider: Provider, user_manager: Arc<M>, oauth_storage: Arc<S>) -> Self {
         Self {
             provider,
+            user_manager,
+            oauth_storage,
             event_bus: None,
-            user_storage,
         }
     }
 
@@ -128,11 +149,13 @@ where
         client_id: &str,
         client_secret: &str,
         redirect_uri: &str,
-        user_storage: Arc<U>,
+        user_manager: Arc<M>,
+        oauth_storage: Arc<S>,
     ) -> Self {
         OAuthPluginBuilder::new(
             Provider::google(client_id, client_secret, redirect_uri),
-            user_storage,
+            user_manager,
+            oauth_storage,
         )
         .build()
     }
@@ -142,19 +165,22 @@ where
         client_id: &str,
         client_secret: &str,
         redirect_uri: &str,
-        user_storage: Arc<U>,
+        user_manager: Arc<M>,
+        oauth_storage: Arc<S>,
     ) -> Self {
         OAuthPluginBuilder::new(
             Provider::github(client_id, client_secret, redirect_uri),
-            user_storage,
+            user_manager,
+            oauth_storage,
         )
         .build()
     }
 }
 
-impl<U> OAuthPlugin<U>
+impl<M, S> OAuthPlugin<M, S>
 where
-    U: OAuthStorage,
+    M: UserManager,
+    S: OAuthStorage,
 {
     /// Begin the authentication process by generating a new CSRF state and redirecting the user to the provider's authorization URL.
     ///
@@ -175,7 +201,7 @@ where
         let (authorization_url, pkce_verifier) = self.provider.get_authorization_url()?;
 
         // Store the PKCE verifier in the storage using the CSRF state as the key
-        self.user_storage
+        self.oauth_storage
             .store_pkce_verifier(
                 &authorization_url.csrf_state,
                 &pkce_verifier,
@@ -190,7 +216,6 @@ where
     /// Creates or retrieves an existing user based on oauth account information
     ///
     /// # Arguments
-    /// * `storage` - The storage instance for the oauth provider
     /// * `email` - The email address of the user
     /// * `subject` - The subject of the oauth account
     ///
@@ -199,7 +224,7 @@ where
     pub async fn get_or_create_user(&self, email: String, subject: String) -> Result<User, Error> {
         // Check if user exists in database by provider and subject
         let oauth_account = self
-            .user_storage
+            .oauth_storage
             .get_oauth_account_by_provider_and_subject(self.provider.name(), &subject)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
@@ -211,30 +236,26 @@ where
             );
 
             let user = self
-                .user_storage
+                .user_manager
                 .get_user(&oauth_account.user_id)
-                .await
-                .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?
+                .await?
                 .ok_or(Error::Auth(AuthError::UserNotFound))?;
 
             return Ok(user);
         }
 
-        // Create new user
-        let user = self
-            .user_storage
-            .create_user(
-                &NewUser::builder()
-                    .id(UserId::new_random())
-                    .email(email)
-                    .build()
-                    .unwrap(),
-            )
-            .await
-            .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
+        // Create new user with verified email
+        let new_user = NewUser::builder()
+            .id(UserId::new_random())
+            .email(email)
+            .email_verified_at(Some(chrono::Utc::now()))
+            .build()
+            .unwrap();
+
+        let user = self.user_manager.create_user(&new_user).await?;
 
         // Create link between user and provider
-        self.user_storage
+        self.oauth_storage
             .create_oauth_account(self.provider.name(), &subject, &user.id)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?;
@@ -266,7 +287,7 @@ where
     /// Returns a [`User`] struct containing the user's information.
     pub async fn exchange_code(&self, code: String, csrf_state: String) -> Result<User, Error> {
         let pkce_verifier = self
-            .user_storage
+            .oauth_storage
             .get_pkce_verifier(&csrf_state)
             .await
             .map_err(|_| Error::Auth(AuthError::InvalidCredentials))?

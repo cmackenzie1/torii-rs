@@ -17,7 +17,7 @@ use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use torii_auth_magic_link::MagicLinkPlugin;
 use torii_core::{
-    Session,
+    DefaultUserManager, Session,
     plugin::PluginManager,
     session::SessionToken,
     storage::{SessionStorage, UserStorage},
@@ -72,7 +72,9 @@ async fn generate_magic_link_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<MagicLinkPlugin<SqliteStorage>>("magic_link")
+        .get_plugin::<MagicLinkPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>(
+            "magic_link",
+        )
         .unwrap();
 
     let token = plugin.generate_magic_token(&params.email).await.unwrap();
@@ -114,19 +116,13 @@ async fn verify_magic_link_handler(
 ) -> impl IntoResponse {
     let plugin = state
         .plugin_manager
-        .get_plugin::<MagicLinkPlugin<SqliteStorage>>("magic_link")
+        .get_plugin::<MagicLinkPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>(
+            "magic_link",
+        )
         .unwrap();
 
-    // This also consumes the magic token by marking it as used.
-    let token = plugin.verify_magic_token(&params.token).await.unwrap();
-
-    let user = state
-        .plugin_manager
-        .user_storage()
-        .get_user(&token.user_id)
-        .await
-        .expect("get_user failed")
-        .expect("User not found");
+    // This verifies the magic token, marks it as used, and returns the user
+    let user = plugin.verify_magic_token(&params.token).await.unwrap();
 
     let session = state
         .plugin_manager
@@ -217,14 +213,17 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let pool = Pool::<Sqlite>::connect("sqlite::memory:").await.unwrap();
 
-    let user_storage = Arc::new(SqliteStorage::new(pool.clone()));
+    let storage = Arc::new(SqliteStorage::new(pool.clone()));
     let session_storage = Arc::new(SqliteStorage::new(pool.clone()));
 
-    user_storage.migrate().await.unwrap();
+    storage.migrate().await.unwrap();
     session_storage.migrate().await.unwrap();
 
-    let mut plugin_manager = PluginManager::new(user_storage.clone(), session_storage.clone());
-    plugin_manager.register_plugin(MagicLinkPlugin::new(user_storage.clone()));
+    // Create user manager
+    let user_manager = Arc::new(DefaultUserManager::new(storage.clone()));
+
+    let mut plugin_manager = PluginManager::new(storage.clone(), session_storage.clone());
+    plugin_manager.register_plugin(MagicLinkPlugin::new(user_manager, storage.clone()));
     let plugin_manager = Arc::new(plugin_manager);
 
     let app_state = AppState {

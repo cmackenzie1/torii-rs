@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use torii_core::error::{AuthError, PluginError, StorageError};
 use torii_core::storage::PasskeyStorage;
-use torii_core::{Error, Plugin, User};
+use torii_core::{Error, Plugin, User, UserManager};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
@@ -242,26 +242,45 @@ pub trait PasskeyAuthPlugin: Plugin {
 /// This plugin provides functionality for registering and authenticating users using passkeys.
 /// It allows users to start registration and login processes, and complete them using the provided
 /// challenge responses.
-pub struct PasskeyPlugin<U: PasskeyStorage> {
+pub struct PasskeyPlugin<M, S>
+where
+    M: UserManager,
+    S: PasskeyStorage,
+{
     webauthn: Webauthn,
-    user_storage: Arc<U>,
+    user_manager: Arc<M>,
+    passkey_storage: Arc<S>,
 }
 
-impl<U: PasskeyStorage> PasskeyPlugin<U> {
-    pub fn new(rp_id: &str, rp_origin: &str, user_storage: Arc<U>) -> Self {
+impl<M, S> PasskeyPlugin<M, S>
+where
+    M: UserManager,
+    S: PasskeyStorage,
+{
+    pub fn new(
+        rp_id: &str,
+        rp_origin: &str,
+        user_manager: Arc<M>,
+        passkey_storage: Arc<S>,
+    ) -> Self {
         let rp_origin = Url::parse(rp_origin).expect("Failed to parse rp_origin");
         let builder = WebauthnBuilder::new(rp_id, &rp_origin).expect("Invalid configuration");
         let webauthn = builder.build().expect("Invalid configuration");
 
         Self {
             webauthn,
-            user_storage,
+            user_manager,
+            passkey_storage,
         }
     }
 }
 
 #[async_trait]
-impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
+impl<M, S> PasskeyAuthPlugin for PasskeyPlugin<M, S>
+where
+    M: UserManager,
+    S: PasskeyStorage,
+{
     async fn start_registration(
         &self,
         request: &PasskeyRegistrationRequest,
@@ -287,7 +306,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
             })?;
 
         // Store the challenge with expiration
-        self.user_storage
+        self.passkey_storage
             .set_passkey_challenge(
                 challenge_id.as_str(),
                 &skr_json,
@@ -318,7 +337,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
     ) -> Result<User, PasskeyError> {
         // Check if the passkey already exists
         let passkey_exists = self
-            .user_storage
+            .passkey_storage
             .get_passkey_by_credential_id(&completion.response.id)
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -334,7 +353,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
 
         // Get the challenge from the database
         let passkey_challenge = self
-            .user_storage
+            .passkey_storage
             .get_passkey_challenge(completion.challenge_id.as_str())
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -364,7 +383,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
 
         // Get or create the user
         let user = self
-            .user_storage
+            .user_manager
             .get_or_create_user_by_email(&completion.email)
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -387,7 +406,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
         })?;
 
         // Add the passkey to the user
-        self.user_storage
+        self.passkey_storage
             .add_passkey(&user.id, &cred_id, &passkey_json)
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -404,7 +423,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
     ) -> Result<PasskeyCredentialRequestOptions, PasskeyError> {
         // Get the user by email
         let user = self
-            .user_storage
+            .user_manager
             .get_user_by_email(&request.email)
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -416,14 +435,14 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
             })?;
 
         // Get the passkeys for the user
-        let passkey_credentials = self
-            .user_storage
-            .get_passkeys(&user.id)
-            .await
-            .map_err(|e| PasskeyError::StorageError {
-                context: PasskeyErrorContext::Authentication,
-                message: e.to_string(),
-            })?;
+        let passkey_credentials =
+            self.passkey_storage
+                .get_passkeys(&user.id)
+                .await
+                .map_err(|e| PasskeyError::StorageError {
+                    context: PasskeyErrorContext::Authentication,
+                    message: e.to_string(),
+                })?;
 
         if passkey_credentials.is_empty() {
             return Err(PasskeyError::InvalidCredentials {
@@ -467,7 +486,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
             })?;
 
         // Store the challenge in the database
-        self.user_storage
+        self.passkey_storage
             .set_passkey_challenge(
                 challenge_id.as_str(),
                 &rak_json,
@@ -499,7 +518,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
     ) -> Result<User, PasskeyError> {
         // Get the user by email
         let user = self
-            .user_storage
+            .user_manager
             .get_user_by_email(&completion.email)
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -512,7 +531,7 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
 
         // Get the challenge from the database
         let passkey_challenge = self
-            .user_storage
+            .passkey_storage
             .get_passkey_challenge(completion.challenge_id.as_str())
             .await
             .map_err(|e| PasskeyError::StorageError {
@@ -543,7 +562,11 @@ impl<U: PasskeyStorage> PasskeyAuthPlugin for PasskeyPlugin<U> {
     }
 }
 
-impl<U: PasskeyStorage> Plugin for PasskeyPlugin<U> {
+impl<M, S> Plugin for PasskeyPlugin<M, S>
+where
+    M: UserManager,
+    S: PasskeyStorage,
+{
     fn name(&self) -> String {
         "passkey".to_string()
     }

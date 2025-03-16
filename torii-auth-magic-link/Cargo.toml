@@ -27,4 +27,4 @@ tracing-subscriber.workspace = true
 
 [[example]]
 name = "magic-link"
-path = "examples/magic_link.rs"
+path = "examples/magic-link.rs"
