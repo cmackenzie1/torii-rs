@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MDBOOK_VERSION: v0.4.45 # https://github.com/rust-lang/mdBook/releases
-      WRANGLER_VERSION: 3.114.0 # https://www.npmjs.com/package/wrangler
+      WRANGLER_VERSION: 4.4.0 # https://www.npmjs.com/package/wrangler
     steps:
       - uses: actions/checkout@v4
 
