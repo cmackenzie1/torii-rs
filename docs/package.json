@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "build": "mdbook build",
-    "deploy": "mdbook build && wrangler deploy"
+    "deploy": "mdbook build && wrangler deploy",
+    "mdbook:install": "cargo install mdbook"
   },
   "devDependencies": {
-    "wrangler": "^3.114.0"
+    "wrangler": "^4.4.0"
   }
 }
