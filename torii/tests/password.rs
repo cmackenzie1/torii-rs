@@ -283,3 +283,47 @@ async fn test_password_auth_with_jwt() {
         .await;
     assert!(result.is_err());
 }
+
+#[cfg(all(feature = "password", feature = "sqlite"))]
+#[tokio::test]
+async fn test_delete_user() {
+    // Set up SQLite storage
+    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
+    sqlite.migrate().await.unwrap();
+
+    // Create Torii instance with password plugin
+    let torii = Torii::new(sqlite.clone()).with_password_plugin();
+
+    // Register a user
+    let email = "delete-test@example.com";
+    let password = "password123";
+    let user = torii
+        .register_user_with_password(email, password)
+        .await
+        .unwrap();
+
+    // Verify email
+    torii.set_user_email_verified(&user.id).await.unwrap();
+
+    // Create a session
+    let session = torii.create_session(&user.id, None, None).await.unwrap();
+
+    // Verify user exists
+    let retrieved_user = torii.get_user(&user.id).await.unwrap();
+    assert!(retrieved_user.is_some(), "User should exist");
+
+    // Verify session exists
+    let retrieved_session = torii.get_session(&session.token).await;
+    assert!(retrieved_session.is_ok(), "Session should exist");
+
+    // Delete the user
+    torii.delete_user(&user.id).await.unwrap();
+
+    // Verify user is deleted
+    let deleted_user = torii.get_user(&user.id).await.unwrap();
+    assert!(deleted_user.is_none(), "User should be deleted");
+
+    // Verify session is deleted
+    let deleted_session = torii.get_session(&session.token).await;
+    assert!(deleted_session.is_err(), "Session should be deleted");
+}

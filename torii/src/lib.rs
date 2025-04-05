@@ -54,10 +54,7 @@ use chrono::Duration;
 use torii_core::{
     DefaultUserManager, PluginManager, UserManager,
     session::{DefaultSessionManager, JwtConfig, JwtSessionManager, SessionManager},
-    storage::{
-        MagicLinkStorage, OAuthStorage, PasskeyStorage, PasswordStorage, SessionStorage,
-        UserStorage,
-    },
+    storage::{PasswordStorage, SessionStorage, UserStorage},
 };
 
 /// Re-export core types from torii_core
@@ -619,7 +616,66 @@ where
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
+
+    /// Delete a user and all associated data
+    ///
+    /// This operation permanently deletes the user and all related data, including sessions.
+    /// This action cannot be undone.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to delete
+    ///
+    /// # Returns
+    ///
+    /// Returns an empty result if the deletion was successful, or an error if it failed
+    pub async fn delete_user(&self, user_id: &UserId) -> Result<(), ToriiError> {
+        // First delete all sessions for the user
+        self.delete_sessions_for_user(user_id).await?;
+
+        // Then delete the user
+        self.user_manager
+            .delete_user(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
+
+    /// Change a user's password and invalidate all existing sessions for the user.
+    ///
+    /// This method changes the user's password after verifying the old password
+    /// is correct. For security reasons, it also invalidates all existing sessions
+    /// for the user, requiring them to log in again with the new password.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to change the password for
+    /// * `old_password`: The current password for verification
+    /// * `new_password`: The new password to set for the user
+    pub async fn change_user_password(
+        &self,
+        user_id: &UserId,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<(), ToriiError> {
+        let password_plugin = self
+            .manager
+            .get_plugin::<PasswordPlugin<DefaultUserManager<US>, US>>("password")
+            .ok_or_else(|| ToriiError::PluginNotFound("password".to_string()))?;
+
+        password_plugin
+            .change_user_password(user_id, old_password, new_password)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+        // Remove all existing sessions for the user.
+        self.delete_sessions_for_user(user_id).await?;
+
+        Ok(())
+    }
 }
+
+#[cfg(feature = "oauth")]
+use torii_core::storage::OAuthStorage;
 
 #[cfg(feature = "oauth")]
 impl<US, SS> Torii<US, SS>
@@ -705,6 +761,9 @@ where
         Ok((user, session))
     }
 }
+
+#[cfg(feature = "passkey")]
+use torii_core::storage::PasskeyStorage;
 
 #[cfg(feature = "passkey")]
 impl<US, SS> Torii<US, SS>
@@ -924,6 +983,9 @@ where
             .await
     }
 }
+
+#[cfg(feature = "magic-link")]
+use torii_core::storage::MagicLinkStorage;
 
 #[cfg(feature = "magic-link")]
 impl<US, SS> Torii<US, SS>
