@@ -12,7 +12,7 @@ torii = { path = "../../torii", version = "0.2.3", features = [
 ] }
 
 # web server
-askama = "0.13"
+askama = "0.14"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
 
