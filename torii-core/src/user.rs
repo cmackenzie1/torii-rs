@@ -174,7 +174,7 @@ impl UserBuilder {
     pub fn build(self) -> Result<User, Error> {
         let now = Utc::now();
         Ok(User {
-            id: self.id.unwrap_or(UserId::new_random()),
+            id: self.id.unwrap_or_default(),
             name: self.name,
             email: self.email.ok_or(ValidationError::InvalidField(
                 "Email is required".to_string(),

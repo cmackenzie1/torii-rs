@@ -452,7 +452,7 @@ impl SessionBuilder {
     pub fn build(self) -> Result<Session, Error> {
         let now = Utc::now();
         Ok(Session {
-            token: self.token.unwrap_or(SessionToken::new_random()),
+            token: self.token.unwrap_or_default(),
             user_id: self.user_id.ok_or(ValidationError::MissingField(
                 "User ID is required".to_string(),
             ))?,
