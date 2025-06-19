@@ -60,7 +60,7 @@ async fn callback_handler(
         .get_plugin::<OAuthPlugin<DefaultUserManager<SqliteStorage>, SqliteStorage>>("github")
         .unwrap();
 
-    let user = plugin
+    let (user, _) = plugin
         .exchange_code(params.code.to_string(), csrf_state.to_string())
         .await
         .unwrap();
