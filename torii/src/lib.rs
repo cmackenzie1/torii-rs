@@ -749,7 +749,7 @@ where
             .get_plugin::<OAuthPlugin<DefaultUserManager<US>, US>>(provider)
             .ok_or_else(|| ToriiError::PluginNotFound(provider.to_string()))?;
 
-        let (user, _) = oauth_plugin
+        let user = oauth_plugin
             .exchange_code(code.to_string(), csrf_state.to_string())
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
