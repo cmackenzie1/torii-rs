@@ -31,9 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.87
         with:
           components: llvm-tools-preview, rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
 
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@nextest

@@ -177,7 +177,7 @@ impl NewUserBuilder {
 
     pub fn build(self) -> Result<NewUser, Error> {
         Ok(NewUser {
-            id: self.id.unwrap_or(UserId::new_random()),
+            id: self.id.unwrap_or_default(),
             email: self.email.ok_or(ValidationError::MissingField(
                 "Email is required".to_string(),
             ))?,
