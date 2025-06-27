@@ -1,22 +1,22 @@
 [package]
 name = "torii"
-version = "0.2.3"
+version = "0.3.0"
 description = "A modular authentication ecosystem for Rust applications"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.2.2" }
+torii-core = { path = "../torii-core", version = "0.3.0" }
 # auth plugins
-torii-auth-password = { path = "../torii-auth-password", version = "0.2.2", optional = true }
-torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.2.2", optional = true }
-torii-auth-passkey = { path = "../torii-auth-passkey", version = "0.2.2", optional = true }
-torii-auth-magic-link = { path = "../torii-auth-magic-link", version = "0.2.2", optional = true }
+torii-auth-password = { path = "../torii-auth-password", version = "0.3.0", optional = true }
+torii-auth-oauth = { path = "../torii-auth-oauth", version = "0.3.0", optional = true }
+torii-auth-passkey = { path = "../torii-auth-passkey", version = "0.3.0", optional = true }
+torii-auth-magic-link = { path = "../torii-auth-magic-link", version = "0.3.0", optional = true }
 # storage backends
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.2.2", optional = true }
-torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.2.2", optional = true }
-torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.2.2", optional = true }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.3.0", optional = true }
+torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.3.0", optional = true }
+torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.3.0", optional = true }
 
 # dependencies
 chrono.workspace = true # TODO: Make this optional and expose std::time::Duration in APIs

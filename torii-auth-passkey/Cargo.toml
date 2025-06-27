@@ -1,13 +1,13 @@
 [package]
 name = "torii-auth-passkey"
 description = "Passkey authentication plugin for the torii authentication ecosystem"
-version = "0.2.2"
+version = "0.3.0"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.2.2" }
+torii-core = { path = "../torii-core", version = "0.3.0" }
 
 async-trait.workspace = true
 chrono.workspace = true

@@ -1,13 +1,13 @@
 [package]
 name = "torii-auth-magic-link"
 description = "Magic Link authentication plugin for Torii"
-version = "0.2.2"
+version = "0.3.0"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.2" }
+torii-core = { path = "../torii-core", version = "0.3.0" }
 base64 = "0.22"
 chrono.workspace = true
 rand = "0.9"
