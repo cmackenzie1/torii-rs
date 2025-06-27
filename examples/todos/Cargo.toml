@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 # torii
-torii = { path = "../../torii", version = "0.2.3", features = [
+torii = { path = "../../torii", version = "0.3.0", features = [
     "password",
     "seaorm-sqlite",
 ] }
