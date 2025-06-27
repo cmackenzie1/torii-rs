@@ -285,7 +285,11 @@ where
     ///
     /// # Returns
     /// Returns a [`User`] struct containing the user's information.
-    pub async fn exchange_code(&self, code: String, csrf_state: String) -> Result<(User, UserInfo), Error> {
+    pub async fn exchange_code(
+        &self,
+        code: String,
+        csrf_state: String,
+    ) -> Result<(User, UserInfo), Error> {
         let pkce_verifier = self
             .oauth_storage
             .get_pkce_verifier(&csrf_state)

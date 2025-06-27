@@ -21,7 +21,7 @@ serde_json.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite" } # don't specify version in dev-dependencies
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.3.0" }
 tracing-subscriber.workspace = true
 
 
