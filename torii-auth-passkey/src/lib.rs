@@ -369,7 +369,7 @@ where
         let passkey_challenge: PasskeyRegistration = serde_json::from_str(&passkey_challenge)
             .map_err(|e| PasskeyError::SerializationError {
                 context: PasskeyErrorContext::Challenge,
-                message: format!("Failed to deserialize challenge: {}", e),
+                message: format!("Failed to deserialize challenge: {e}"),
             })?;
 
         // Finish the passkey registration
@@ -547,7 +547,7 @@ where
         let passkey_challenge: PasskeyAuthentication = serde_json::from_str(&passkey_challenge)
             .map_err(|e| PasskeyError::SerializationError {
                 context: PasskeyErrorContext::Challenge,
-                message: format!("Failed to deserialize challenge: {}", e),
+                message: format!("Failed to deserialize challenge: {e}"),
             })?;
 
         // Finish the passkey login

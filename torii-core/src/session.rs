@@ -76,7 +76,7 @@ impl SessionToken {
         let encoding_key = config.get_encoding_key()?;
 
         let token = encode(&header, claims, &encoding_key)
-            .map_err(|e| SessionError::InvalidToken(format!("Failed to encode JWT: {}", e)))?;
+            .map_err(|e| SessionError::InvalidToken(format!("Failed to encode JWT: {e}")))?;
 
         Ok(SessionToken::Jwt(token))
     }
@@ -90,7 +90,7 @@ impl SessionToken {
 
                 let token_data =
                     decode::<JwtClaims>(token, &decoding_key, &validation).map_err(|e| {
-                        SessionError::InvalidToken(format!("JWT validation failed: {}", e))
+                        SessionError::InvalidToken(format!("JWT validation failed: {e}"))
                     })?;
 
                 Ok(token_data.claims)
@@ -164,8 +164,8 @@ impl From<&str> for SessionToken {
 impl std::fmt::Display for SessionToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SessionToken::Opaque(token) => write!(f, "{}", token),
-            SessionToken::Jwt(token) => write!(f, "{}", token),
+            SessionToken::Opaque(token) => write!(f, "{token}"),
+            SessionToken::Jwt(token) => write!(f, "{token}"),
         }
     }
 }
@@ -256,11 +256,11 @@ impl JwtConfig {
         use std::fs::read;
 
         let private_key = read(private_key_path).map_err(|e| {
-            ValidationError::InvalidField(format!("Failed to read private key file: {}", e))
+            ValidationError::InvalidField(format!("Failed to read private key file: {e}"))
         })?;
 
         let public_key = read(public_key_path).map_err(|e| {
-            ValidationError::InvalidField(format!("Failed to read public key file: {}", e))
+            ValidationError::InvalidField(format!("Failed to read public key file: {e}"))
         })?;
 
         Ok(Self::new_rs256(private_key, public_key))
@@ -302,7 +302,7 @@ impl JwtConfig {
         match &self.algorithm {
             JwtAlgorithm::RS256 { private_key, .. } => EncodingKey::from_rsa_pem(private_key)
                 .map_err(|e| {
-                    ValidationError::InvalidField(format!("Invalid RSA private key: {}", e)).into()
+                    ValidationError::InvalidField(format!("Invalid RSA private key: {e}")).into()
                 }),
             JwtAlgorithm::HS256 { secret_key } => Ok(EncodingKey::from_secret(secret_key)),
         }
@@ -313,7 +313,7 @@ impl JwtConfig {
         match &self.algorithm {
             JwtAlgorithm::RS256 { public_key, .. } => DecodingKey::from_rsa_pem(public_key)
                 .map_err(|e| {
-                    ValidationError::InvalidField(format!("Invalid RSA public key: {}", e)).into()
+                    ValidationError::InvalidField(format!("Invalid RSA public key: {e}")).into()
                 }),
             JwtAlgorithm::HS256 { secret_key } => Ok(DecodingKey::from_secret(secret_key)),
         }
@@ -879,7 +879,7 @@ IwIDAQAB
         if let Err(Error::Session(SessionError::Expired)) = result {
             // This is the expected error
         } else {
-            panic!("Expected SessionError::Expired, got {:?}", result);
+            panic!("Expected SessionError::Expired, got {result:?}");
         }
     }
 }

@@ -95,11 +95,10 @@ async fn generate_magic_link_handler(
                 <div style="text-align: center;">
                     <p>For demonstration only:</p>
                     <p>Please click the following link to sign in:</p>
-                    <a href='{}' style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 4px;">{}</a>
+                    <a href='{link}' style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 4px;">{link}</a>
                 </div>
             </div>
-            "#,
-            link, link
+            "#
         )),
     )
         .into_response()

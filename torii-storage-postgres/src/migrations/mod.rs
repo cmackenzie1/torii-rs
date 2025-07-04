@@ -556,19 +556,19 @@ mod tests {
         let db_name = format!("torii_test_{}", rand::rng().random_range(1..i64::MAX));
 
         // Drop the database if it exists
-        sqlx::query(format!("DROP DATABASE IF EXISTS {}", db_name).as_str())
+        sqlx::query(format!("DROP DATABASE IF EXISTS {db_name}").as_str())
             .execute(&pool)
             .await
             .expect("Failed to drop database");
 
         // Create a new database for the test
-        sqlx::query(format!("CREATE DATABASE {}", db_name).as_str())
+        sqlx::query(format!("CREATE DATABASE {db_name}").as_str())
             .execute(&pool)
             .await
             .expect("Failed to create database");
 
         let pool = PgPool::connect(
-            format!("postgres://postgres:postgres@localhost:5432/{}", db_name).as_str(),
+            format!("postgres://postgres:postgres@localhost:5432/{db_name}").as_str(),
         )
         .await
         .expect("Failed to create pool");
