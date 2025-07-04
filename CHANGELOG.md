@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `JwtConfig` is now re-exported for use in `torii` crate.
+
+## [0.3.0] - 2025-06-26
+
+### Added
+
 - Added a new crate, `torii-storage-seaorm`, which is a storage backend for the torii authentication ecosystem that uses SeaORM to target SQLite, Postgres, and MySQL.
 - Added JWT-based session support with configurable expiry time.
   - `JwtSessionManager`: A session manager that uses JWTs to store session data without requiring database lookup.

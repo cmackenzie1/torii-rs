@@ -143,7 +143,7 @@ mod test {
         let user = crate::tests::create_test_user(&storage, &user_id)
             .await
             .expect("Failed to create user");
-        assert_eq!(user.email, format!("test{}@example.com", user_id));
+        assert_eq!(user.email, format!("test{user_id}@example.com"));
 
         let fetched = storage
             .get_user(&user_id)
@@ -151,7 +151,7 @@ mod test {
             .expect("Failed to get user");
         assert_eq!(
             fetched.expect("User should exist").email,
-            format!("test{}@example.com", user_id)
+            format!("test{user_id}@example.com")
         );
 
         storage

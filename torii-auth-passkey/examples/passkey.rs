@@ -104,10 +104,7 @@ async fn finish_registration_handler(
             Ok(credential) => credential,
             Err(e) => {
                 tracing::error!("Failed to deserialize credential: {}", e);
-                return (
-                    StatusCode::BAD_REQUEST,
-                    format!("Invalid credential: {}", e),
-                )
+                return (StatusCode::BAD_REQUEST, format!("Invalid credential: {e}"))
                     .into_response();
             }
         };
@@ -135,7 +132,7 @@ async fn finish_registration_handler(
         tracing::error!("Failed to complete registration: {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to complete registration: {}", e),
+            format!("Failed to complete registration: {e}"),
         )
             .into_response()
     })
@@ -288,11 +285,7 @@ async fn finish_login_handler(
         Ok(credential) => credential,
         Err(e) => {
             tracing::error!("Failed to deserialize credential: {}", e);
-            return (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid credential: {}", e),
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, format!("Invalid credential: {e}")).into_response();
         }
     };
 
@@ -319,7 +312,7 @@ async fn finish_login_handler(
         tracing::error!("Failed to complete login: {:?}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to complete login: {}", e),
+            format!("Failed to complete login: {e}"),
         )
             .into_response()
     })

@@ -307,7 +307,7 @@ mod tests {
             .create_user(
                 &NewUser::builder()
                     .id(UserId::new(id))
-                    .email(format!("test{}@example.com", id))
+                    .email(format!("test{id}@example.com"))
                     .build()
                     .expect("Failed to build user"),
             )

@@ -53,7 +53,7 @@ use std::sync::Arc;
 use chrono::Duration;
 use torii_core::{
     DefaultUserManager, PluginManager, UserManager,
-    session::{DefaultSessionManager, JwtConfig, JwtSessionManager, SessionManager},
+    session::{DefaultSessionManager, JwtSessionManager, SessionManager},
     storage::{PasswordStorage, SessionStorage, UserStorage},
 };
 
@@ -61,7 +61,7 @@ use torii_core::{
 ///
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
-    session::{Session, SessionToken},
+    session::{JwtConfig, Session, SessionToken},
     storage::MagicToken,
     user::{User, UserId},
 };
@@ -868,7 +868,7 @@ where
     ) -> Result<User, ToriiError> {
         // Parse the challenge response
         let response = serde_json::from_value(challenge_response.clone()).map_err(|e| {
-            ToriiError::AuthError(format!("Invalid challenge response format: {}", e))
+            ToriiError::AuthError(format!("Invalid challenge response format: {e}"))
         })?;
 
         let completion = PasskeyRegistrationCompletion {
@@ -970,7 +970,7 @@ where
     ) -> Result<(User, Session), ToriiError> {
         // Parse the challenge response
         let response = serde_json::from_value(challenge_response.clone()).map_err(|e| {
-            ToriiError::AuthError(format!("Invalid challenge response format: {}", e))
+            ToriiError::AuthError(format!("Invalid challenge response format: {e}"))
         })?;
 
         let completion = PasskeyLoginCompletion {
