@@ -1,13 +1,13 @@
 [package]
 name = "torii-auth-passkey"
 description = "Passkey authentication plugin for the torii authentication ecosystem"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.3.0" }
+torii-core = { path = "../torii-core", version = "0.3.1" }
 
 async-trait.workspace = true
 chrono.workspace = true
@@ -25,7 +25,7 @@ axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 sqlx.workspace = true
 tokio.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.3.0" }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.3.1" }
 tracing-subscriber.workspace = true
 
 [[example]]

@@ -1,13 +1,13 @@
 [package]
 name = "torii-auth-password"
 description = "Password authentication plugin for the torii authentication ecosystem"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.3.0" }
+torii-core = { path = "../torii-core", version = "0.3.1" }
 chrono.workspace = true
 password-auth = { version = "1", features = ["argon2"] }
 regex.workspace = true
@@ -21,7 +21,7 @@ serde_json.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.3.0" }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.3.1" }
 tracing-subscriber.workspace = true
 
 
