@@ -8,8 +8,12 @@ publish = false
 # torii
 torii = { path = "../../torii", version = "0.3.1", features = [
     "password",
-    "seaorm-sqlite",
+    "sqlite",
 ] }
+torii-core = { path = "../../torii-core", version = "0.3.1" }
+
+# database
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 # web server
 askama = "0.14"

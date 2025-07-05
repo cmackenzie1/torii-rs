@@ -7,6 +7,8 @@ mod password;
 mod session;
 mod user;
 
+pub mod repositories;
+
 use migrations::Migrator;
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::prelude::*;

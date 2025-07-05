@@ -3,6 +3,7 @@ mod migrations;
 mod oauth;
 mod passkey;
 mod password;
+mod repositories;
 mod session;
 
 use async_trait::async_trait;
@@ -21,6 +22,8 @@ use torii_core::{
     storage::{NewUser, UserStorage},
 };
 use torii_migration::{Migration, MigrationManager};
+
+pub use repositories::SqliteRepositoryProvider;
 
 #[derive(Clone)]
 pub struct SqliteStorage {

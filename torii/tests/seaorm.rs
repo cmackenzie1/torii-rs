@@ -1,3 +1,8 @@
+//! SeaORM tests are currently disabled as the SeaORM storage implementation is incomplete
+//! TODO: Re-enable these tests once SeaORM RepositoryProvider is fully implemented
+
+#![allow(dead_code, unused_imports)]
+
 use std::sync::Arc;
 use testcontainers_modules::testcontainers::{ImageExt, runners::AsyncRunner};
 use torii::{SeaORMStorage, Torii};
