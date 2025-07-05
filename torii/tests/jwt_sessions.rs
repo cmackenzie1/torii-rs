@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use torii::{SessionConfig, Torii};
+use torii_core::repositories::RepositoryProvider;
 use torii_core::session::{JwtConfig, SessionToken};
 use torii_core::user::UserId;
-use torii_core::repositories::RepositoryProvider;
 
 #[cfg(feature = "sqlite")]
 use torii::SqliteRepositoryProvider;

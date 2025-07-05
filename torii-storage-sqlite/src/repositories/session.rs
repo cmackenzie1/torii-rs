@@ -1,9 +1,8 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use torii_core::{
-    Session, session::SessionToken, UserId, Error,
-    error::StorageError,
-    repositories::SessionRepository,
+    Error, Session, UserId, error::StorageError, repositories::SessionRepository,
+    session::SessionToken,
 };
 
 pub struct SqliteSessionRepository {
@@ -77,13 +76,12 @@ impl SessionRepository for SqliteSessionRepository {
             SessionToken::Jwt(t) => t,
         };
 
-        let sqlite_session = sqlx::query_as::<_, SqliteSession>(
-            "SELECT * FROM sessions WHERE token = ?1"
-        )
-        .bind(token_str)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+        let sqlite_session =
+            sqlx::query_as::<_, SqliteSession>("SELECT * FROM sessions WHERE token = ?1")
+                .bind(token_str)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         Ok(sqlite_session.map(|s| s.into()))
     }
@@ -115,7 +113,7 @@ impl SessionRepository for SqliteSessionRepository {
 
     async fn cleanup_expired(&self) -> Result<(), Error> {
         let now = chrono::Utc::now().timestamp();
-        
+
         sqlx::query("DELETE FROM sessions WHERE expires_at < ?1")
             .bind(now)
             .execute(&self.pool)

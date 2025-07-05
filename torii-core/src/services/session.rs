@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use crate::{Error, Session, UserId, repositories::SessionRepository, session::SessionToken};
 use chrono::{Duration, Utc};
-use crate::{Session, session::SessionToken, UserId, Error, repositories::SessionRepository};
+use std::sync::Arc;
 
 /// Service for session management operations
 pub struct SessionService<R: SessionRepository> {
@@ -38,14 +38,14 @@ impl<R: SessionRepository> SessionService<R> {
     /// Get a session by token
     pub async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Error> {
         let session = self.repository.find_by_token(token).await?;
-        
+
         // Check if session is expired
         if let Some(ref s) = session {
             if s.expires_at < Utc::now() {
                 return Ok(None);
             }
         }
-        
+
         Ok(session)
     }
 

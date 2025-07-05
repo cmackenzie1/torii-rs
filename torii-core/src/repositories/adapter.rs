@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use async_trait::async_trait;
 use crate::{
-    User, UserId, OAuthAccount, Session, storage::{NewUser, MagicToken}, 
-    session::SessionToken, Error,
+    Error, OAuthAccount, Session, User, UserId,
     repositories::{
-        UserRepository, SessionRepository, PasswordRepository, 
-        OAuthRepository, PasskeyRepository, PasskeyCredential,
-        MagicLinkRepository, RepositoryProvider
-    }
+        MagicLinkRepository, OAuthRepository, PasskeyCredential, PasskeyRepository,
+        PasswordRepository, RepositoryProvider, SessionRepository, UserRepository,
+    },
+    session::SessionToken,
+    storage::{MagicToken, NewUser},
 };
+use async_trait::async_trait;
 use chrono::Duration;
+use std::sync::Arc;
 
 /// Adapter that wraps a RepositoryProvider and implements individual repository traits
 pub struct UserRepositoryAdapter<R: RepositoryProvider> {
@@ -99,7 +99,10 @@ impl<R: RepositoryProvider> PasswordRepositoryAdapter<R> {
 #[async_trait]
 impl<R: RepositoryProvider> PasswordRepository for PasswordRepositoryAdapter<R> {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
-        self.provider.password().set_password_hash(user_id, hash).await
+        self.provider
+            .password()
+            .set_password_hash(user_id, hash)
+            .await
     }
 
     async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error> {
@@ -129,7 +132,10 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
         subject: &str,
         user_id: &UserId,
     ) -> Result<OAuthAccount, Error> {
-        self.provider.oauth().create_account(provider, subject, user_id).await
+        self.provider
+            .oauth()
+            .create_account(provider, subject, user_id)
+            .await
     }
 
     async fn find_user_by_provider(
@@ -137,7 +143,10 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
         provider: &str,
         subject: &str,
     ) -> Result<Option<User>, Error> {
-        self.provider.oauth().find_user_by_provider(provider, subject).await
+        self.provider
+            .oauth()
+            .find_user_by_provider(provider, subject)
+            .await
     }
 
     async fn find_account_by_provider(
@@ -145,7 +154,10 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
         provider: &str,
         subject: &str,
     ) -> Result<Option<OAuthAccount>, Error> {
-        self.provider.oauth().find_account_by_provider(provider, subject).await
+        self.provider
+            .oauth()
+            .find_account_by_provider(provider, subject)
+            .await
     }
 
     async fn link_account(
@@ -154,7 +166,10 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
         provider: &str,
         subject: &str,
     ) -> Result<(), Error> {
-        self.provider.oauth().link_account(user_id, provider, subject).await
+        self.provider
+            .oauth()
+            .link_account(user_id, provider, subject)
+            .await
     }
 
     async fn store_pkce_verifier(
@@ -163,7 +178,10 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
         pkce_verifier: &str,
         expires_in: Duration,
     ) -> Result<(), Error> {
-        self.provider.oauth().store_pkce_verifier(csrf_state, pkce_verifier, expires_in).await
+        self.provider
+            .oauth()
+            .store_pkce_verifier(csrf_state, pkce_verifier, expires_in)
+            .await
     }
 
     async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error> {
@@ -194,23 +212,41 @@ impl<R: RepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
         public_key: Vec<u8>,
         name: Option<String>,
     ) -> Result<PasskeyCredential, Error> {
-        self.provider.passkey().add_credential(user_id, credential_id, public_key, name).await
+        self.provider
+            .passkey()
+            .add_credential(user_id, credential_id, public_key, name)
+            .await
     }
 
-    async fn get_credentials_for_user(&self, user_id: &UserId) -> Result<Vec<PasskeyCredential>, Error> {
-        self.provider.passkey().get_credentials_for_user(user_id).await
+    async fn get_credentials_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<PasskeyCredential>, Error> {
+        self.provider
+            .passkey()
+            .get_credentials_for_user(user_id)
+            .await
     }
 
-    async fn get_credential(&self, credential_id: &[u8]) -> Result<Option<PasskeyCredential>, Error> {
+    async fn get_credential(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<PasskeyCredential>, Error> {
         self.provider.passkey().get_credential(credential_id).await
     }
 
     async fn update_last_used(&self, credential_id: &[u8]) -> Result<(), Error> {
-        self.provider.passkey().update_last_used(credential_id).await
+        self.provider
+            .passkey()
+            .update_last_used(credential_id)
+            .await
     }
 
     async fn delete_credential(&self, credential_id: &[u8]) -> Result<(), Error> {
-        self.provider.passkey().delete_credential(credential_id).await
+        self.provider
+            .passkey()
+            .delete_credential(credential_id)
+            .await
     }
 
     async fn delete_all_for_user(&self, user_id: &UserId) -> Result<(), Error> {
@@ -231,7 +267,10 @@ impl<R: RepositoryProvider> MagicLinkRepositoryAdapter<R> {
 #[async_trait]
 impl<R: RepositoryProvider> MagicLinkRepository for MagicLinkRepositoryAdapter<R> {
     async fn create_token(&self, email: &str, expires_in: Duration) -> Result<MagicToken, Error> {
-        self.provider.magic_link().create_token(email, expires_in).await
+        self.provider
+            .magic_link()
+            .create_token(email, expires_in)
+            .await
     }
 
     async fn verify_token(&self, token: &str) -> Result<Option<String>, Error> {

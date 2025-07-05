@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use crate::{
-    User, UserId, Error,
+    Error, User, UserId,
     error::{AuthError, ValidationError},
-    repositories::{UserRepository, PasswordRepository},
+    repositories::{PasswordRepository, UserRepository},
 };
+use std::sync::Arc;
 
 /// Service for password authentication operations
 pub struct PasswordService<U: UserRepository, P: PasswordRepository> {
@@ -29,7 +29,9 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     ) -> Result<User, Error> {
         // Validate email format
         if !Self::is_valid_email(email) {
-            return Err(Error::Validation(ValidationError::InvalidEmail(email.to_string())));
+            return Err(Error::Validation(ValidationError::InvalidEmail(
+                email.to_string(),
+            )));
         }
 
         // Check if user already exists
@@ -52,19 +54,17 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     }
 
     /// Authenticate a user with email and password
-    pub async fn authenticate(
-        &self,
-        email: &str,
-        password: &str,
-    ) -> Result<User, Error> {
+    pub async fn authenticate(&self, email: &str, password: &str) -> Result<User, Error> {
         // Find user by email
-        let user = self.user_repository
+        let user = self
+            .user_repository
             .find_by_email(email)
             .await?
             .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
 
         // Get password hash
-        let password_hash = self.password_repository
+        let password_hash = self
+            .password_repository
             .get_password_hash(&user.id)
             .await?
             .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
@@ -85,7 +85,8 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
         new_password: &str,
     ) -> Result<(), Error> {
         // Get current password hash
-        let current_hash = self.password_repository
+        let current_hash = self
+            .password_repository
             .get_password_hash(user_id)
             .await?
             .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
@@ -107,11 +108,7 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     }
 
     /// Set a user's password (admin operation, no old password required)
-    pub async fn set_password(
-        &self,
-        user_id: &UserId,
-        password: &str,
-    ) -> Result<(), Error> {
+    pub async fn set_password(&self, user_id: &UserId, password: &str) -> Result<(), Error> {
         let password_hash = Self::hash_password(password)?;
         self.password_repository
             .set_password_hash(user_id, &password_hash)

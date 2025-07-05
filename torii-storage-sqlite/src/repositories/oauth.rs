@@ -1,11 +1,9 @@
 use async_trait::async_trait;
+use chrono::Duration;
 use sqlx::SqlitePool;
 use torii_core::{
-    User, UserId, OAuthAccount, Error,
-    error::StorageError,
-    repositories::OAuthRepository,
+    Error, OAuthAccount, User, UserId, error::StorageError, repositories::OAuthRepository,
 };
-use chrono::Duration;
 
 pub struct SqliteOAuthRepository {
     #[allow(dead_code)]
@@ -26,7 +24,9 @@ impl OAuthRepository for SqliteOAuthRepository {
         _subject: &str,
         _user_id: &UserId,
     ) -> Result<OAuthAccount, Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 
     async fn find_user_by_provider(
@@ -34,7 +34,9 @@ impl OAuthRepository for SqliteOAuthRepository {
         _provider: &str,
         _subject: &str,
     ) -> Result<Option<User>, Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 
     async fn find_account_by_provider(
@@ -42,7 +44,9 @@ impl OAuthRepository for SqliteOAuthRepository {
         _provider: &str,
         _subject: &str,
     ) -> Result<Option<OAuthAccount>, Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 
     async fn link_account(
@@ -51,7 +55,9 @@ impl OAuthRepository for SqliteOAuthRepository {
         _provider: &str,
         _subject: &str,
     ) -> Result<(), Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 
     async fn store_pkce_verifier(
@@ -60,14 +66,20 @@ impl OAuthRepository for SqliteOAuthRepository {
         _pkce_verifier: &str,
         _expires_in: Duration,
     ) -> Result<(), Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 
     async fn get_pkce_verifier(&self, _csrf_state: &str) -> Result<Option<String>, Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 
     async fn delete_pkce_verifier(&self, _csrf_state: &str) -> Result<(), Error> {
-        Err(Error::Storage(StorageError::Database("OAuth repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
     }
 }

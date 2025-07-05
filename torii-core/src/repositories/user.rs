@@ -1,5 +1,5 @@
+use crate::{Error, User, UserId, storage::NewUser};
 use async_trait::async_trait;
-use crate::{User, UserId, storage::NewUser, Error};
 
 /// Repository for user data access
 #[async_trait]

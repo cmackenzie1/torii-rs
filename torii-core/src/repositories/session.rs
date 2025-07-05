@@ -1,5 +1,5 @@
+use crate::{Error, Session, UserId, session::SessionToken};
 use async_trait::async_trait;
-use crate::{Session, session::SessionToken, UserId, Error};
 
 /// Repository for session data access
 #[async_trait]

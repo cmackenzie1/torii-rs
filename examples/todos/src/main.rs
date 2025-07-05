@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use std::{net::SocketAddr, sync::Arc};
-use torii::{Torii, SqliteRepositoryProvider};
+use torii::{SqliteRepositoryProvider, Torii};
 use torii_core::repositories::RepositoryProvider;
 
 mod routes;
@@ -36,7 +36,10 @@ async fn main() {
     let repositories = SqliteRepositoryProvider::new(pool);
 
     // Run migrations
-    repositories.migrate().await.expect("Failed to migrate storage");
+    repositories
+        .migrate()
+        .await
+        .expect("Failed to migrate storage");
 
     // Create Torii instance with repositories
     let torii = Torii::new(Arc::new(repositories));

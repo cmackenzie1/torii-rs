@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use chrono::Duration;
 use crate::{
-    User, UserId, OAuthAccount, Error,
+    Error, OAuthAccount, User, UserId,
     error::AuthError,
-    repositories::{UserRepository, OAuthRepository},
+    repositories::{OAuthRepository, UserRepository},
 };
+use chrono::Duration;
+use std::sync::Arc;
 
 /// Service for OAuth authentication operations
 pub struct OAuthService<U: UserRepository, O: OAuthRepository> {
@@ -30,7 +30,8 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
         _name: Option<String>,
     ) -> Result<User, Error> {
         // First try to find existing user by OAuth provider
-        if let Some(user) = self.oauth_repository
+        if let Some(user) = self
+            .oauth_repository
             .find_user_by_provider(provider, subject)
             .await?
         {
@@ -47,12 +48,12 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
         } else {
             // Create new user
             let new_user = self.user_repository.find_or_create_by_email(email).await?;
-            
+
             // Create OAuth account
             self.oauth_repository
                 .create_account(provider, subject, &new_user.id)
                 .await?;
-            
+
             new_user
         };
 
@@ -67,9 +68,11 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
         subject: &str,
     ) -> Result<(), Error> {
         // Check if this OAuth account is already linked to another user
-        if (self.oauth_repository
+        if (self
+            .oauth_repository
             .find_user_by_provider(provider, subject)
-            .await?).is_some()
+            .await?)
+            .is_some()
         {
             return Err(Error::Auth(AuthError::AccountAlreadyLinked));
         }
@@ -93,9 +96,7 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
 
     /// Get and consume a PKCE verifier
     pub async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error> {
-        let verifier = self.oauth_repository
-            .get_pkce_verifier(csrf_state)
-            .await?;
+        let verifier = self.oauth_repository.get_pkce_verifier(csrf_state).await?;
 
         if verifier.is_some() {
             // Delete the verifier after retrieving it (one-time use)

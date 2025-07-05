@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use torii::{SessionConfig, Torii};
-use torii_core::session::{JwtConfig, SessionToken};
 use torii_core::repositories::RepositoryProvider;
+use torii_core::session::{JwtConfig, SessionToken};
 
 #[cfg(feature = "sqlite")]
 use torii::SqliteRepositoryProvider;
@@ -130,11 +130,10 @@ async fn test_session_expiration() {
     sqlite.migrate().await.unwrap();
 
     // Create Torii instance with password plugin and short session expiration
-    let torii = Torii::new(sqlite.clone())
-        .with_session_config(SessionConfig {
-            expires_in: Duration::seconds(1), // Short expiry for testing
-            jwt_config: None,
-        });
+    let torii = Torii::new(sqlite.clone()).with_session_config(SessionConfig {
+        expires_in: Duration::seconds(1), // Short expiry for testing
+        jwt_config: None,
+    });
 
     // Register a user and verify email
     let email = "test@example.com";

@@ -3,24 +3,24 @@
 //! This module defines the repository interfaces that services use to interact with storage.
 //! These traits provide a clean abstraction over the underlying storage implementation.
 
-pub mod user;
-pub mod session;
-pub mod password;
+pub mod adapter;
+pub mod magic_link;
 pub mod oauth;
 pub mod passkey;
-pub mod magic_link;
-pub mod adapter;
+pub mod password;
+pub mod session;
+pub mod user;
 
-pub use user::UserRepository;
-pub use session::SessionRepository;
-pub use password::PasswordRepository;
-pub use oauth::OAuthRepository;
-pub use passkey::{PasskeyRepository, PasskeyCredential};
-pub use magic_link::MagicLinkRepository;
 pub use adapter::{
-    UserRepositoryAdapter, SessionRepositoryAdapter, PasswordRepositoryAdapter,
-    OAuthRepositoryAdapter, PasskeyRepositoryAdapter, MagicLinkRepositoryAdapter,
+    MagicLinkRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
+    PasswordRepositoryAdapter, SessionRepositoryAdapter, UserRepositoryAdapter,
 };
+pub use magic_link::MagicLinkRepository;
+pub use oauth::OAuthRepository;
+pub use passkey::{PasskeyCredential, PasskeyRepository};
+pub use password::PasswordRepository;
+pub use session::SessionRepository;
+pub use user::UserRepository;
 
 use async_trait::async_trait;
 

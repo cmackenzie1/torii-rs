@@ -1,5 +1,5 @@
+use crate::{Error, OAuthAccount, User, UserId};
 use async_trait::async_trait;
-use crate::{User, UserId, OAuthAccount, Error};
 use chrono::Duration;
 
 /// Repository for OAuth-related data access

@@ -1,9 +1,10 @@
-use std::sync::Arc;
-use chrono::Duration;
 use crate::{
-    User, storage::MagicToken, Error,
-    repositories::{UserRepository, MagicLinkRepository},
+    Error, User,
+    repositories::{MagicLinkRepository, UserRepository},
+    storage::MagicToken,
 };
+use chrono::Duration;
+use std::sync::Arc;
 
 /// Service for magic link authentication operations
 pub struct MagicLinkService<U: UserRepository, M: MagicLinkRepository> {
@@ -49,15 +50,11 @@ impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
     /// Verify a magic token and return the associated user
     pub async fn verify_token(&self, token: &str) -> Result<Option<User>, Error> {
         // Verify and consume the token
-        let email = self.magic_link_repository
-            .verify_token(token)
-            .await?;
+        let email = self.magic_link_repository.verify_token(token).await?;
 
         if let Some(email) = email {
             // Get the user by email
-            let user = self.user_repository
-                .find_by_email(&email)
-                .await?;
+            let user = self.user_repository.find_by_email(&email).await?;
             Ok(user)
         } else {
             Ok(None)
@@ -66,8 +63,6 @@ impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
 
     /// Clean up expired tokens
     pub async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
-        self.magic_link_repository
-            .cleanup_expired_tokens()
-            .await
+        self.magic_link_repository.cleanup_expired_tokens().await
     }
 }

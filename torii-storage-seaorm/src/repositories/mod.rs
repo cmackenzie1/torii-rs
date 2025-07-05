@@ -1,28 +1,24 @@
 //! Repository implementations for SeaORM storage
 
-pub mod user;
-pub mod session;
-pub mod password;
+pub mod magic_link;
 pub mod oauth;
 pub mod passkey;
-pub mod magic_link;
+pub mod password;
+pub mod session;
+pub mod user;
 
-pub use user::SeaORMUserRepository;
-pub use session::SeaORMSessionRepository;
-pub use password::SeaORMPasswordRepository;
+pub use magic_link::SeaORMMagicLinkRepository;
 pub use oauth::SeaORMOAuthRepository;
 pub use passkey::SeaORMPasskeyRepository;
-pub use magic_link::SeaORMMagicLinkRepository;
+pub use password::SeaORMPasswordRepository;
+pub use session::SeaORMSessionRepository;
+pub use user::SeaORMUserRepository;
 
-use std::sync::Arc;
+use crate::SeaORMStorageError;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
-use torii_core::{
-    Error,
-    repositories::RepositoryProvider,
-    error::StorageError,
-};
-use crate::SeaORMStorageError;
+use std::sync::Arc;
+use torii_core::{Error, error::StorageError, repositories::RepositoryProvider};
 
 /// Repository provider implementation for SeaORM
 pub struct SeaORMRepositoryProvider {
@@ -94,13 +90,16 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
         use crate::migrations::Migrator;
         use sea_orm_migration::MigratorTrait;
 
-        Migrator::up(&self.pool, None).await
+        Migrator::up(&self.pool, None)
+            .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(())
     }
 
     async fn health_check(&self) -> Result<(), Self::Error> {
-        self.pool.ping().await
+        self.pool
+            .ping()
+            .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(())
     }

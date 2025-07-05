@@ -18,7 +18,9 @@ pub mod user;
 
 pub use error::Error;
 pub use repositories::RepositoryProvider;
-pub use services::{UserService, SessionService, PasswordService, OAuthService, PasskeyService, MagicLinkService};
+pub use services::{
+    MagicLinkService, OAuthService, PasskeyService, PasswordService, SessionService, UserService,
+};
 pub use session::Session;
 pub use storage::{NewUser, SessionStorage, UserStorage};
 pub use user::{DefaultUserManager, OAuthAccount, User, UserId, UserManager};

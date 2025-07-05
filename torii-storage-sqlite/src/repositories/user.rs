@@ -1,12 +1,9 @@
+use crate::SqliteUser;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use torii_core::{
-    User, UserId, Error,
-    error::StorageError,
-    storage::NewUser,
-    repositories::UserRepository,
+    Error, User, UserId, error::StorageError, repositories::UserRepository, storage::NewUser,
 };
-use crate::SqliteUser;
 
 pub struct SqliteUserRepository {
     pool: SqlitePool,
@@ -45,25 +42,21 @@ impl UserRepository for SqliteUserRepository {
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>, Error> {
-        let sqlite_user = sqlx::query_as::<_, SqliteUser>(
-            "SELECT * FROM users WHERE id = ?1"
-        )
-        .bind(id.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+        let sqlite_user = sqlx::query_as::<_, SqliteUser>("SELECT * FROM users WHERE id = ?1")
+            .bind(id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         Ok(sqlite_user.map(|u| u.into()))
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, Error> {
-        let sqlite_user = sqlx::query_as::<_, SqliteUser>(
-            "SELECT * FROM users WHERE email = ?1"
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+        let sqlite_user = sqlx::query_as::<_, SqliteUser>("SELECT * FROM users WHERE email = ?1")
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         Ok(sqlite_user.map(|u| u.into()))
     }
@@ -113,16 +106,14 @@ impl UserRepository for SqliteUserRepository {
 
     async fn mark_email_verified(&self, user_id: &UserId) -> Result<(), Error> {
         let now = chrono::Utc::now().timestamp();
-        
-        sqlx::query(
-            "UPDATE users SET email_verified_at = ?1, updated_at = ?2 WHERE id = ?3"
-        )
-        .bind(now)
-        .bind(now)
-        .bind(user_id.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+
+        sqlx::query("UPDATE users SET email_verified_at = ?1, updated_at = ?2 WHERE id = ?3")
+            .bind(now)
+            .bind(now)
+            .bind(user_id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         Ok(())
     }

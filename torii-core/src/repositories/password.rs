@@ -1,5 +1,5 @@
+use crate::{Error, UserId};
 use async_trait::async_trait;
-use crate::{UserId, Error};
 
 /// Repository for password-related data access
 #[async_trait]

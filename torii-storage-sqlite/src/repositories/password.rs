@@ -1,10 +1,6 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
-use torii_core::{
-    UserId, Error,
-    error::StorageError,
-    repositories::PasswordRepository,
-};
+use torii_core::{Error, UserId, error::StorageError, repositories::PasswordRepository};
 
 pub struct SqlitePasswordRepository {
     pool: SqlitePool,
@@ -30,13 +26,12 @@ impl PasswordRepository for SqlitePasswordRepository {
     }
 
     async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error> {
-        let result = sqlx::query_scalar::<_, String>(
-            "SELECT password_hash FROM users WHERE id = ?1"
-        )
-        .bind(user_id.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+        let result =
+            sqlx::query_scalar::<_, String>("SELECT password_hash FROM users WHERE id = ?1")
+                .bind(user_id.as_str())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         Ok(result)
     }

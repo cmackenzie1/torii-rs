@@ -1,5 +1,5 @@
+use crate::{Error, UserId};
 use async_trait::async_trait;
-use crate::{UserId, Error};
 use chrono::{DateTime, Utc};
 
 /// Represents a stored passkey credential
@@ -26,10 +26,16 @@ pub trait PasskeyRepository: Send + Sync + 'static {
     ) -> Result<PasskeyCredential, Error>;
 
     /// Get all passkey credentials for a user
-    async fn get_credentials_for_user(&self, user_id: &UserId) -> Result<Vec<PasskeyCredential>, Error>;
+    async fn get_credentials_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<PasskeyCredential>, Error>;
 
     /// Get a specific passkey credential
-    async fn get_credential(&self, credential_id: &[u8]) -> Result<Option<PasskeyCredential>, Error>;
+    async fn get_credential(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<PasskeyCredential>, Error>;
 
     /// Update the last used timestamp for a credential
     async fn update_last_used(&self, credential_id: &[u8]) -> Result<(), Error>;

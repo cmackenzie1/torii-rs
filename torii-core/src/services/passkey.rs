@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use crate::{
-    User, UserId, Error,
-    repositories::{UserRepository, PasskeyRepository, PasskeyCredential},
+    Error, User, UserId,
+    repositories::{PasskeyCredential, PasskeyRepository, UserRepository},
 };
+use std::sync::Arc;
 
 /// Service for passkey/WebAuthn authentication operations
 pub struct PasskeyService<U: UserRepository, P: PasskeyRepository> {
@@ -33,17 +33,21 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
     }
 
     /// Get all passkey credentials for a user
-    pub async fn get_user_credentials(&self, user_id: &UserId) -> Result<Vec<PasskeyCredential>, Error> {
+    pub async fn get_user_credentials(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<PasskeyCredential>, Error> {
         self.passkey_repository
             .get_credentials_for_user(user_id)
             .await
     }
 
     /// Get a specific passkey credential
-    pub async fn get_credential(&self, credential_id: &[u8]) -> Result<Option<PasskeyCredential>, Error> {
-        self.passkey_repository
-            .get_credential(credential_id)
-            .await
+    pub async fn get_credential(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<PasskeyCredential>, Error> {
+        self.passkey_repository.get_credential(credential_id).await
     }
 
     /// Authenticate with a passkey credential
@@ -52,7 +56,8 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
         credential_id: &[u8],
     ) -> Result<Option<User>, Error> {
         // Get the credential
-        let credential = self.passkey_repository
+        let credential = self
+            .passkey_repository
             .get_credential(credential_id)
             .await?;
 
@@ -63,9 +68,7 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
                 .await?;
 
             // Get the user
-            let user = self.user_repository
-                .find_by_id(&cred.user_id)
-                .await?;
+            let user = self.user_repository.find_by_id(&cred.user_id).await?;
 
             Ok(user)
         } else {
@@ -82,8 +85,6 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
 
     /// Delete all passkey credentials for a user
     pub async fn delete_user_credentials(&self, user_id: &UserId) -> Result<(), Error> {
-        self.passkey_repository
-            .delete_all_for_user(user_id)
-            .await
+        self.passkey_repository.delete_all_for_user(user_id).await
     }
 }

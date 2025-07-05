@@ -62,11 +62,10 @@ async fn test_magic_link_expired_token() {
     repositories.migrate().await.unwrap();
 
     // Create Torii instance with magic link plugin
-    let torii = Torii::new(Arc::new(repositories))
-        .with_session_config(torii::SessionConfig {
-            expires_in: Duration::seconds(2), // Short expiry for testing
-            jwt_config: None,
-        });
+    let torii = Torii::new(Arc::new(repositories)).with_session_config(torii::SessionConfig {
+        expires_in: Duration::seconds(2), // Short expiry for testing
+        jwt_config: None,
+    });
 
     // Generate a token
     let email = "expired@example.com";

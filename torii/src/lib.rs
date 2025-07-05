@@ -46,11 +46,11 @@ use std::sync::Arc;
 use chrono::Duration;
 use torii_core::{
     RepositoryProvider,
-    services::{UserService, SessionService},
     repositories::{
-        UserRepositoryAdapter, SessionRepositoryAdapter, PasswordRepositoryAdapter,
-        OAuthRepositoryAdapter, PasskeyRepositoryAdapter, MagicLinkRepositoryAdapter,
+        MagicLinkRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
+        PasswordRepositoryAdapter, SessionRepositoryAdapter, UserRepositoryAdapter,
     },
+    services::{SessionService, UserService},
 };
 
 #[cfg(feature = "password")]
@@ -69,7 +69,7 @@ use torii_core::services::MagicLinkService;
 ///
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
-    session::{Session, SessionToken, JwtConfig},
+    session::{JwtConfig, Session, SessionToken},
     storage::MagicToken,
     user::{User, UserId},
 };
@@ -81,7 +81,7 @@ pub use torii_core::{
 ///
 /// These storage implementations are available when the corresponding feature is enabled.
 #[cfg(feature = "sqlite")]
-pub use torii_storage_sqlite::{SqliteStorage, SqliteRepositoryProvider};
+pub use torii_storage_sqlite::{SqliteRepositoryProvider, SqliteStorage};
 
 #[cfg(feature = "postgres")]
 pub use torii_storage_postgres::PostgresStorage;
@@ -90,7 +90,7 @@ pub use torii_storage_postgres::PostgresStorage;
 // SeaORM storage temporarily disabled due to incomplete repository implementation
 // #[cfg(any(
 //     feature = "seaorm-sqlite",
-//     feature = "seaorm-postgres", 
+//     feature = "seaorm-postgres",
 //     feature = "seaorm-mysql",
 //     feature = "seaorm"
 // ))]
@@ -195,22 +195,23 @@ pub struct Torii<R: RepositoryProvider> {
     repositories: Arc<R>,
     user_service: Arc<UserService<UserRepositoryAdapter<R>>>,
     session_service: Arc<SessionService<SessionRepositoryAdapter<R>>>,
-    
+
     #[cfg(feature = "password")]
     password_service: Arc<PasswordService<UserRepositoryAdapter<R>, PasswordRepositoryAdapter<R>>>,
-    
+
     #[cfg(feature = "oauth")]
     #[allow(dead_code)] // TODO: Expose OAuth service methods in Torii API
     oauth_service: Arc<OAuthService<UserRepositoryAdapter<R>, OAuthRepositoryAdapter<R>>>,
-    
+
     #[cfg(feature = "passkey")]
     #[allow(dead_code)] // TODO: Expose passkey service methods in Torii API
     passkey_service: Arc<PasskeyService<UserRepositoryAdapter<R>, PasskeyRepositoryAdapter<R>>>,
-    
+
     #[cfg(feature = "magic-link")]
     #[allow(dead_code)] // TODO: Expose magic link service methods in Torii API
-    magic_link_service: Arc<MagicLinkService<UserRepositoryAdapter<R>, MagicLinkRepositoryAdapter<R>>>,
-    
+    magic_link_service:
+        Arc<MagicLinkService<UserRepositoryAdapter<R>, MagicLinkRepositoryAdapter<R>>>,
+
     session_config: SessionConfig,
 }
 
@@ -231,7 +232,7 @@ impl<R: RepositoryProvider> Torii<R> {
         // Create repository adapters
         let user_repo = Arc::new(UserRepositoryAdapter::new(repositories.clone()));
         let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
-        
+
         let user_service = Arc::new(UserService::new(user_repo.clone()));
         let session_service = Arc::new(SessionService::new(session_repo));
 
@@ -239,31 +240,37 @@ impl<R: RepositoryProvider> Torii<R> {
             repositories: repositories.clone(),
             user_service,
             session_service,
-            
+
             #[cfg(feature = "password")]
             password_service: Arc::new(PasswordService::new(
                 user_repo.clone(),
                 Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
             )),
-            
+
             #[cfg(feature = "oauth")]
             oauth_service: Arc::new(OAuthService::new(
                 user_repo.clone(),
-                Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(repositories.clone())),
+                Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
             )),
-            
+
             #[cfg(feature = "passkey")]
             passkey_service: Arc::new(PasskeyService::new(
                 user_repo.clone(),
-                Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(repositories.clone())),
+                Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
             )),
-            
+
             #[cfg(feature = "magic-link")]
             magic_link_service: Arc::new(MagicLinkService::new(
                 user_repo,
-                Arc::new(torii_core::repositories::MagicLinkRepositoryAdapter::new(repositories.clone())),
+                Arc::new(torii_core::repositories::MagicLinkRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
             )),
-            
+
             session_config: SessionConfig::default(),
         }
     }
@@ -429,7 +436,8 @@ impl<R: RepositoryProvider> Torii<R> {
         user_agent: Option<String>,
         ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
-        let user = self.password_service
+        let user = self
+            .password_service
             .authenticate(email, password)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
