@@ -62,6 +62,11 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
             .await?
             .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
 
+        // Check if email is verified
+        if !user.is_email_verified() {
+            return Err(Error::Auth(AuthError::EmailNotVerified));
+        }
+
         // Get password hash
         let password_hash = self
             .password_repository

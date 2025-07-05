@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use torii::{Torii, ToriiError};
+use torii::Torii;
 
 #[cfg(feature = "sqlite")]
 #[tokio::test]
@@ -50,6 +50,9 @@ async fn test_password_authentication() -> Result<(), Box<dyn std::error::Error>
         .await?;
     assert_eq!(user.email, "test@example.com");
     assert!(!user.is_email_verified());
+
+    // Verify the email
+    torii.set_user_email_verified(&user.id).await?;
 
     // Login with correct password
     let (logged_in_user, session) = torii

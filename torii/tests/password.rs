@@ -126,11 +126,12 @@ async fn test_session_expiration() {
     use tokio::time::sleep;
 
     // Set up SQLite storage
-    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    sqlite.migrate().await.unwrap();
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
 
     // Create Torii instance with password plugin and short session expiration
-    let torii = Torii::new(sqlite.clone()).with_session_config(SessionConfig {
+    let torii = Torii::new(Arc::new(repositories)).with_session_config(SessionConfig {
         expires_in: Duration::seconds(1), // Short expiry for testing
         jwt_config: None,
     });
@@ -236,8 +237,9 @@ async fn test_multiple_sessions() {
 #[tokio::test]
 async fn test_password_auth_with_jwt() {
     // Set up SQLite storage
-    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    sqlite.migrate().await.unwrap();
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
 
     // Create a JWT config with HS256
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
@@ -245,9 +247,7 @@ async fn test_password_auth_with_jwt() {
         .with_metadata(true);
 
     // Create Torii with JWT sessions
-    let torii = Torii::new(sqlite.clone())
-        .with_jwt_sessions(jwt_config)
-        .with_password_plugin();
+    let torii = Torii::new(Arc::new(repositories)).with_jwt_sessions(jwt_config);
 
     // Register a user and verify email
     let email = "test@example.com";

@@ -288,6 +288,18 @@ impl<R: RepositoryProvider> Torii<R> {
         self
     }
 
+    /// Configure JWT sessions
+    ///
+    /// This is a convenience method for setting up JWT session configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `jwt_config` - The JWT configuration to use
+    pub fn with_jwt_sessions(mut self, jwt_config: JwtConfig) -> Self {
+        self.session_config = SessionConfig::default().with_jwt(jwt_config);
+        self
+    }
+
     /// Run migrations for all repositories
     pub async fn migrate(&self) -> Result<(), ToriiError> {
         self.repositories
@@ -337,16 +349,26 @@ impl<R: RepositoryProvider> Torii<R> {
         user_agent: Option<String>,
         ip_address: Option<String>,
     ) -> Result<Session, ToriiError> {
-        let session = self
+        let mut session = self
             .session_service
             .create_session(
                 user_id,
-                user_agent,
-                ip_address,
+                user_agent.clone(),
+                ip_address.clone(),
                 self.session_config.expires_in,
             )
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+        // If JWT config is provided, create a JWT token instead of opaque token
+        if let Some(jwt_config) = &self.session_config.jwt_config {
+            let claims =
+                session.to_jwt_claims(jwt_config.issuer.clone(), jwt_config.include_metadata);
+            let jwt_token = SessionToken::new_jwt(&claims, jwt_config)
+                .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+            session.token = jwt_token;
+        }
 
         Ok(session)
     }
@@ -361,14 +383,40 @@ impl<R: RepositoryProvider> Torii<R> {
     ///
     /// Returns the session if found and valid, otherwise returns an error
     pub async fn get_session(&self, session_id: &SessionToken) -> Result<Session, ToriiError> {
-        let session = self
-            .session_service
-            .get_session(session_id)
-            .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?
-            .ok_or(ToriiError::StorageError("Session not found".to_string()))?;
+        match session_id {
+            SessionToken::Jwt(_) => {
+                // For JWT tokens, validate the token and create session from claims
+                if let Some(jwt_config) = &self.session_config.jwt_config {
+                    let claims = session_id
+                        .verify_jwt(jwt_config)
+                        .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
-        Ok(session)
+                    let session = Session::from_jwt_claims(session_id.clone(), &claims);
+
+                    // Check if the session is expired
+                    if session.expires_at < chrono::Utc::now() {
+                        return Err(ToriiError::AuthError("Session expired".to_string()));
+                    }
+
+                    Ok(session)
+                } else {
+                    Err(ToriiError::AuthError(
+                        "JWT configuration not found".to_string(),
+                    ))
+                }
+            }
+            SessionToken::Opaque(_) => {
+                // For opaque tokens, look up in storage
+                let session = self
+                    .session_service
+                    .get_session(session_id)
+                    .await
+                    .map_err(|e| ToriiError::StorageError(e.to_string()))?
+                    .ok_or(ToriiError::StorageError("Session not found".to_string()))?;
+
+                Ok(session)
+            }
+        }
     }
 
     /// Delete a session by its ID
@@ -391,6 +439,30 @@ impl<R: RepositoryProvider> Torii<R> {
     pub async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), ToriiError> {
         self.session_service
             .delete_user_sessions(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
+
+    /// Mark a user's email as verified
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to mark as verified
+    pub async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), ToriiError> {
+        self.user_service
+            .verify_email(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
+
+    /// Delete a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to delete
+    pub async fn delete_user(&self, user_id: &UserId) -> Result<(), ToriiError> {
+        self.user_service
+            .delete_user(user_id)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
@@ -475,5 +547,55 @@ impl<R: RepositoryProvider> Torii<R> {
         self.delete_sessions_for_user(user_id).await?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "magic-link")]
+impl<R: RepositoryProvider> Torii<R> {
+    /// Generate a magic token for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email of the user to generate a token for
+    ///
+    /// # Returns
+    ///
+    /// Returns the generated magic token
+    pub async fn generate_magic_token(&self, email: &str) -> Result<MagicToken, ToriiError> {
+        self.magic_link_service
+            .generate_token(email)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Verify a magic token and return the user and session
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The magic token to verify
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
+    ///
+    /// # Returns
+    ///
+    /// Returns the user and session if the token is valid
+    pub async fn verify_magic_token(
+        &self,
+        token: &str,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<(User, Session), ToriiError> {
+        let user = self
+            .magic_link_service
+            .verify_token(token)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?
+            .ok_or_else(|| ToriiError::AuthError("Invalid magic token".to_string()))?;
+
+        let session = self
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
+
+        Ok((user, session))
     }
 }
