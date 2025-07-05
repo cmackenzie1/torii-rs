@@ -1,5 +1,5 @@
+use crate::{Error, User, UserId, repositories::UserRepository, storage::NewUser};
 use std::sync::Arc;
-use crate::{User, UserId, storage::NewUser, Error, repositories::UserRepository};
 
 /// Service for user management operations
 pub struct UserService<R: UserRepository> {
@@ -17,13 +17,13 @@ impl<R: UserRepository> UserService<R> {
         let mut builder = NewUser::builder()
             .id(UserId::new_random())
             .email(email.to_string());
-        
+
         if let Some(name) = name {
             builder = builder.name(name);
         }
-        
+
         let new_user = builder.build()?;
-        
+
         self.repository.create(new_user).await
     }
 

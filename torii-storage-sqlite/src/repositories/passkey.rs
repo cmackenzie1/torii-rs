@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use torii_core::{
-    UserId, Error,
+    Error, UserId,
     error::StorageError,
-    repositories::{PasskeyRepository, PasskeyCredential},
+    repositories::{PasskeyCredential, PasskeyRepository},
 };
 
 pub struct SqlitePasskeyRepository {
@@ -26,26 +26,44 @@ impl PasskeyRepository for SqlitePasskeyRepository {
         _public_key: Vec<u8>,
         _name: Option<String>,
     ) -> Result<PasskeyCredential, Error> {
-        Err(Error::Storage(StorageError::Database("Passkey repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "Passkey repository not yet implemented".to_string(),
+        )))
     }
 
-    async fn get_credentials_for_user(&self, _user_id: &UserId) -> Result<Vec<PasskeyCredential>, Error> {
-        Err(Error::Storage(StorageError::Database("Passkey repository not yet implemented".to_string())))
+    async fn get_credentials_for_user(
+        &self,
+        _user_id: &UserId,
+    ) -> Result<Vec<PasskeyCredential>, Error> {
+        Err(Error::Storage(StorageError::Database(
+            "Passkey repository not yet implemented".to_string(),
+        )))
     }
 
-    async fn get_credential(&self, _credential_id: &[u8]) -> Result<Option<PasskeyCredential>, Error> {
-        Err(Error::Storage(StorageError::Database("Passkey repository not yet implemented".to_string())))
+    async fn get_credential(
+        &self,
+        _credential_id: &[u8],
+    ) -> Result<Option<PasskeyCredential>, Error> {
+        Err(Error::Storage(StorageError::Database(
+            "Passkey repository not yet implemented".to_string(),
+        )))
     }
 
     async fn update_last_used(&self, _credential_id: &[u8]) -> Result<(), Error> {
-        Err(Error::Storage(StorageError::Database("Passkey repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "Passkey repository not yet implemented".to_string(),
+        )))
     }
 
     async fn delete_credential(&self, _credential_id: &[u8]) -> Result<(), Error> {
-        Err(Error::Storage(StorageError::Database("Passkey repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "Passkey repository not yet implemented".to_string(),
+        )))
     }
 
     async fn delete_all_for_user(&self, _user_id: &UserId) -> Result<(), Error> {
-        Err(Error::Storage(StorageError::Database("Passkey repository not yet implemented".to_string())))
+        Err(Error::Storage(StorageError::Database(
+            "Passkey repository not yet implemented".to_string(),
+        )))
     }
 }

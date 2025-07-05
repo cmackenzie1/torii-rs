@@ -1,5 +1,5 @@
+use crate::{Error, storage::MagicToken};
 use async_trait::async_trait;
-use crate::{storage::MagicToken, Error};
 use chrono::Duration;
 
 /// Repository for magic link token data access

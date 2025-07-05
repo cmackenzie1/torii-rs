@@ -11,13 +11,7 @@ members = [
     # Level 3: Storage backends (depend on torii-core and torii-migration)
     "torii-storage-sqlite",
     "torii-storage-postgres",
-    # "torii-storage-seaorm",  # Temporarily disabled due to incomplete implementation
-    
-    # Level 3: Auth plugins (REMOVED - replaced by service-based architecture in torii-core)
-    # "torii-auth-password",
-    # "torii-auth-oauth", 
-    # "torii-auth-passkey",
-    # "torii-auth-magic-link",
+    "torii-storage-seaorm",
     
     # Level 4: Main library (depends on all above)
     "torii",

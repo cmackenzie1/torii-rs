@@ -1,27 +1,23 @@
 //! Repository implementations for SQLite storage
 
-pub mod user;
-pub mod session;
-pub mod password;
+pub mod magic_link;
 pub mod oauth;
 pub mod passkey;
-pub mod magic_link;
+pub mod password;
+pub mod session;
+pub mod user;
 
-pub use user::SqliteUserRepository;
-pub use session::SqliteSessionRepository;
-pub use password::SqlitePasswordRepository;
+pub use magic_link::SqliteMagicLinkRepository;
 pub use oauth::SqliteOAuthRepository;
 pub use passkey::SqlitePasskeyRepository;
-pub use magic_link::SqliteMagicLinkRepository;
+pub use password::SqlitePasswordRepository;
+pub use session::SqliteSessionRepository;
+pub use user::SqliteUserRepository;
 
-use std::sync::Arc;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
-use torii_core::{
-    Error,
-    repositories::RepositoryProvider,
-    error::StorageError,
-};
+use std::sync::Arc;
+use torii_core::{Error, error::StorageError, repositories::RepositoryProvider};
 
 /// Repository provider implementation for SQLite
 pub struct SqliteRepositoryProvider {
@@ -100,7 +96,9 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         let manager = SqliteMigrationManager::new(self.pool.clone());
         manager.initialize().await.map_err(|e| {
             tracing::error!(error = %e, "Failed to initialize migrations");
-            Error::Storage(StorageError::Database("Failed to initialize migrations".to_string()))
+            Error::Storage(StorageError::Database(
+                "Failed to initialize migrations".to_string(),
+            ))
         })?;
 
         let migrations: Vec<Box<dyn Migration<_>>> = vec![
@@ -114,7 +112,9 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
-            Error::Storage(StorageError::Database("Failed to run migrations".to_string()))
+            Error::Storage(StorageError::Database(
+                "Failed to run migrations".to_string(),
+            ))
         })?;
 
         Ok(())

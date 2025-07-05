@@ -75,7 +75,6 @@ pub enum StorageError {
     NotFound,
 }
 
-
 #[derive(Debug, Error)]
 pub enum ValidationError {
     #[error("Invalid email format: {0}")]
@@ -119,5 +118,4 @@ impl Error {
                 | Error::Validation(ValidationError::MissingField(_))
         )
     }
-
 }

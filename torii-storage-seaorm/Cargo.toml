@@ -10,14 +10,17 @@ license.workspace = true
 torii-core = { path = "../torii-core", version = "0.3.1" }
 
 async-trait.workspace = true
+base64.workspace = true
 chrono.workspace = true
-sea-orm = { version = "1.1", features = [
+serde_json.workspace = true
+uuid.workspace = true
+sea-orm = { version = "1.1.13", features = [
     "runtime-tokio-rustls",
     "macros",
     "with-chrono",
     "with-uuid",
 ] }
-sea-orm-migration = { version = "1.1", features = ["runtime-tokio-rustls"] }
+sea-orm-migration = { version = "1.1.13", features = ["runtime-tokio-rustls"] }
 thiserror.workspace = true
 
 [dev-dependencies]
