@@ -8,9 +8,6 @@ pub enum Error {
     #[error("Storage error: {0}")]
     Storage(#[from] StorageError),
 
-    #[error("Plugin error: {0}")]
-    Plugin(#[from] PluginError),
-
     #[error("Validation error: {0}")]
     Validation(#[from] ValidationError),
 
@@ -37,6 +34,12 @@ pub enum AuthError {
 
     #[error("Unsupported authentication method: {0}")]
     UnsupportedMethod(String),
+
+    #[error("Account already linked")]
+    AccountAlreadyLinked,
+
+    #[error("Password hash error: {0}")]
+    PasswordHashError(String),
 }
 
 #[derive(Debug, Error)]
@@ -72,25 +75,11 @@ pub enum StorageError {
     NotFound,
 }
 
-#[derive(Debug, Error)]
-pub enum PluginError {
-    #[error("Plugin not found: {0}")]
-    NotFound(String),
-
-    #[error("Plugin initialization failed: {0}")]
-    InitializationFailed(String),
-
-    #[error("Plugin type mismatch: {0}")]
-    TypeMismatch(String),
-
-    #[error("Plugin operation failed: {0}")]
-    OperationFailed(String),
-}
 
 #[derive(Debug, Error)]
 pub enum ValidationError {
-    #[error("Invalid email format")]
-    InvalidEmail,
+    #[error("Invalid email format: {0}")]
+    InvalidEmail(String),
 
     #[error("Weak password")]
     WeakPassword,
@@ -124,19 +113,11 @@ impl Error {
     pub fn is_validation_error(&self) -> bool {
         matches!(
             self,
-            Error::Validation(ValidationError::InvalidEmail)
+            Error::Validation(ValidationError::InvalidEmail(_))
                 | Error::Validation(ValidationError::WeakPassword)
                 | Error::Validation(ValidationError::InvalidField(_))
                 | Error::Validation(ValidationError::MissingField(_))
         )
     }
 
-    pub fn is_plugin_error(&self) -> bool {
-        matches!(
-            self,
-            Error::Plugin(PluginError::NotFound(_))
-                | Error::Plugin(PluginError::TypeMismatch(_))
-                | Error::Plugin(PluginError::OperationFailed(_))
-        )
-    }
 }

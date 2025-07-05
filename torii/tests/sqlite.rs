@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
-use torii::{SqliteStorage, Torii};
+use torii::{SqliteRepositoryProvider, Torii};
+use torii_core::repositories::RepositoryProvider;
 
 #[tokio::test]
 async fn test_sqlite_password_auth() {
-    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    let torii = Torii::new(sqlite.clone()).with_password_plugin();
-    sqlite.migrate().await.unwrap(); // TODO(now): Move this to Torii::initialize()
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
+    let torii = Torii::new(Arc::new(repositories));
 
     let user = torii
         .register_user_with_password("test@example.com", "password")

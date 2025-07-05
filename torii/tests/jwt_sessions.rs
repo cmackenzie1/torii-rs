@@ -4,9 +4,10 @@ use chrono::Duration;
 use torii::{SessionConfig, Torii};
 use torii_core::session::{JwtConfig, SessionToken};
 use torii_core::user::UserId;
+use torii_core::repositories::RepositoryProvider;
 
 #[cfg(feature = "sqlite")]
-use torii::SqliteStorage;
+use torii::SqliteRepositoryProvider;
 
 // Test secret for HS256
 const TEST_HS256_SECRET: &[u8] = b"this_is_a_test_secret_key_for_hs256_jwt_tokens_not_for_prod";
@@ -14,8 +15,9 @@ const TEST_HS256_SECRET: &[u8] = b"this_is_a_test_secret_key_for_hs256_jwt_token
 #[cfg(all(feature = "password", feature = "sqlite"))]
 #[tokio::test]
 async fn test_jwt_session_manager() {
-    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    sqlite.migrate().await.unwrap();
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
 
     // Create a JWT config with HS256
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
@@ -52,8 +54,9 @@ async fn test_jwt_session_manager() {
 #[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn test_jwt_expiration() {
-    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    sqlite.migrate().await.unwrap();
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
 
     // Create a JWT config with HS256
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
@@ -85,8 +88,9 @@ async fn test_jwt_expiration() {
 #[cfg(all(feature = "password", feature = "sqlite"))]
 #[tokio::test]
 async fn test_password_auth_with_jwt() {
-    let sqlite = Arc::new(SqliteStorage::connect("sqlite::memory:").await.unwrap());
-    sqlite.migrate().await.unwrap();
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
 
     // Create a JWT config with HS256
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
@@ -94,9 +98,8 @@ async fn test_password_auth_with_jwt() {
         .with_metadata(true);
 
     // Create Torii with JWT sessions
-    let torii = Torii::new(sqlite.clone())
-        .with_jwt_sessions(jwt_config)
-        .with_password_plugin();
+    let torii = Torii::new(Arc::new(repositories))
+        .with_session_config(SessionConfig::default().with_jwt(jwt_config));
 
     // Register a user
     let user = torii

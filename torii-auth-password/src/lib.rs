@@ -111,7 +111,7 @@ where
         email_verified_at: Option<DateTime<Utc>>,
     ) -> Result<User, Error> {
         if !is_valid_email(email) {
-            return Err(Error::Validation(ValidationError::InvalidEmail));
+            return Err(Error::Validation(ValidationError::InvalidEmail(email.to_string())));
         }
         if !is_valid_password(password) {
             return Err(Error::Validation(ValidationError::WeakPassword));
