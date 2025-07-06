@@ -1,20 +1,22 @@
 use crate::{
     Error, User, UserId,
     repositories::{PasskeyCredential, PasskeyRepository, UserRepository},
+    services::UserService,
 };
 use std::sync::Arc;
 
 /// Service for passkey/WebAuthn authentication operations
 pub struct PasskeyService<U: UserRepository, P: PasskeyRepository> {
-    user_repository: Arc<U>,
+    user_service: Arc<UserService<U>>,
     passkey_repository: Arc<P>,
 }
 
 impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
     /// Create a new PasskeyService with the given repositories
     pub fn new(user_repository: Arc<U>, passkey_repository: Arc<P>) -> Self {
+        let user_service = Arc::new(UserService::new(user_repository));
         Self {
-            user_repository,
+            user_service,
             passkey_repository,
         }
     }
@@ -68,7 +70,7 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
                 .await?;
 
             // Get the user
-            let user = self.user_repository.find_by_id(&cred.user_id).await?;
+            let user = self.user_service.get_user(&cred.user_id).await?;
 
             Ok(user)
         } else {
