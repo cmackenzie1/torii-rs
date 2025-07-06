@@ -10,6 +10,7 @@
 //!
 pub mod error;
 pub mod events;
+pub mod id;
 pub mod repositories;
 pub mod services;
 pub mod session;

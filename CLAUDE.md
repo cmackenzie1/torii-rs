@@ -9,6 +9,7 @@
 - **Run with coverage:** `make coverage` or `cargo llvm-cov nextest --all-features`
 - **Full check:** `make check` (runs fmt, lint, test)
 - **Documentation:** `make docs` or `cargo doc --all-features --no-deps --open`
+- **Always use `make test` to run project tests**
 
 ## Code Style Guidelines
 - **Error Handling:** Use `thiserror` with structured error types and `#[from]` for conversions
@@ -19,8 +20,9 @@
 - **Documentation:** Add doc comments to public interfaces and modules
 - **Testing:** Write unit tests in modules with `#[cfg(test)]`; use `#[tokio::test]` for async tests
 - **Builder Pattern:** Use for complex struct creation with validation at build time
+- **Always use `make fmt` to format rust code**
+- **Always use `make lint` to lint rust code**
 
 ## Project Structure
 - Core functionality in `torii-core` crate
 - Storage backends in separate crates (`torii-storage-*`)
-- Authentication methods in separate crates (`torii-auth-*`)
