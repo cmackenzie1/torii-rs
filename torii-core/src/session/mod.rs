@@ -13,10 +13,13 @@
 //! | `created_at` | `DateTime`       | The timestamp when the session was created.            |
 //! | `updated_at` | `DateTime`       | The timestamp when the session was last updated.       |
 //! | `expires_at` | `DateTime`       | The timestamp when the session will expire.            |
-use std::path::Path;
-use std::sync::Arc;
 
-use async_trait::async_trait;
+pub mod jwt;
+pub mod opaque;
+pub mod provider;
+
+use std::path::Path;
+
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -24,10 +27,15 @@ use rand::{TryRngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Error, SessionStorage,
-    error::{SessionError, StorageError, ValidationError},
+    Error,
+    error::{SessionError, ValidationError},
     user::UserId,
 };
+
+// Re-export provider types for convenience
+pub use jwt::JwtSessionProvider;
+pub use opaque::OpaqueSessionProvider;
+pub use provider::SessionProvider;
 
 /// Generate a random string of the specified length
 // TODO: Make this a try_generate_random_string?
@@ -465,199 +473,6 @@ impl SessionBuilder {
     }
 }
 
-#[async_trait]
-pub trait SessionManager {
-    async fn create_session(
-        &self,
-        user_id: &UserId,
-        user_agent: Option<String>,
-        ip_address: Option<String>,
-        duration: Duration,
-    ) -> Result<Session, Error>;
-    async fn get_session(&self, id: &SessionToken) -> Result<Session, Error>;
-    async fn delete_session(&self, id: &SessionToken) -> Result<(), Error>;
-    async fn cleanup_expired_sessions(&self) -> Result<(), Error>;
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
-}
-
-/// Default session manager that uses a storage backend
-pub struct DefaultSessionManager<S: SessionStorage> {
-    storage: Arc<S>,
-}
-
-impl<S: SessionStorage> DefaultSessionManager<S> {
-    pub fn new(storage: Arc<S>) -> Self {
-        Self { storage }
-    }
-}
-
-#[async_trait]
-impl<S: SessionStorage> SessionManager for DefaultSessionManager<S> {
-    async fn create_session(
-        &self,
-        user_id: &UserId,
-        user_agent: Option<String>,
-        ip_address: Option<String>,
-        duration: Duration,
-    ) -> Result<Session, Error> {
-        let session = Session::builder()
-            .user_id(user_id.clone())
-            .user_agent(user_agent)
-            .ip_address(ip_address)
-            .expires_at(Utc::now() + duration)
-            .build()?;
-
-        let session = self
-            .storage
-            .create_session(&session)
-            .await
-            .map_err(|e| StorageError::Database(e.to_string()))?;
-
-        Ok(session)
-    }
-
-    async fn get_session(&self, id: &SessionToken) -> Result<Session, Error> {
-        let session = self
-            .storage
-            .get_session(id)
-            .await
-            .map_err(|e| StorageError::Database(e.to_string()))?;
-
-        if let Some(session) = session {
-            if session.is_expired() {
-                self.delete_session(id).await?;
-                return Err(Error::Session(SessionError::Expired));
-            }
-            Ok(session)
-        } else {
-            Err(Error::Session(SessionError::NotFound))
-        }
-    }
-
-    async fn delete_session(&self, id: &SessionToken) -> Result<(), Error> {
-        self.storage
-            .delete_session(id)
-            .await
-            .map_err(|e| StorageError::Database(e.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
-        self.storage
-            .cleanup_expired_sessions()
-            .await
-            .map_err(|e| StorageError::Database(e.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
-        self.storage
-            .delete_sessions_for_user(user_id)
-            .await
-            .map_err(|e| StorageError::Database(e.to_string()))?;
-
-        Ok(())
-    }
-}
-
-/// JWT session manager - generates and validates JWTs with RS256 algorithm without requiring storage
-/// JWTs are self-contained and don't require storage lookup to validate.
-pub struct JwtSessionManager {
-    config: JwtConfig,
-}
-
-impl JwtSessionManager {
-    pub fn new(config: JwtConfig) -> Self {
-        Self { config }
-    }
-}
-
-#[async_trait]
-impl SessionManager for JwtSessionManager {
-    async fn create_session(
-        &self,
-        user_id: &UserId,
-        user_agent: Option<String>,
-        ip_address: Option<String>,
-        duration: Duration,
-    ) -> Result<Session, Error> {
-        let now = Utc::now();
-        let expires_at = now + duration;
-
-        // Create the session first
-        let session = Session::builder()
-            .user_id(user_id.clone())
-            .user_agent(user_agent)
-            .ip_address(ip_address)
-            .created_at(now)
-            .updated_at(now)
-            .expires_at(expires_at)
-            .build()?;
-
-        // Generate JWT claims from the session
-        let claims =
-            session.to_jwt_claims(self.config.issuer.clone(), self.config.include_metadata);
-
-        // Create the JWT token with the configured algorithm
-        let jwt_token = SessionToken::new_jwt(&claims, &self.config)?;
-
-        // Return a new session with the JWT token
-        Ok(Session {
-            token: jwt_token,
-            ..session
-        })
-    }
-
-    async fn get_session(&self, id: &SessionToken) -> Result<Session, Error> {
-        // Verify the JWT using the configured algorithm and extract claims
-        let claims = match id.verify_jwt(&self.config) {
-            Ok(claims) => claims,
-            Err(Error::Session(SessionError::InvalidToken(msg))) => {
-                // Check if it's an expired token error from JWT validation
-                if msg.contains("ExpiredSignature") {
-                    return Err(Error::Session(SessionError::Expired));
-                }
-                return Err(Error::Session(SessionError::InvalidToken(msg)));
-            }
-            Err(e) => return Err(e),
-        };
-
-        // Check if token is expired
-        let now = Utc::now();
-        let exp = DateTime::from_timestamp(claims.exp, 0).unwrap_or(now);
-        if now > exp {
-            return Err(Error::Session(SessionError::Expired));
-        }
-
-        // Create session from JWT claims
-        let session = Session::from_jwt_claims(id.clone(), &claims);
-
-        Ok(session)
-    }
-
-    async fn delete_session(&self, _id: &SessionToken) -> Result<(), Error> {
-        // JWTs are stateless, so we don't need to delete anything
-        // Client should discard the token
-        Ok(())
-    }
-
-    async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
-        // JWTs are self-expiring and stateless, nothing to clean up
-        Ok(())
-    }
-
-    async fn delete_sessions_for_user(&self, _user_id: &UserId) -> Result<(), Error> {
-        // Without a revocation list, we can't invalidate existing JWTs
-        // This would require implementing a token blacklist
-        tracing::warn!(
-            "JwtSessionManager doesn't support revoking all sessions for a user; tokens will remain valid until they expire"
-        );
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
@@ -821,65 +636,5 @@ IwIDAQAB
         let token2 = SessionToken::new_jwt_hs256(&claims, TEST_HS256_SECRET).unwrap();
         let verified_claims2 = token2.verify_jwt_hs256(TEST_HS256_SECRET).unwrap();
         assert_eq!(verified_claims2.sub, user_id.to_string());
-    }
-
-    #[tokio::test]
-    async fn test_jwt_session_manager() {
-        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
-            .with_issuer("test-issuer-hs256")
-            .with_metadata(true);
-
-        let jwt_manager = JwtSessionManager::new(config.clone());
-
-        let user_id = UserId::new_random();
-        let session = jwt_manager
-            .create_session(
-                &user_id,
-                Some("test-agent-hs256".to_string()),
-                Some("127.0.0.2".to_string()),
-                Duration::days(1),
-            )
-            .await
-            .unwrap();
-
-        // Verify the session can be retrieved
-        let retrieved_session = jwt_manager.get_session(&session.token).await.unwrap();
-
-        assert_eq!(retrieved_session.user_id, user_id);
-        assert_eq!(
-            retrieved_session.user_agent,
-            Some("test-agent-hs256".to_string())
-        );
-        assert_eq!(retrieved_session.ip_address, Some("127.0.0.2".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_expired_jwt_session() {
-        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
-
-        let jwt_manager = JwtSessionManager::new(config.clone());
-
-        let user_id = UserId::new_random();
-        let now = Utc::now();
-
-        // Create a session that's already expired
-        let session = Session::builder()
-            .user_id(user_id.clone())
-            .expires_at(now - Duration::minutes(5))
-            .build()
-            .unwrap();
-
-        let claims = session.to_jwt_claims(None, false);
-        let token = SessionToken::new_jwt(&claims, &config).unwrap();
-
-        // Try to validate the expired token
-        let result = jwt_manager.get_session(&token).await;
-        assert!(result.is_err());
-
-        if let Err(Error::Session(SessionError::Expired)) = result {
-            // This is the expected error
-        } else {
-            panic!("Expected SessionError::Expired, got {result:?}");
-        }
     }
 }

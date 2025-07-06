@@ -45,13 +45,19 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use torii_core::{
-    RepositoryProvider,
-    repositories::{
-        MagicLinkRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
-        PasswordRepositoryAdapter, SessionRepositoryAdapter, UserRepositoryAdapter,
-    },
+    JwtSessionProvider, OpaqueSessionProvider, RepositoryProvider, SessionProvider,
+    repositories::{PasswordRepositoryAdapter, SessionRepositoryAdapter, UserRepositoryAdapter},
     services::{SessionService, UserService},
 };
+
+#[cfg(feature = "oauth")]
+use torii_core::repositories::OAuthRepositoryAdapter;
+
+#[cfg(feature = "passkey")]
+use torii_core::repositories::PasskeyRepositoryAdapter;
+
+#[cfg(feature = "magic-link")]
+use torii_core::repositories::MagicLinkRepositoryAdapter;
 
 #[cfg(feature = "password")]
 use torii_core::services::PasswordService;
@@ -69,10 +75,11 @@ use torii_core::services::MagicLinkService;
 ///
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
-    session::{JwtConfig, Session, SessionToken},
-    storage::MagicToken,
-    user::{User, UserId},
+    JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, Session, SessionToken, User, UserId,
 };
+
+/// Re-export storage types
+pub use torii_core::storage::MagicToken;
 
 // Note: Authentication is now handled by services rather than plugins
 // The old plugin system has been replaced with a service-based architecture
@@ -111,7 +118,7 @@ pub enum ToriiError {
 /// The configuration for a session.
 ///
 /// This struct is used to configure the session for a user.
-/// It includes settings for session expiration and JWT options.
+/// It includes settings for session expiration and the session provider type.
 ///
 /// # Example
 ///
@@ -123,15 +130,23 @@ pub enum ToriiError {
 pub struct SessionConfig {
     /// The duration until the session expires
     pub expires_in: Duration,
-    /// JWT configuration (if using JWT sessions)
-    pub jwt_config: Option<JwtConfig>,
+    /// Session provider type
+    pub provider_type: SessionProviderType,
+}
+
+/// Type of session provider to use
+pub enum SessionProviderType {
+    /// Use opaque tokens stored in database
+    Opaque,
+    /// Use self-contained JWT tokens
+    Jwt(JwtConfig),
 }
 
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
             expires_in: Duration::days(30),
-            jwt_config: None,
+            provider_type: SessionProviderType::Opaque,
         }
     }
 }
@@ -147,7 +162,7 @@ impl SessionConfig {
     ///
     /// The updated session configuration with JWT support enabled
     pub fn with_jwt(mut self, jwt_config: JwtConfig) -> Self {
-        self.jwt_config = Some(jwt_config);
+        self.provider_type = SessionProviderType::Jwt(jwt_config);
         self
     }
 
@@ -197,7 +212,8 @@ impl SessionConfig {
 pub struct Torii<R: RepositoryProvider> {
     repositories: Arc<R>,
     user_service: Arc<UserService<UserRepositoryAdapter<R>>>,
-    session_service: Arc<SessionService<SessionRepositoryAdapter<R>>>,
+    session_service: Arc<SessionService<Box<dyn SessionProvider>>>,
+    session_provider: Arc<Box<dyn SessionProvider>>,
 
     #[cfg(feature = "password")]
     password_service: Arc<PasswordService<UserRepositoryAdapter<R>, PasswordRepositoryAdapter<R>>>,
@@ -237,12 +253,17 @@ impl<R: RepositoryProvider> Torii<R> {
         let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
 
         let user_service = Arc::new(UserService::new(user_repo.clone()));
-        let session_service = Arc::new(SessionService::new(session_repo));
+
+        // Default to opaque session provider
+        let session_provider: Arc<Box<dyn SessionProvider>> =
+            Arc::new(Box::new(OpaqueSessionProvider::new(session_repo)));
+        let session_service = Arc::new(SessionService::new(session_provider.clone()));
 
         Self {
             repositories: repositories.clone(),
             user_service,
             session_service,
+            session_provider,
 
             #[cfg(feature = "password")]
             password_service: Arc::new(PasswordService::new(
@@ -287,6 +308,20 @@ impl<R: RepositoryProvider> Torii<R> {
     ///
     /// * `config` - The session configuration to use
     pub fn with_session_config(mut self, config: SessionConfig) -> Self {
+        // Create the appropriate session provider based on config
+        let session_provider: Arc<Box<dyn SessionProvider>> = match &config.provider_type {
+            SessionProviderType::Opaque => {
+                let session_repo =
+                    Arc::new(SessionRepositoryAdapter::new(self.repositories.clone()));
+                Arc::new(Box::new(OpaqueSessionProvider::new(session_repo)))
+            }
+            SessionProviderType::Jwt(jwt_config) => {
+                Arc::new(Box::new(JwtSessionProvider::new(jwt_config.clone())))
+            }
+        };
+
+        self.session_provider = session_provider.clone();
+        self.session_service = Arc::new(SessionService::new(session_provider));
         self.session_config = config;
         self
     }
@@ -298,9 +333,9 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Arguments
     ///
     /// * `jwt_config` - The JWT configuration to use
-    pub fn with_jwt_sessions(mut self, jwt_config: JwtConfig) -> Self {
-        self.session_config = SessionConfig::default().with_jwt(jwt_config);
-        self
+    pub fn with_jwt_sessions(self, jwt_config: JwtConfig) -> Self {
+        let config = SessionConfig::default().with_jwt(jwt_config);
+        self.with_session_config(config)
     }
 
     /// Run migrations for all repositories
@@ -352,28 +387,15 @@ impl<R: RepositoryProvider> Torii<R> {
         user_agent: Option<String>,
         ip_address: Option<String>,
     ) -> Result<Session, ToriiError> {
-        let mut session = self
-            .session_service
+        self.session_service
             .create_session(
                 user_id,
-                user_agent.clone(),
-                ip_address.clone(),
+                user_agent,
+                ip_address,
                 self.session_config.expires_in,
             )
             .await
-            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
-
-        // If JWT config is provided, create a JWT token instead of opaque token
-        if let Some(jwt_config) = &self.session_config.jwt_config {
-            let claims =
-                session.to_jwt_claims(jwt_config.issuer.clone(), jwt_config.include_metadata);
-            let jwt_token = SessionToken::new_jwt(&claims, jwt_config)
-                .map_err(|e| ToriiError::AuthError(e.to_string()))?;
-
-            session.token = jwt_token;
-        }
-
-        Ok(session)
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
 
     /// Get a session by its token
@@ -386,40 +408,11 @@ impl<R: RepositoryProvider> Torii<R> {
     ///
     /// Returns the session if found and valid, otherwise returns an error
     pub async fn get_session(&self, session_id: &SessionToken) -> Result<Session, ToriiError> {
-        match session_id {
-            SessionToken::Jwt(_) => {
-                // For JWT tokens, validate the token and create session from claims
-                if let Some(jwt_config) = &self.session_config.jwt_config {
-                    let claims = session_id
-                        .verify_jwt(jwt_config)
-                        .map_err(|e| ToriiError::AuthError(e.to_string()))?;
-
-                    let session = Session::from_jwt_claims(session_id.clone(), &claims);
-
-                    // Check if the session is expired
-                    if session.expires_at < chrono::Utc::now() {
-                        return Err(ToriiError::AuthError("Session expired".to_string()));
-                    }
-
-                    Ok(session)
-                } else {
-                    Err(ToriiError::AuthError(
-                        "JWT configuration not found".to_string(),
-                    ))
-                }
-            }
-            SessionToken::Opaque(_) => {
-                // For opaque tokens, look up in storage
-                let session = self
-                    .session_service
-                    .get_session(session_id)
-                    .await
-                    .map_err(|e| ToriiError::StorageError(e.to_string()))?
-                    .ok_or(ToriiError::StorageError("Session not found".to_string()))?;
-
-                Ok(session)
-            }
-        }
+        self.session_service
+            .get_session(session_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?
+            .ok_or(ToriiError::StorageError("Session not found".to_string()))
     }
 
     /// Delete a session by its ID

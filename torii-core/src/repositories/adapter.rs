@@ -1,5 +1,5 @@
 use crate::{
-    Error, OAuthAccount, Session, User, UserId,
+    Error, OAuthAccount, Session, SessionStorage, User, UserId,
     repositories::{
         MagicLinkRepository, OAuthRepository, PasskeyCredential, PasskeyRepository,
         PasswordRepository, RepositoryProvider, SessionRepository, UserRepository,
@@ -83,6 +83,33 @@ impl<R: RepositoryProvider> SessionRepository for SessionRepositoryAdapter<R> {
 
     async fn cleanup_expired(&self) -> Result<(), Error> {
         self.provider.session().cleanup_expired().await
+    }
+}
+
+/// Implementation of SessionStorage for SessionRepositoryAdapter
+/// This allows the adapter to be used with the OpaqueSessionProvider
+#[async_trait]
+impl<R: RepositoryProvider> SessionStorage for SessionRepositoryAdapter<R> {
+    type Error = Error;
+
+    async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
+        self.create(session.clone()).await
+    }
+
+    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error> {
+        self.find_by_token(token).await
+    }
+
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error> {
+        self.delete(token).await
+    }
+
+    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
+        self.cleanup_expired().await
+    }
+
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+        self.delete_by_user_id(user_id).await
     }
 }
 

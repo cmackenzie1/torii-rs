@@ -16,7 +16,7 @@ Add Torii to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-torii = { version = "0.2", features = ["password", "sqlite"] }
+torii = { version = "0.3", features = ["password", "sqlite"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -39,136 +39,143 @@ Here's a minimal example to set up Torii with a SQLite database and password aut
 ```rust,no_run
 use std::sync::Arc;
 use torii::Torii;
-use torii::SqliteStorage;
+use torii::SqliteRepositoryProvider;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize the storage backend
-    let storage = Arc::new(SqliteStorage::connect("sqlite://auth.db?mode=rwc").await?);
+    // Initialize the database connection
+    let pool = sqlx::SqlitePool::connect("sqlite://auth.db?mode=rwc").await?;
     
-    // Migrate the storage schema
-    storage.migrate().await?;
+    // Create repository provider
+    let repositories = Arc::new(SqliteRepositoryProvider::new(pool));
+    
+    // Migrate the database schema
+    repositories.migrate().await?;
 
-    // Create a Torii instance with password authentication
-    let torii = Torii::new(storage)
-        .with_password_plugin();
+    // Create a Torii instance
+    let torii = Torii::new(repositories);
 
-    // Now torii is ready to use for password-based authentication
+    // Now torii is ready to use for authentication
     Ok(())
 }
 ```
 
-## Different Initialization Options
+## Session Configuration
 
-Torii provides several ways to initialize the authentication system:
+Torii supports two types of session management:
+
+### Opaque Sessions (Default)
+
+Database-backed sessions with immediate revocation support:
 
 ```rust,no_run
 use std::sync::Arc;
-use torii::Torii;
-use torii::SqliteStorage;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let storage = Arc::new(SqliteStorage::connect("sqlite://auth.db?mode=rwc").await?);
-    storage.migrate().await?;
-
-    // 1. Simplest approach with a single storage backend
-    let torii = Torii::new(storage.clone())
-        .with_password_plugin();
-
-    // 2. If you want separate storage for sessions (e.g., Redis):
-    // let user_storage = storage.clone();
-    // let session_storage = Arc::new(RedisStorage::connect("redis://localhost").await?);
-    // let torii = Torii::with_storages(user_storage, session_storage)
-    //     .with_password_plugin();
-
-    // 3. If you need custom managers for additional behavior:
-    // use torii_core::{DefaultUserManager, DefaultSessionManager, UserManager, SessionManager};
-    // let user_manager: Arc<dyn UserManager + Send + Sync> = Arc::new(CustomUserManager::new(storage.clone()));
-    // let session_manager: Arc<dyn SessionManager + Send + Sync> = Arc::new(DefaultSessionManager::new(storage.clone()));
-    // let torii = Torii::with_managers(storage.clone(), storage.clone(), user_manager, session_manager);
-
-    // 4. If your managers fully encapsulate their storage and you don't need plugins:
-    // let user_manager: Arc<dyn UserManager + Send + Sync> = Arc::new(MyUserManager::new(my_db_conn.clone()));
-    // let session_manager: Arc<dyn SessionManager + Send + Sync> = Arc::new(RedisSessionManager::new("redis://localhost"));
-    // let torii = Torii::<()>::with_custom_managers(user_manager, session_manager);
-
-    Ok(())
-}
-```
-
-## Adding Multiple Authentication Methods
-
-Torii's plugin system makes it easy to add multiple authentication methods:
-
-```rust,no_run
-use torii::{Torii, Provider, SeaORMStorage};
-use std::sync::Arc;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let storage = Arc::new(SeaORMStorage::connect("sqlite://auth.db?mode=rwc").await?);
-    storage.migrate().await?;
-
-    let torii = Torii::new(storage)
-        // Password authentication
-        .with_password_plugin()
-
-        // OAuth providers
-        .with_oauth_provider(Provider::google(
-            "YOUR_GOOGLE_CLIENT_ID",
-            "YOUR_GOOGLE_CLIENT_SECRET",
-            "https://your-app.com/auth/callback/google"
-        ))
-        .with_oauth_provider(Provider::github(
-            "YOUR_GITHUB_CLIENT_ID",
-            "YOUR_GITHUB_CLIENT_SECRET",
-            "https://your-app.com/auth/callback/github"
-        ))
-
-        // Passkey/WebAuthn
-        .with_passkey_plugin(
-            "your-app.com",  // Relying Party ID
-            "https://your-app.com"  // Relying Party Origin
-        )
-
-        // Magic Link authentication
-        .with_magic_link_plugin();
-
-    // Now torii is ready to use with multiple authentication methods
-    Ok(())
-}
-```
-
-## Optional JWT Sessions
-
-Torii supports JWT-based sessions for stateless authentication:
-
-```rust,no_run
-use torii::{Torii, SqliteStorage, JwtConfig};
+use torii::{Torii, SessionConfig};
 use chrono::Duration;
+
+let torii = Torii::new(repositories)
+    .with_session_config(
+        SessionConfig::default()
+            .expires_in(Duration::days(30))
+    );
+```
+
+### JWT Sessions
+
+Stateless sessions with better performance for distributed systems:
+
+```rust,no_run
+use torii::{Torii, JwtConfig, SessionConfig};
+use chrono::Duration;
+
+// Create JWT configuration
+let jwt_config = JwtConfig::new_hs256(b"your-secret-key-at-least-32-chars-long!".to_vec())
+    .with_issuer("your-app-name")
+    .with_metadata(true);
+
+let torii = Torii::new(repositories)
+    .with_jwt_sessions(jwt_config);
+
+// Or with custom expiration
+let torii = Torii::new(repositories)
+    .with_session_config(
+        SessionConfig::default()
+            .with_jwt(jwt_config)
+            .expires_in(Duration::hours(2))
+    );
+```
+
+## Complete Example
+
+Here's a complete example with JWT sessions and password authentication:
+
+```rust,no_run
 use std::sync::Arc;
+use torii::{Torii, JwtConfig, SessionConfig};
+use chrono::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let storage = Arc::new(SqliteStorage::connect("sqlite://auth.db?mode=rwc").await?);
-    storage.migrate().await?;
+    // Set up database
+    let pool = sqlx::SqlitePool::connect("sqlite://auth.db?mode=rwc").await?;
+    let repositories = Arc::new(torii::SqliteRepositoryProvider::new(pool));
+    repositories.migrate().await?;
 
-    // Configure with JWT sessions using HS256 signing
-    let jwt_config = JwtConfig::hs256("your-secret-key");
+    // Configure JWT sessions
+    let jwt_config = JwtConfig::new_hs256(
+        std::env::var("JWT_SECRET")
+            .expect("JWT_SECRET environment variable")
+            .as_bytes()
+            .to_vec()
+    )
+    .with_issuer("my-app")
+    .with_metadata(true);
+
+    // Create Torii instance
+    let torii = Torii::new(repositories)
+        .with_session_config(
+            SessionConfig::default()
+                .with_jwt(jwt_config)
+                .expires_in(Duration::hours(24))
+        );
+
+    // Register a user
+    let user = torii.register_user_with_password("user@example.com", "secure_password").await?;
+    println!("User registered: {}", user.id);
+
+    // Verify email (required for login)
+    torii.set_user_email_verified(&user.id).await?;
+
+    // Login and create session
+    let (user, session) = torii.login_user_with_password(
+        "user@example.com",
+        "secure_password",
+        Some("Mozilla/5.0 (compatible browser)".to_string()),
+        Some("192.168.1.100".to_string())
+    ).await?;
+
+    println!("Login successful!");
+    println!("User: {}", user.id);
+    println!("Session token: {}", session.token);
     
-    let torii = Torii::new(storage)
-        .with_password_plugin()
-        .with_jwt_sessions(jwt_config);
-    
-    // Alternatively, you can configure session expiration
-    // let torii = Torii::new(storage)
-    //     .with_password_plugin()
-    //     .with_session_config(SessionConfig::default().expires_in(Duration::days(7)));
+    // Validate session
+    let validated_session = torii.get_session(&session.token).await?;
+    println!("Session valid for user: {}", validated_session.user_id);
 
     Ok(())
 }
 ```
+
+## Authentication Methods
+
+The example above shows password authentication. Torii supports multiple authentication methods:
+
+- **Password Authentication**: Email/password with secure hashing
+- **OAuth/Social Login**: Google, GitHub, and other OAuth providers  
+- **Passkey/WebAuthn**: Modern biometric authentication
+- **Magic Link**: Passwordless email-based authentication
+
+See the feature flags in your `Cargo.toml` to enable additional authentication methods.
 
 ## User Registration
 
@@ -176,9 +183,10 @@ To register a new user with password authentication:
 
 ```rust,no_run
 use torii::{Torii, ToriiError};
+use torii_core::RepositoryProvider;
 
 async fn register_user(
-    torii: &Torii<impl torii_core::storage::UserStorage + torii_core::storage::PasswordStorage>,
+    torii: &Torii<impl RepositoryProvider>,
     email: &str,
     password: &str
 ) -> Result<(), ToriiError> {
@@ -196,9 +204,10 @@ To authenticate a user with password:
 
 ```rust,no_run
 use torii::{Torii, ToriiError};
+use torii_core::RepositoryProvider;
 
 async fn login_user(
-    torii: &Torii<impl torii_core::storage::UserStorage + torii_core::storage::PasswordStorage>,
+    torii: &Torii<impl RepositoryProvider>,
     email: &str,
     password: &str
 ) -> Result<(), ToriiError> {
@@ -224,15 +233,16 @@ To verify a user's session token:
 
 ```rust,no_run
 use torii::{Torii, SessionToken, ToriiError};
+use torii_core::RepositoryProvider;
 
 async fn verify_session(
-    torii: &Torii<impl torii_core::storage::UserStorage>,
+    torii: &Torii<impl RepositoryProvider>,
     session_token: &str
 ) -> Result<(), ToriiError> {
     // Parse the session token
-    let token = SessionToken::new(session_token.to_string());
+    let token = SessionToken::new(session_token);
     
-    // Verify and get session data
+    // Verify and get session data (works for both JWT and opaque tokens)
     let session = torii.get_session(&token).await?;
 
     // Get the user associated with this session
@@ -397,9 +407,31 @@ You can find a complete example of a Todo application using Torii with Axum in t
 
 Now that you have a basic understanding of how to use Torii, you can:
 
+- **Learn about [Session Management](./sessions.md)** - Choose between opaque and JWT sessions
+- **Configure [JWT Sessions](./sessions/jwt.md)** for stateless authentication
+- **Use [Opaque Sessions](./sessions/opaque.md)** for traditional session management
 - Integrate Torii with your web framework (Axum, Actix, Rocket, etc.)
-- Learn about the core concepts of Users and Sessions
+- Learn about the [Core Concepts](./core-concepts/index.md) of Users and Sessions
 - Explore each authentication method in more depth
 - Configure a storage backend for production use
 
 Remember that Torii is designed to give you flexibility while maintaining control over your user data.
+
+## Quick Reference
+
+### JWT Sessions (Stateless)
+```rust
+let jwt_config = JwtConfig::new_hs256(secret_key.to_vec());
+let torii = Torii::new(repositories).with_jwt_sessions(jwt_config);
+```
+
+### Opaque Sessions (Stateful - Default)
+```rust
+let torii = Torii::new(repositories); // Default uses opaque sessions
+```
+
+### Environment Variables for Production
+```bash
+export JWT_SECRET="your-secret-key-at-least-32-characters-long"
+export DATABASE_URL="sqlite://production.db"
+```

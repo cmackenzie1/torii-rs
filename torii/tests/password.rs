@@ -131,10 +131,8 @@ async fn test_session_expiration() {
     repositories.migrate().await.unwrap();
 
     // Create Torii instance with password plugin and short session expiration
-    let torii = Torii::new(Arc::new(repositories)).with_session_config(SessionConfig {
-        expires_in: Duration::seconds(1), // Short expiry for testing
-        jwt_config: None,
-    });
+    let torii = Torii::new(Arc::new(repositories))
+        .with_session_config(SessionConfig::default().expires_in(Duration::seconds(1)));
 
     // Register a user and verify email
     let email = "test@example.com";
