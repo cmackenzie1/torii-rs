@@ -1,6 +1,7 @@
 use crate::{
     Error, User,
     repositories::{MagicLinkRepository, UserRepository},
+    services::UserService,
     storage::MagicToken,
 };
 use chrono::Duration;
@@ -8,23 +9,24 @@ use std::sync::Arc;
 
 /// Service for magic link authentication operations
 pub struct MagicLinkService<U: UserRepository, M: MagicLinkRepository> {
-    user_repository: Arc<U>,
+    user_service: Arc<UserService<U>>,
     magic_link_repository: Arc<M>,
 }
 
 impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
     /// Create a new MagicLinkService with the given repositories
     pub fn new(user_repository: Arc<U>, magic_link_repository: Arc<M>) -> Self {
+        let user_service = Arc::new(UserService::new(user_repository));
         Self {
-            user_repository,
+            user_service,
             magic_link_repository,
         }
     }
 
     /// Generate a magic token for a user
     pub async fn generate_token(&self, email: &str) -> Result<MagicToken, Error> {
-        // Ensure user exists (or create them)
-        let _user = self.user_repository.find_or_create_by_email(email).await?;
+        // Ensure user exists (or create them) - email validation happens in UserService
+        let _user = self.user_service.get_or_create_user(email).await?;
 
         // Generate the token with default expiration (15 minutes)
         let expires_in = Duration::minutes(15);
@@ -39,8 +41,8 @@ impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
         email: &str,
         expires_in: Duration,
     ) -> Result<MagicToken, Error> {
-        // Ensure user exists (or create them)
-        let _user = self.user_repository.find_or_create_by_email(email).await?;
+        // Ensure user exists (or create them) - email validation happens in UserService
+        let _user = self.user_service.get_or_create_user(email).await?;
 
         self.magic_link_repository
             .create_token(email, expires_in)
@@ -54,7 +56,7 @@ impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
 
         if let Some(email) = email {
             // Get the user by email
-            let user = self.user_repository.find_by_email(&email).await?;
+            let user = self.user_service.get_user_by_email(&email).await?;
             Ok(user)
         } else {
             Ok(None)

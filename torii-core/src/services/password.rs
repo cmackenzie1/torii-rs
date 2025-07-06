@@ -1,21 +1,23 @@
 use crate::{
     Error, User, UserId,
-    error::{AuthError, ValidationError},
+    error::AuthError,
     repositories::{PasswordRepository, UserRepository},
+    services::UserService,
 };
 use std::sync::Arc;
 
 /// Service for password authentication operations
 pub struct PasswordService<U: UserRepository, P: PasswordRepository> {
-    user_repository: Arc<U>,
+    user_service: Arc<UserService<U>>,
     password_repository: Arc<P>,
 }
 
 impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     /// Create a new PasswordService with the given repositories
     pub fn new(user_repository: Arc<U>, password_repository: Arc<P>) -> Self {
+        let user_service = Arc::new(UserService::new(user_repository));
         Self {
-            user_repository,
+            user_service,
             password_repository,
         }
     }
@@ -25,25 +27,18 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
         &self,
         email: &str,
         password: &str,
-        _name: Option<String>,
+        name: Option<String>,
     ) -> Result<User, Error> {
-        // Validate email format
-        if !Self::is_valid_email(email) {
-            return Err(Error::Validation(ValidationError::InvalidEmail(
-                email.to_string(),
-            )));
-        }
-
         // Check if user already exists
-        if (self.user_repository.find_by_email(email).await?).is_some() {
+        if (self.user_service.get_user_by_email(email).await?).is_some() {
             return Err(Error::Auth(AuthError::UserAlreadyExists));
         }
 
         // Hash the password
         let password_hash = Self::hash_password(password)?;
 
-        // Create the user
-        let user = self.user_repository.find_or_create_by_email(email).await?;
+        // Create the user (email validation happens in UserService)
+        let user = self.user_service.create_user(email, name).await?;
 
         // Store the password hash
         self.password_repository
@@ -57,8 +52,8 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     pub async fn authenticate(&self, email: &str, password: &str) -> Result<User, Error> {
         // Find user by email
         let user = self
-            .user_repository
-            .find_by_email(email)
+            .user_service
+            .get_user_by_email(email)
             .await?
             .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
 
@@ -118,13 +113,6 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     /// Remove a user's password
     pub async fn remove_password(&self, user_id: &UserId) -> Result<(), Error> {
         self.password_repository.remove_password_hash(user_id).await
-    }
-
-    /// Validate email format
-    fn is_valid_email(email: &str) -> bool {
-        use regex::Regex;
-        let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
-        email_regex.is_match(email)
     }
 
     /// Hash a password using argon2

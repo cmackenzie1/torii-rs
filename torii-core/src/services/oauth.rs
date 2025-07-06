@@ -2,21 +2,23 @@ use crate::{
     Error, OAuthAccount, User, UserId,
     error::AuthError,
     repositories::{OAuthRepository, UserRepository},
+    services::UserService,
 };
 use chrono::Duration;
 use std::sync::Arc;
 
 /// Service for OAuth authentication operations
 pub struct OAuthService<U: UserRepository, O: OAuthRepository> {
-    user_repository: Arc<U>,
+    user_service: Arc<UserService<U>>,
     oauth_repository: Arc<O>,
 }
 
 impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
     /// Create a new OAuthService with the given repositories
     pub fn new(user_repository: Arc<U>, oauth_repository: Arc<O>) -> Self {
+        let user_service = Arc::new(UserService::new(user_repository));
         Self {
-            user_repository,
+            user_service,
             oauth_repository,
         }
     }
@@ -27,7 +29,7 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
         provider: &str,
         subject: &str,
         email: &str,
-        _name: Option<String>,
+        name: Option<String>,
     ) -> Result<User, Error> {
         // First try to find existing user by OAuth provider
         if let Some(user) = self
@@ -39,15 +41,15 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
         }
 
         // If not found, try to find by email and link the account
-        let user = if let Some(existing_user) = self.user_repository.find_by_email(email).await? {
+        let user = if let Some(existing_user) = self.user_service.get_user_by_email(email).await? {
             // Link existing user to OAuth account
             self.oauth_repository
                 .link_account(&existing_user.id, provider, subject)
                 .await?;
             existing_user
         } else {
-            // Create new user
-            let new_user = self.user_repository.find_or_create_by_email(email).await?;
+            // Create new user (email validation happens in UserService)
+            let new_user = self.user_service.create_user(email, name).await?;
 
             // Create OAuth account
             self.oauth_repository
