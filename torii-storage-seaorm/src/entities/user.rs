@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{ActiveValue::Set, entity::prelude::*};
+use torii_core::UserId;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "users")]
@@ -20,7 +21,7 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {
     fn new() -> Self {
         Self {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(UserId::new_random().into_inner()),
             ..ActiveModelTrait::default()
         }
     }
