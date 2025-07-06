@@ -12,12 +12,15 @@
 //! | `email_verified_at` | `Option<DateTime>` | The timestamp when the user's email was verified. |
 //! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
 //! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
+use crate::{
+    Error,
+    error::ValidationError,
+    id::{generate_prefixed_id, validate_prefixed_id},
+    storage::NewUser,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-use crate::{Error, error::ValidationError, storage::NewUser};
 
 /// A unique, stable identifier for a specific user
 /// This value should be treated as opaque, and should not be used as a UUID even if it may look like one
@@ -30,7 +33,7 @@ impl UserId {
     }
 
     pub fn new_random() -> Self {
-        UserId(Uuid::new_v4().to_string())
+        UserId(generate_prefixed_id("usr"))
     }
 
     pub fn into_inner(self) -> String {
@@ -39,6 +42,11 @@ impl UserId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Validate that this ID has the correct format for a user ID
+    pub fn is_valid(&self) -> bool {
+        validate_prefixed_id(&self.0, "usr")
     }
 }
 
@@ -344,5 +352,24 @@ mod tests {
 
         let user_id_random = UserId::new_random();
         assert_ne!(user_id_random, user_id);
+    }
+
+    #[test]
+    fn test_user_id_prefixed() {
+        let user_id = UserId::new_random();
+        assert!(user_id.as_str().starts_with("usr_"));
+        assert!(user_id.is_valid());
+
+        // Test uniqueness
+        let user_id2 = UserId::new_random();
+        assert_ne!(user_id, user_id2);
+
+        // Test invalid format
+        let invalid_id = UserId::new("invalid");
+        assert!(!invalid_id.is_valid());
+
+        // Test valid manual creation
+        let valid_id = UserId::new("usr_dGVzdA"); // "test" in base64
+        assert!(!valid_id.is_valid()); // Should be false because it's too short (not 96 bits)
     }
 }
