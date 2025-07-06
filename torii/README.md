@@ -9,14 +9,15 @@ Torii is a powerful authentication framework for Rust applications that gives yo
 
 ## Features
 
-- Password-based authentication
-- Social OAuth/OpenID Connect
-- Passkey/WebAuthn support
-- Full data sovereignty - store user data where you want
-- Multiple storage backends:
-  - SQLite
-  - Postgres
-  - MySQL
+- **Password Authentication**: Secure password-based login with bcrypt hashing
+- **OAuth/OpenID Connect**: Social login with major providers (Google, GitHub, etc.)
+- **Passkey/WebAuthn**: Modern passwordless authentication with FIDO2
+- **Magic Links**: Email-based passwordless authentication
+- **Session Management**: Flexible session handling (opaque tokens or JWTs)
+- **Full Data Sovereignty**: Store user data where you choose
+- **Multiple Storage Backends**: SQLite, PostgreSQL, MySQL support via SeaORM
+- **Type Safety**: Strongly typed APIs with compile-time guarantees
+- **Async/Await**: Built for modern async Rust applications
 
 ## Quick Start
 
@@ -27,37 +28,96 @@ Torii is a powerful authentication framework for Rust applications that gives yo
 torii = { version = "0.2.0", features = ["sqlite", "password"] }
 ```
 
-2. Initialize the database:
+2. Set up your application:
 
 ```rust
-let pool = SqliteStorage::connect("sqlite://todos.db?mode=rwc").await
-    .expect("Failed to connect to database");
-let user_storage = Arc::new(pool.clone());
-let session_storage = Arc::new(pool.clone());
+use torii::{Torii, SessionConfig};
+use torii_storage_sqlite::SqliteStorage;
+use std::sync::Arc;
 
-// Migrate the user storage
-user_storage
-    .migrate()
-    .await
-    .expect("Failed to migrate user storage");
-
-// Migrate the session storage
-session_storage
-    .migrate()
-    .await
-    .expect("Failed to migrate session storage");
-
-let torii = Torii::new(user_storage, session_storage).with_password_plugin();
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Connect to database
+    let storage = SqliteStorage::connect("sqlite://auth.db?mode=rwc").await?;
+    
+    // Run migrations
+    storage.migrate().await?;
+    
+    // Create Torii instance
+    let repositories = Arc::new(storage.into_repository_provider());
+    let torii = Torii::new(repositories);
+    
+    // Register a user
+    let user = torii.register_user_with_password("user@example.com", "secure_password").await?;
+    println!("Created user: {}", user.email);
+    
+    // Login user
+    let (user, session) = torii.login_user_with_password(
+        "user@example.com", 
+        "secure_password",
+        None, // user_agent
+        None, // ip_address
+    ).await?;
+    
+    println!("User logged in: {}", user.email);
+    println!("Session token: {}", session.token);
+    
+    Ok(())
+}
 ```
 
-3. Create a user:
+## Storage Backends
 
-```rust
-let user = torii.register_user_with_password("test@example.com", "password").await?;
+Choose the storage backend that fits your needs:
+
+### SQLite (Development & Small Apps)
+
+```toml
+[dependencies]
+torii = { version = "0.2.0", features = ["sqlite", "password"] }
 ```
 
-4. Login a user:
+### PostgreSQL (Production)
+
+```toml
+[dependencies]
+torii = { version = "0.2.0", features = ["seaorm-postgres", "password"] }
+```
+
+### MySQL (Production)
+
+```toml
+[dependencies]
+torii = { version = "0.2.0", features = ["seaorm-mysql", "password"] }
+```
+
+## Authentication Methods
+
+### Password Authentication
 
 ```rust
-let user = torii.login_user_with_password("test@example.com", "password").await?;
+// Enable password auth
+let torii = Torii::new(repositories);
+
+// Register user
+let user = torii.register_user_with_password("user@example.com", "password").await?;
+
+// Login
+let (user, session) = torii.login_user_with_password(
+    "user@example.com", 
+    "password",
+    Some("Mozilla/5.0...".to_string()), // user_agent
+    Some("192.168.1.1".to_string()),    // ip_address
+).await?;
+```
+
+### JWT Sessions
+
+```rust
+use torii::{Torii, SessionConfig, JwtConfig, JwtAlgorithm};
+
+let jwt_config = JwtConfig::new("your-secret-key", JwtAlgorithm::HS256);
+let session_config = SessionConfig::default().with_jwt(jwt_config);
+
+let torii = Torii::new(repositories).with_session_config(session_config);
 ```

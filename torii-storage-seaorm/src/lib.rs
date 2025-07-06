@@ -1,3 +1,79 @@
+//! SeaORM storage backend for Torii
+//!
+//! This crate provides a SeaORM-based storage implementation for the Torii authentication framework.
+//! SeaORM is a modern async ORM for Rust that provides type-safe database operations and supports
+//! multiple database backends including PostgreSQL, MySQL, and SQLite.
+//!
+//! # Features
+//!
+//! - **Multi-Database Support**: Works with PostgreSQL, MySQL, and SQLite through SeaORM
+//! - **Type-Safe Operations**: Leverages SeaORM's compile-time query validation
+//! - **Async/Await**: Fully async database operations with tokio
+//! - **Automatic Migrations**: Built-in schema migration management
+//! - **User Management**: Store and retrieve user accounts with email verification support
+//! - **Session Management**: Handle user sessions with configurable expiration
+//! - **Password Authentication**: Secure password hashing and verification
+//! - **OAuth Integration**: Store OAuth account connections and tokens
+//! - **Passkey Support**: WebAuthn/FIDO2 passkey storage and challenge management
+//! - **Magic Link Authentication**: Generate and verify magic links for passwordless login
+//!
+//! # Usage
+//!
+//! ```rust,no_run
+//! use torii_storage_seaorm::SeaORMStorage;
+//! use torii_core::UserId;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Connect to database (supports PostgreSQL, MySQL, SQLite)
+//!     let storage = SeaORMStorage::connect("sqlite://todos.db?mode=rwc").await?;
+//!     
+//!     // Run migrations to set up the schema
+//!     storage.migrate().await?;
+//!     
+//!     // Convert to repository provider and use with Torii
+//!     let repositories = std::sync::Arc::new(storage.into_repository_provider());
+//!     let torii = torii::Torii::new(repositories);
+//!     
+//!     Ok(())
+//! }
+//! ```
+//!
+//! # Repository Provider
+//!
+//! The crate provides [`SeaORMRepositoryProvider`] which implements the [`RepositoryProvider`] trait
+//! from `torii-core`, allowing it to be used directly with the main Torii authentication coordinator.
+//!
+//! # Database Support
+//!
+//! This crate can be used with any database backend supported by SeaORM:
+//! - **PostgreSQL**: Production-ready with full feature support
+//! - **MySQL**: Production-ready with full feature support  
+//! - **SQLite**: Great for development and smaller deployments
+//!
+//! # Storage Implementations
+//!
+//! This crate implements repository patterns for:
+//! - User account management and profile storage
+//! - Session management with automatic expiration
+//! - Password credential storage with secure hashing
+//! - OAuth account connections and token management
+//! - WebAuthn passkey credentials and challenge handling
+//! - Magic link token generation and verification
+//!
+//! # Entity Models
+//!
+//! The crate defines SeaORM entity models for all authentication data:
+//! - `User` - User accounts and profile information
+//! - `Session` - Active user sessions
+//! - `Password` - Hashed password credentials  
+//! - `OAuthAccount` - Connected OAuth accounts
+//! - `Passkey` - WebAuthn passkey credentials
+//! - `PasskeyChallenge` - Temporary passkey challenges
+//! - `MagicLink` - Magic link tokens and metadata
+//!
+//! All entities include appropriate relationships and indexes for optimal performance.
+
 mod entities;
 mod magic_link;
 mod migrations;
