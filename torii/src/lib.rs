@@ -87,14 +87,13 @@ pub use torii_storage_sqlite::{SqliteRepositoryProvider, SqliteStorage};
 pub use torii_storage_postgres::PostgresStorage;
 // TODO: Add PostgresRepositoryProvider once implemented
 
-// SeaORM storage temporarily disabled due to incomplete repository implementation
-// #[cfg(any(
-//     feature = "seaorm-sqlite",
-//     feature = "seaorm-postgres",
-//     feature = "seaorm-mysql",
-//     feature = "seaorm"
-// ))]
-// pub use torii_storage_seaorm::SeaORMStorage;
+#[cfg(any(
+    feature = "seaorm-sqlite",
+    feature = "seaorm-postgres",
+    feature = "seaorm-mysql",
+    feature = "seaorm"
+))]
+pub use torii_storage_seaorm::{SeaORMStorage, repositories::SeaORMRepositoryProvider};
 
 /// Errors that can occur when using Torii.
 ///
@@ -175,20 +174,24 @@ impl SessionConfig {
 /// # Example
 ///
 /// ```rust,no_run
-/// use torii::Torii;
+/// use torii::{Torii, UserId};
 /// use torii_storage_sqlite::SqliteRepositoryProvider;
 /// use std::sync::Arc;
 ///
 /// #[tokio::main]
-/// async fn main() {
-///     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await?;
 ///     let repositories = Arc::new(SqliteRepositoryProvider::new(pool));
 ///
 ///     // Create a new Torii instance with the repository provider
 ///     let torii = Torii::new(repositories);
 ///
 ///     // Use torii to manage authentication
+///     let user_id = UserId::new("example-user-id");
 ///     let user = torii.get_user(&user_id).await?;
+///     println!("User: {:?}", user);
+///     
+///     Ok(())
 /// }
 /// ```
 pub struct Torii<R: RepositoryProvider> {
