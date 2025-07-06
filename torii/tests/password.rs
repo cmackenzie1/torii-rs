@@ -104,7 +104,7 @@ async fn test_login_with_unverified_email() {
     // Register a user without verifying email
     let email = "unverified@example.com";
     let password = "password123";
-    let _user = torii
+    let user = torii
         .register_user_with_password(email, password)
         .await
         .unwrap();
@@ -114,8 +114,11 @@ async fn test_login_with_unverified_email() {
         .login_user_with_password(email, password, None, None)
         .await;
 
-    // Should fail because email is not verified
-    assert!(result.is_err());
+    // Should succeed even though email is not verified
+    assert!(result.is_ok());
+    let (logged_in_user, _session) = result.unwrap();
+    assert_eq!(logged_in_user.id, user.id);
+    assert!(!logged_in_user.is_email_verified());
 }
 
 #[cfg(all(feature = "password", feature = "sqlite"))]
