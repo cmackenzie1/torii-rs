@@ -1,3 +1,69 @@
+//! SQLite storage backend for Torii
+//!
+//! This crate provides a SQLite-based storage implementation for the Torii authentication framework.
+//! It includes implementations for all core storage traits and provides a complete authentication
+//! storage solution using SQLite as the underlying database.
+//!
+//! # Features
+//!
+//! - **User Management**: Store and retrieve user accounts with email verification support
+//! - **Session Management**: Handle user sessions with configurable expiration
+//! - **Password Authentication**: Secure password hashing and verification
+//! - **OAuth Integration**: Store OAuth account connections and tokens
+//! - **Passkey Support**: WebAuthn/FIDO2 passkey storage and challenge management
+//! - **Magic Link Authentication**: Generate and verify magic links for passwordless login
+//! - **Database Migrations**: Automatic schema management and upgrades
+//!
+//! # Usage
+//!
+//! ```rust,no_run
+//! use torii_storage_sqlite::SqliteStorage;
+//! use torii_core::UserId;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Connect to SQLite database
+//!     let storage = SqliteStorage::connect("sqlite://todos.db?mode=rwc").await?;
+//!     
+//!     // Run migrations to set up the schema
+//!     storage.migrate().await?;
+//!     
+//!     // Use with Torii
+//!     let repositories = std::sync::Arc::new(storage.into_repository_provider());
+//!     let torii = torii::Torii::new(repositories);
+//!     
+//!     Ok(())
+//! }
+//! ```
+//!
+//! # Repository Provider
+//!
+//! The crate provides [`SqliteRepositoryProvider`] which implements the [`RepositoryProvider`] trait
+//! from `torii-core`, allowing it to be used directly with the main Torii authentication coordinator.
+//!
+//! # Storage Implementations
+//!
+//! This crate implements the following storage traits:
+//! - [`UserStorage`](torii_core::storage::UserStorage) - User account management
+//! - [`SessionStorage`](torii_core::storage::SessionStorage) - Session management
+//! - Password repository for secure password storage
+//! - OAuth repository for third-party authentication
+//! - Passkey repository for WebAuthn support
+//! - Magic link repository for passwordless authentication
+//!
+//! # Database Schema
+//!
+//! The SQLite schema includes tables for:
+//! - `users` - User accounts and profile information
+//! - `sessions` - Active user sessions
+//! - `passwords` - Hashed password credentials
+//! - `oauth_accounts` - Connected OAuth accounts
+//! - `passkeys` - WebAuthn passkey credentials
+//! - `passkey_challenges` - Temporary passkey challenges
+//! - `magic_links` - Magic link tokens and metadata
+//!
+//! All tables include appropriate indexes for optimal query performance.
+
 mod magic_link;
 mod migrations;
 mod oauth;
@@ -66,6 +132,11 @@ impl SqliteStorage {
         })?;
 
         Ok(())
+    }
+
+    /// Create a repository provider from this storage instance
+    pub fn into_repository_provider(self) -> SqliteRepositoryProvider {
+        SqliteRepositoryProvider::new(self.pool)
     }
 }
 
