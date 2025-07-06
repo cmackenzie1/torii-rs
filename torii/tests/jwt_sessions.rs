@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::Duration;
 use torii::{SessionConfig, Torii};
 use torii_core::repositories::RepositoryProvider;
-use torii_core::session::{JwtConfig, SessionToken};
+use torii_core::{JwtConfig, SessionToken};
 
 #[cfg(feature = "sqlite")]
 use torii::SqliteRepositoryProvider;
@@ -66,10 +66,9 @@ async fn test_jwt_expiration() {
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
 
     // Create Torii with a JWT session manager and short expiration
-    let session_config = SessionConfig {
-        expires_in: Duration::seconds(1),
-        jwt_config: Some(jwt_config.clone()),
-    };
+    let session_config = SessionConfig::default()
+        .with_jwt(jwt_config.clone())
+        .expires_in(Duration::seconds(1));
     let torii = Torii::new(Arc::new(repositories)).with_session_config(session_config);
 
     // Create a user first
