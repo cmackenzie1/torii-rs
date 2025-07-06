@@ -1,7 +1,6 @@
 use dashmap::DashMap;
 use std::{net::SocketAddr, sync::Arc};
-use torii::{SqliteRepositoryProvider, Torii};
-use torii_core::repositories::RepositoryProvider;
+use torii::{SeaORMRepositoryProvider, SeaORMStorage, Torii};
 
 mod routes;
 mod templates;
@@ -11,7 +10,7 @@ mod templates;
 /// - torii: Coordinates authentication services
 #[derive(Clone)]
 pub(crate) struct AppState {
-    torii: Arc<Torii<SqliteRepositoryProvider>>,
+    torii: Arc<Torii<SeaORMRepositoryProvider>>,
     todos: Arc<DashMap<String, Todo>>,
 }
 
@@ -27,19 +26,16 @@ pub struct Todo {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // Create SQLite connection pool
-    let pool = sqlx::SqlitePool::connect("sqlite://todos.db?mode=rwc")
+    // Create SeaORM storage and repository provider
+    let storage = SeaORMStorage::connect("sqlite://todos.db?mode=rwc")
         .await
         .expect("Failed to connect to database");
 
-    // Create repository provider
-    let repositories = SqliteRepositoryProvider::new(pool);
-
     // Run migrations
-    repositories
-        .migrate()
-        .await
-        .expect("Failed to migrate storage");
+    storage.migrate().await.expect("Failed to migrate storage");
+
+    // Create repository provider
+    let repositories = storage.into_repository_provider();
 
     // Create Torii instance with repositories
     let torii = Torii::new(Arc::new(repositories));

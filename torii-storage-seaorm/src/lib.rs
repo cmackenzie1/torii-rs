@@ -8,6 +8,7 @@ mod session;
 mod user;
 
 pub mod repositories;
+pub use repositories::SeaORMRepositoryProvider;
 
 use migrations::Migrator;
 use sea_orm::{Database, DatabaseConnection};
@@ -29,10 +30,14 @@ pub enum SeaORMStorageError {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use torii_storage_seaorm::SeaORMStorage;
-/// let storage = SeaORMStorage::connect("sqlite://todos.db?mode=rwc").await.unwrap();
-/// let _ = storage.migrate().await.unwrap();
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let storage = SeaORMStorage::connect("sqlite://todos.db?mode=rwc").await.unwrap();
+///     let _ = storage.migrate().await.unwrap();
+/// }
 /// ```
 #[derive(Clone)]
 pub struct SeaORMStorage {
@@ -55,6 +60,11 @@ impl SeaORMStorage {
         Migrator::up(&self.pool, None).await.unwrap();
 
         Ok(())
+    }
+
+    /// Create a repository provider from this storage instance
+    pub fn into_repository_provider(self) -> SeaORMRepositoryProvider {
+        SeaORMRepositoryProvider::new(self.pool)
     }
 }
 #[cfg(test)]

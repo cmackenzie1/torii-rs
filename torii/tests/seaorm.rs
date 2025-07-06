@@ -1,5 +1,42 @@
-//! SeaORM tests are currently disabled as the SeaORM storage implementation is incomplete
-//! TODO: Re-enable these tests once SeaORM RepositoryProvider is fully implemented
+//! SeaORM integration tests
 
-// All SeaORM tests are commented out until the SeaORM storage backend is fully implemented
-// with the new RepositoryProvider interface.
+#[cfg(feature = "seaorm")]
+mod tests {
+    use std::sync::Arc;
+    use torii::{SeaORMStorage, Torii};
+    use torii_core::repositories::RepositoryProvider;
+
+    #[tokio::test]
+    async fn test_seaorm_storage_connection() {
+        let storage = SeaORMStorage::connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect to SeaORM storage");
+
+        storage.migrate().await.expect("Failed to run migrations");
+    }
+
+    #[tokio::test]
+    async fn test_seaorm_repository_provider_with_torii() {
+        let storage = SeaORMStorage::connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect to SeaORM storage");
+
+        storage.migrate().await.expect("Failed to run migrations");
+
+        let repositories = Arc::new(storage.into_repository_provider());
+
+        // Test migration (should be a no-op since we already migrated)
+        repositories.migrate().await.expect("Migration failed");
+
+        // Test health check
+        repositories
+            .health_check()
+            .await
+            .expect("Health check failed");
+
+        let torii = Torii::new(repositories);
+
+        // Test basic health check through Torii
+        torii.health_check().await.expect("Health check failed");
+    }
+}
