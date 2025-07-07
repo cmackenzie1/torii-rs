@@ -22,6 +22,7 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 tokio.workspace = true
+b58 = "0.1.2"
 
 [dev-dependencies]
 tokio.workspace = true

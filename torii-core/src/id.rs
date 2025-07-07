@@ -47,7 +47,7 @@ pub fn generate_prefixed_id_with_bytes(prefix: &str, bytes: usize) -> String {
     let mut random_bytes = vec![0u8; bytes];
     OsRng.try_fill_bytes(&mut random_bytes).unwrap();
 
-    let encoded = BASE64_URL_SAFE_NO_PAD.encode(random_bytes);
+    let encoded = b58::encode(&random_bytes);
 
     format!("{prefix}_{encoded}")
 }
@@ -70,7 +70,7 @@ pub fn validate_prefixed_id(id: &str, expected_prefix: &str) -> bool {
     let random_part = &id[expected_prefix.len() + 1..];
 
     // Try to decode to ensure it's valid base64
-    match BASE64_URL_SAFE_NO_PAD.decode(random_part) {
+    match b58::decode(random_part) {
         Ok(decoded) => decoded.len() >= 12, // At least 96 bits
         Err(_) => false,
     }
@@ -109,7 +109,7 @@ mod tests {
 
         // Extract and decode the random part
         let random_part = &id[5..]; // "sess_".len() = 5
-        let decoded = BASE64_URL_SAFE_NO_PAD.decode(random_part).unwrap();
+        let decoded = b58::decode(random_part).unwrap();
         assert_eq!(decoded.len(), 16);
     }
 
