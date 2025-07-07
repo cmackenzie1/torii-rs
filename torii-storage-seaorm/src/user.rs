@@ -4,8 +4,8 @@ use sea_orm::QueryFilter;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use torii_core::{NewUser, User as ToriiUser, UserId, UserStorage};
 
-use crate::SeaORMStorage;
 use crate::entities::user;
+use crate::{SeaORMStorage, SeaORMStorageError};
 
 impl From<user::Model> for ToriiUser {
     fn from(user: user::Model) -> Self {
@@ -22,9 +22,7 @@ impl From<user::Model> for ToriiUser {
 
 #[async_trait::async_trait]
 impl UserStorage for SeaORMStorage {
-    type Error = sea_orm::DbErr;
-
-    async fn create_user(&self, user: &NewUser) -> Result<ToriiUser, Self::Error> {
+    async fn create_user(&self, user: &NewUser) -> Result<ToriiUser, torii_core::Error> {
         let model = user::ActiveModel {
             email: Set(user.email.to_owned()),
             name: Set(user.name.to_owned()),
@@ -32,26 +30,35 @@ impl UserStorage for SeaORMStorage {
             ..Default::default()
         };
 
-        Ok(model.insert(&self.pool).await?.into())
+        Ok(model
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?
+            .into())
     }
 
-    async fn get_user(&self, id: &UserId) -> Result<Option<ToriiUser>, Self::Error> {
+    async fn get_user(&self, id: &UserId) -> Result<Option<ToriiUser>, torii_core::Error> {
         let user = user::Entity::find_by_id(id.as_str())
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(user.map(ToriiUser::from))
     }
 
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<ToriiUser>, Self::Error> {
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<ToriiUser>, torii_core::Error> {
         Ok(user::Entity::find()
             .filter(user::Column::Email.eq(email))
             .one(&self.pool)
-            .await?
+            .await
+            .map_err(SeaORMStorageError::Database)?
             .map(ToriiUser::from))
     }
 
-    async fn get_or_create_user_by_email(&self, email: &str) -> Result<ToriiUser, Self::Error> {
+    async fn get_or_create_user_by_email(
+        &self,
+        email: &str,
+    ) -> Result<ToriiUser, torii_core::Error> {
         let user = self.get_user_by_email(email).await?;
 
         match user {
@@ -63,32 +70,40 @@ impl UserStorage for SeaORMStorage {
         }
     }
 
-    async fn update_user(&self, user: &ToriiUser) -> Result<ToriiUser, Self::Error> {
+    async fn update_user(&self, user: &ToriiUser) -> Result<ToriiUser, torii_core::Error> {
         let model = user::ActiveModel {
             name: Set(user.name.to_owned()),
             ..Default::default()
         };
 
-        Ok(model.update(&self.pool).await?.into())
+        Ok(model
+            .update(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?
+            .into())
     }
 
-    async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
+    async fn delete_user(&self, id: &UserId) -> Result<(), torii_core::Error> {
         let _ = user::Entity::delete_by_id(id.as_str())
             .exec(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
 
-    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), torii_core::Error> {
         let mut user: user::ActiveModel = user::Entity::find_by_id(user_id.as_str())
             .one(&self.pool)
-            .await?
+            .await
+            .map_err(SeaORMStorageError::Database)?
             .unwrap()
             .into();
 
         user.email_verified_at = Set(Some(Utc::now()));
-        user.update(&self.pool).await?;
+        user.update(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
@@ -96,10 +111,10 @@ impl UserStorage for SeaORMStorage {
 
 #[cfg(test)]
 mod tests {
-    
+
     use crate::SeaORMStorage;
     use sea_orm::{Database, DatabaseConnection};
-    
+
     use tokio::sync::OnceCell;
     use torii_core::{NewUser, UserId, UserStorage};
 

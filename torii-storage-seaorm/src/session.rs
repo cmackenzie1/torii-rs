@@ -4,8 +4,8 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use torii_core::session::SessionToken;
 use torii_core::{Session, SessionStorage, UserId};
 
-use crate::SeaORMStorage;
 use crate::entities::session;
+use crate::{SeaORMStorage, SeaORMStorageError};
 
 impl From<session::Model> for Session {
     fn from(value: session::Model) -> Self {
@@ -23,12 +23,7 @@ impl From<session::Model> for Session {
 
 #[async_trait::async_trait]
 impl SessionStorage for SeaORMStorage {
-    type Error = sea_orm::DbErr;
-
-    async fn create_session(
-        &self,
-        session: &Session,
-    ) -> Result<Session, <Self as SessionStorage>::Error> {
+    async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
         let s = session::ActiveModel {
             user_id: Set(session.user_id.to_string()),
             token: Set(session.token.as_str().to_owned()),
@@ -38,53 +33,51 @@ impl SessionStorage for SeaORMStorage {
             ..Default::default()
         };
 
-        let result = s.insert(&self.pool).await?;
+        let result = s
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(result.into())
     }
 
-    async fn get_session(
-        &self,
-        id: &SessionToken,
-    ) -> Result<Option<Session>, <Self as SessionStorage>::Error> {
+    async fn get_session(&self, id: &SessionToken) -> Result<Option<Session>, torii_core::Error> {
         let session = session::Entity::find()
             .filter(session::Column::Token.eq(id.as_str()))
             .one(&self.pool)
-            .await?
+            .await
+            .map_err(SeaORMStorageError::Database)?
             .map(|s| s.into());
 
         Ok(session)
     }
 
-    async fn delete_session(
-        &self,
-        id: &SessionToken,
-    ) -> Result<(), <Self as SessionStorage>::Error> {
+    async fn delete_session(&self, id: &SessionToken) -> Result<(), torii_core::Error> {
         session::Entity::delete_many()
             .filter(session::Column::Token.eq(id.as_str()))
             .exec(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
 
-    async fn cleanup_expired_sessions(&self) -> Result<(), <Self as SessionStorage>::Error> {
+    async fn cleanup_expired_sessions(&self) -> Result<(), torii_core::Error> {
         session::Entity::delete_many()
             .filter(session::Column::ExpiresAt.lt(Utc::now()))
             .exec(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
 
-    async fn delete_sessions_for_user(
-        &self,
-        user_id: &UserId,
-    ) -> Result<(), <Self as SessionStorage>::Error> {
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), torii_core::Error> {
         session::Entity::delete_many()
             .filter(session::Column::UserId.eq(user_id.as_str()))
             .exec(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }

@@ -90,25 +90,23 @@ impl<R: RepositoryProvider> SessionRepository for SessionRepositoryAdapter<R> {
 /// This allows the adapter to be used with the OpaqueSessionProvider
 #[async_trait]
 impl<R: RepositoryProvider> SessionStorage for SessionRepositoryAdapter<R> {
-    type Error = Error;
-
-    async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
+    async fn create_session(&self, session: &Session) -> Result<Session, Error> {
         self.create(session.clone()).await
     }
 
-    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error> {
+    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Error> {
         self.find_by_token(token).await
     }
 
-    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error> {
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), Error> {
         self.delete(token).await
     }
 
-    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
+    async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
         self.cleanup_expired().await
     }
 
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
         self.delete_by_user_id(user_id).await
     }
 }

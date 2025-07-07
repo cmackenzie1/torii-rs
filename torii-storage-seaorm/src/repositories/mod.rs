@@ -60,7 +60,6 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
     type OAuth = SeaORMOAuthRepository;
     type Passkey = SeaORMPasskeyRepository;
     type MagicLink = SeaORMMagicLinkRepository;
-    type Error = Error;
 
     fn user(&self) -> &Self::User {
         &self.user
@@ -86,7 +85,7 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
         &self.magic_link
     }
 
-    async fn migrate(&self) -> Result<(), Self::Error> {
+    async fn migrate(&self) -> Result<(), torii_core::Error> {
         use crate::migrations::Migrator;
         use sea_orm_migration::MigratorTrait;
 
@@ -96,7 +95,7 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
         Ok(())
     }
 
-    async fn health_check(&self) -> Result<(), Self::Error> {
+    async fn health_check(&self) -> Result<(), torii_core::Error> {
         self.pool
             .ping()
             .await

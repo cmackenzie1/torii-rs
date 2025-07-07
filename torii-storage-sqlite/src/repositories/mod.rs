@@ -59,7 +59,6 @@ impl RepositoryProvider for SqliteRepositoryProvider {
     type OAuth = SqliteOAuthRepository;
     type Passkey = SqlitePasskeyRepository;
     type MagicLink = SqliteMagicLinkRepository;
-    type Error = Error;
 
     fn user(&self) -> &Self::User {
         &self.user
@@ -85,7 +84,7 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         &self.magic_link
     }
 
-    async fn migrate(&self) -> Result<(), Self::Error> {
+    async fn migrate(&self) -> Result<(), torii_core::Error> {
         use crate::migrations::{
             CreateIndexes, CreateMagicLinksTable, CreateOAuthAccountsTable,
             CreatePasskeyChallengesTable, CreatePasskeysTable, CreateSessionsTable,
@@ -120,7 +119,7 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         Ok(())
     }
 
-    async fn health_check(&self) -> Result<(), Self::Error> {
+    async fn health_check(&self) -> Result<(), torii_core::Error> {
         sqlx::query("SELECT 1")
             .execute(&self.pool)
             .await

@@ -24,6 +24,8 @@ pub use user::UserRepository;
 
 use async_trait::async_trait;
 
+use crate::Error;
+
 /// Provider trait that storage implementations must implement to provide all repositories
 #[async_trait]
 pub trait RepositoryProvider: Send + Sync + 'static {
@@ -33,7 +35,6 @@ pub trait RepositoryProvider: Send + Sync + 'static {
     type OAuth: OAuthRepository;
     type Passkey: PasskeyRepository;
     type MagicLink: MagicLinkRepository;
-    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Get the user repository
     fn user(&self) -> &Self::User;
@@ -54,8 +55,8 @@ pub trait RepositoryProvider: Send + Sync + 'static {
     fn magic_link(&self) -> &Self::MagicLink;
 
     /// Run migrations for all repositories
-    async fn migrate(&self) -> Result<(), Self::Error>;
+    async fn migrate(&self) -> Result<(), Error>;
 
     /// Health check for all repositories
-    async fn health_check(&self) -> Result<(), Self::Error>;
+    async fn health_check(&self) -> Result<(), Error>;
 }

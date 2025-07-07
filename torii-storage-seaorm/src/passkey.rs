@@ -10,14 +10,12 @@ use crate::entities::{passkey, passkey_challenge};
 
 #[async_trait]
 impl PasskeyStorage for SeaORMStorage {
-    type Error = SeaORMStorageError;
-
     async fn add_passkey(
         &self,
         user_id: &UserId,
         credential_id: &str,
         passkey_json: &str,
-    ) -> Result<(), <Self as PasskeyStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         let passkey = passkey::ActiveModel {
             user_id: Set(user_id.to_string()),
             credential_id: Set(credential_id.to_string()),
@@ -25,7 +23,10 @@ impl PasskeyStorage for SeaORMStorage {
             ..Default::default()
         };
 
-        passkey.insert(&self.pool).await?;
+        passkey
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
@@ -33,23 +34,22 @@ impl PasskeyStorage for SeaORMStorage {
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &str,
-    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let passkey = passkey::Entity::find()
             .filter(passkey::Column::CredentialId.eq(credential_id))
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(passkey.map(|p| p.data_json))
     }
 
-    async fn get_passkeys(
-        &self,
-        user_id: &UserId,
-    ) -> Result<Vec<String>, <Self as PasskeyStorage>::Error> {
+    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, torii_core::Error> {
         let passkeys = passkey::Entity::find()
             .filter(passkey::Column::UserId.eq(user_id.to_string()))
             .all(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(passkeys.into_iter().map(|p| p.data_json).collect())
     }
@@ -59,7 +59,7 @@ impl PasskeyStorage for SeaORMStorage {
         challenge_id: &str,
         challenge: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), <Self as PasskeyStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         let passkey_challenge = passkey_challenge::ActiveModel {
             challenge_id: Set(challenge_id.to_string()),
             challenge: Set(challenge.to_string()),
@@ -67,7 +67,10 @@ impl PasskeyStorage for SeaORMStorage {
             ..Default::default()
         };
 
-        passkey_challenge.insert(&self.pool).await?;
+        passkey_challenge
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
@@ -75,11 +78,12 @@ impl PasskeyStorage for SeaORMStorage {
     async fn get_passkey_challenge(
         &self,
         challenge_id: &str,
-    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let passkey_challenge = passkey_challenge::Entity::find()
             .filter(passkey_challenge::Column::ChallengeId.eq(challenge_id))
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(passkey_challenge.map(|p| p.challenge))
     }

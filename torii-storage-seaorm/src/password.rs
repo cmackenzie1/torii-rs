@@ -8,25 +8,26 @@ use crate::entities::user;
 
 #[async_trait::async_trait]
 impl PasswordStorage for SeaORMStorage {
-    type Error = SeaORMStorageError;
-
     async fn set_password_hash(
         &self,
         user_id: &UserId,
         password_hash: &str,
-    ) -> Result<(), <Self as PasswordStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         let user: Option<user::ActiveModel> = user::Entity::find_by_id(user_id.as_str())
             .one(&self.pool)
-            .await?
+            .await
+            .map_err(SeaORMStorageError::Database)?
             .map(|user| user.into());
 
         if user.is_none() {
-            return Err(SeaORMStorageError::UserNotFound);
+            return Err(SeaORMStorageError::UserNotFound.into());
         }
 
         if let Some(mut user) = user {
             user.password_hash = Set(Some(password_hash.to_string()));
-            user.update(&self.pool).await?;
+            user.update(&self.pool)
+                .await
+                .map_err(SeaORMStorageError::Database)?;
         }
 
         Ok(())
@@ -35,14 +36,15 @@ impl PasswordStorage for SeaORMStorage {
     async fn get_password_hash(
         &self,
         user_id: &UserId,
-    ) -> Result<Option<String>, <Self as PasswordStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let user: Option<user::Model> = user::Entity::find_by_id(user_id.as_str())
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         match user {
             Some(user) => Ok(user.password_hash),
-            _ => Err(SeaORMStorageError::UserNotFound),
+            _ => Err(SeaORMStorageError::UserNotFound.into()),
         }
     }
 }
@@ -106,6 +108,6 @@ mod tests {
             .get_password_hash(&UserId::new("non_existent"))
             .await;
 
-        assert!(matches!(result, Err(SeaORMStorageError::UserNotFound)));
+        assert!(result.is_err());
     }
 }

@@ -23,17 +23,16 @@ impl From<oauth::Model> for OAuthAccount {
 
 #[async_trait::async_trait]
 impl OAuthStorage for SeaORMStorage {
-    type Error = SeaORMStorageError;
-
     async fn create_oauth_account(
         &self,
         provider: &str,
         subject: &str,
         user_id: &UserId,
-    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error> {
+    ) -> Result<OAuthAccount, torii_core::Error> {
         let user = user::Entity::find_by_id(user_id.to_string())
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         if let Some(user) = user {
             let oauth_account = oauth::ActiveModel {
@@ -42,11 +41,14 @@ impl OAuthStorage for SeaORMStorage {
                 subject: Set(subject.to_string()),
                 ..Default::default()
             };
-            let oauth_account = oauth_account.insert(&self.pool).await?;
+            let oauth_account = oauth_account
+                .insert(&self.pool)
+                .await
+                .map_err(SeaORMStorageError::Database)?;
 
             Ok(oauth_account.into())
         } else {
-            Err(SeaORMStorageError::UserNotFound)
+            Err(SeaORMStorageError::UserNotFound.into())
         }
     }
 
@@ -54,21 +56,23 @@ impl OAuthStorage for SeaORMStorage {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<User>, <Self as OAuthStorage>::Error> {
+    ) -> Result<Option<User>, torii_core::Error> {
         let oauth_account = oauth::Entity::find()
             .filter(oauth::Column::Provider.eq(provider))
             .filter(oauth::Column::Subject.eq(subject))
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         match oauth_account {
             Some(oauth_account) => {
                 let user = user::Entity::find_by_id(oauth_account.user_id)
                     .one(&self.pool)
-                    .await?;
+                    .await
+                    .map_err(SeaORMStorageError::Database)?;
                 let user = match user {
                     Some(user) => user,
-                    None => return Err(SeaORMStorageError::UserNotFound),
+                    None => return Err(SeaORMStorageError::UserNotFound.into()),
                 };
                 Ok(Some(user.into()))
             }
@@ -80,12 +84,13 @@ impl OAuthStorage for SeaORMStorage {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error> {
+    ) -> Result<Option<OAuthAccount>, torii_core::Error> {
         let oauth_account = oauth::Entity::find()
             .filter(oauth::Column::Provider.eq(provider))
             .filter(oauth::Column::Subject.eq(subject))
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         match oauth_account {
             Some(oauth_account) => Ok(Some(oauth_account.into())),
@@ -98,14 +103,15 @@ impl OAuthStorage for SeaORMStorage {
         user_id: &UserId,
         provider: &str,
         subject: &str,
-    ) -> Result<(), <Self as OAuthStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         let user = user::Entity::find_by_id(user_id.to_string())
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         let user = match user {
             Some(user) => user,
-            None => return Err(SeaORMStorageError::UserNotFound),
+            None => return Err(SeaORMStorageError::UserNotFound.into()),
         };
 
         let oauth_account = oauth::ActiveModel {
@@ -114,7 +120,10 @@ impl OAuthStorage for SeaORMStorage {
             subject: Set(subject.to_string()),
             ..Default::default()
         };
-        oauth_account.insert(&self.pool).await?;
+        oauth_account
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
         Ok(())
     }
 
@@ -123,25 +132,29 @@ impl OAuthStorage for SeaORMStorage {
         csrf_state: &str,
         pkce_verifier: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), <Self as OAuthStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         let pkce_verifier = pkce_verifier::ActiveModel {
             csrf_state: Set(csrf_state.to_string()),
             verifier: Set(pkce_verifier.to_string()),
             expires_at: Set(Utc::now() + expires_in),
             ..Default::default()
         };
-        pkce_verifier.insert(&self.pool).await?;
+        pkce_verifier
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
         Ok(())
     }
 
     async fn get_pkce_verifier(
         &self,
         csrf_state: &str,
-    ) -> Result<Option<String>, <Self as OAuthStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let pkce_verifier = pkce_verifier::Entity::find()
             .filter(pkce_verifier::Column::CsrfState.eq(csrf_state))
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         match pkce_verifier {
             Some(pkce_verifier) => Ok(Some(pkce_verifier.verifier)),
@@ -242,6 +255,6 @@ mod tests {
         let result = storage
             .create_oauth_account("non_existent", "google", &UserId::new("non_existent"))
             .await;
-        assert!(matches!(result, Err(SeaORMStorageError::UserNotFound)));
+        assert!(result.is_err());
     }
 }
