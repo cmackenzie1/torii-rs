@@ -6,13 +6,11 @@ use torii_core::storage::PasswordStorage;
 
 #[async_trait]
 impl PasswordStorage for PostgresStorage {
-    type Error = StorageError;
-
     async fn set_password_hash(
         &self,
         user_id: &UserId,
         hash: &str,
-    ) -> Result<(), <Self as PasswordStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
             .bind(hash)
             .bind(user_id.as_str())
@@ -25,7 +23,7 @@ impl PasswordStorage for PostgresStorage {
     async fn get_password_hash(
         &self,
         user_id: &UserId,
-    ) -> Result<Option<String>, <Self as PasswordStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let result = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
             .bind(user_id.as_str())
             .fetch_optional(&self.pool)
@@ -40,7 +38,7 @@ mod tests {
     use super::*;
     use crate::PostgresStorage;
     use sqlx::PgPool;
-    
+
     use tokio::sync::OnceCell;
     use torii_core::UserId;
 

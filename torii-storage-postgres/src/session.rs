@@ -49,9 +49,7 @@ impl From<Session> for PostgresSession {
 
 #[async_trait]
 impl SessionStorage for PostgresStorage {
-    type Error = torii_core::Error;
-
-    async fn create_session(&self, session: &Session) -> Result<Session, Self::Error> {
+    async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
         sqlx::query("INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)")
             .bind(session.token.as_str())
             .bind(session.user_id.as_str())
@@ -70,7 +68,10 @@ impl SessionStorage for PostgresStorage {
         Ok(self.get_session(&session.token).await?.unwrap())
     }
 
-    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error> {
+    async fn get_session(
+        &self,
+        token: &SessionToken,
+    ) -> Result<Option<Session>, torii_core::Error> {
         let session = sqlx::query_as::<_, PostgresSession>(
             r#"
             SELECT id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
@@ -89,7 +90,7 @@ impl SessionStorage for PostgresStorage {
         Ok(Some(session.into()))
     }
 
-    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error> {
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), torii_core::Error> {
         sqlx::query("DELETE FROM sessions WHERE token = $1")
             .bind(token.as_str())
             .execute(&self.pool)
@@ -102,7 +103,7 @@ impl SessionStorage for PostgresStorage {
         Ok(())
     }
 
-    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error> {
+    async fn cleanup_expired_sessions(&self) -> Result<(), torii_core::Error> {
         sqlx::query("DELETE FROM sessions WHERE expires_at < $1")
             .bind(Utc::now())
             .execute(&self.pool)
@@ -115,7 +116,7 @@ impl SessionStorage for PostgresStorage {
         Ok(())
     }
 
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error> {
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), torii_core::Error> {
         sqlx::query("DELETE FROM sessions WHERE user_id = $1")
             .bind(user_id.as_str())
             .execute(&self.pool)

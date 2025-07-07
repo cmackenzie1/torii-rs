@@ -25,12 +25,7 @@ impl From<magic_link::Model> for MagicToken {
 
 #[async_trait]
 impl MagicLinkStorage for SeaORMStorage {
-    type Error = SeaORMStorageError;
-
-    async fn save_magic_token(
-        &self,
-        token: &MagicToken,
-    ) -> Result<(), <Self as MagicLinkStorage>::Error> {
+    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), torii_core::Error> {
         let magic_link = magic_link::ActiveModel {
             user_id: Set(token.user_id.to_string()),
             token: Set(token.token.clone()),
@@ -38,36 +33,38 @@ impl MagicLinkStorage for SeaORMStorage {
             expires_at: Set(token.expires_at),
             ..Default::default()
         };
-        magic_link.insert(&self.pool).await?;
+        magic_link
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
 
-    async fn get_magic_token(
-        &self,
-        token: &str,
-    ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error> {
+    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, torii_core::Error> {
         let magic_link = magic_link::Entity::find()
             .filter(magic_link::Column::Token.eq(token))
             .one(&self.pool)
-            .await?;
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(magic_link.map(|model| model.into()))
     }
 
-    async fn set_magic_token_used(
-        &self,
-        token: &str,
-    ) -> Result<(), <Self as MagicLinkStorage>::Error> {
+    async fn set_magic_token_used(&self, token: &str) -> Result<(), torii_core::Error> {
         let magic_link: Option<magic_link::ActiveModel> = magic_link::Entity::find()
             .filter(magic_link::Column::Token.eq(token))
             .one(&self.pool)
-            .await?
+            .await
+            .map_err(SeaORMStorageError::Database)?
             .map(|model| model.into());
 
         if let Some(mut magic_link) = magic_link {
             magic_link.used_at = Set(Some(Utc::now()));
-            magic_link.update(&self.pool).await?;
+            magic_link
+                .update(&self.pool)
+                .await
+                .map_err(SeaORMStorageError::Database)?;
         }
 
         Ok(())

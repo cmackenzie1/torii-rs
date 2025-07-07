@@ -22,26 +22,22 @@ pub trait StoragePlugin: Send + Sync + 'static {
 
 #[async_trait]
 pub trait UserStorage: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error>;
-    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error>;
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error>;
-    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error>;
-    async fn update_user(&self, user: &User) -> Result<User, Self::Error>;
-    async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error>;
-    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error>;
+    async fn create_user(&self, user: &NewUser) -> Result<User, Error>;
+    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Error>;
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Error>;
+    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Error>;
+    async fn update_user(&self, user: &User) -> Result<User, Error>;
+    async fn delete_user(&self, id: &UserId) -> Result<(), Error>;
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
 #[async_trait]
 pub trait SessionStorage: Send + Sync + 'static {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn create_session(&self, session: &Session) -> Result<Session, Self::Error>;
-    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Self::Error>;
-    async fn delete_session(&self, token: &SessionToken) -> Result<(), Self::Error>;
-    async fn cleanup_expired_sessions(&self) -> Result<(), Self::Error>;
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Self::Error>;
+    async fn create_session(&self, session: &Session) -> Result<Session, Error>;
+    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Error>;
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), Error>;
+    async fn cleanup_expired_sessions(&self) -> Result<(), Error>;
+    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
 /// Storage methods specific to email/password authentication
@@ -50,19 +46,11 @@ pub trait SessionStorage: Send + Sync + 'static {
 /// storing and retrieving password hashes.
 #[async_trait]
 pub trait PasswordStorage: UserStorage {
-    type Error: std::error::Error + Send + Sync + 'static;
     /// Store a password hash for a user
-    async fn set_password_hash(
-        &self,
-        user_id: &UserId,
-        hash: &str,
-    ) -> Result<(), <Self as PasswordStorage>::Error>;
+    async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error>;
 
     /// Retrieve a user's password hash
-    async fn get_password_hash(
-        &self,
-        user_id: &UserId,
-    ) -> Result<Option<String>, <Self as PasswordStorage>::Error>;
+    async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error>;
 }
 
 /// Storage methods specific to OAuth authentication
@@ -71,28 +59,27 @@ pub trait PasswordStorage: UserStorage {
 /// OAuth account management and PKCE verifier storage.
 #[async_trait]
 pub trait OAuthStorage: UserStorage {
-    type Error: std::error::Error + Send + Sync + 'static;
     /// Create a new OAuth account linked to a user
     async fn create_oauth_account(
         &self,
         provider: &str,
         subject: &str,
         user_id: &UserId,
-    ) -> Result<OAuthAccount, <Self as OAuthStorage>::Error>;
+    ) -> Result<OAuthAccount, Error>;
 
     /// Find a user by their OAuth provider and subject
     async fn get_user_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<User>, <Self as OAuthStorage>::Error>;
+    ) -> Result<Option<User>, Error>;
 
     /// Find an OAuth account by provider and subject
     async fn get_oauth_account_by_provider_and_subject(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Option<OAuthAccount>, <Self as OAuthStorage>::Error>;
+    ) -> Result<Option<OAuthAccount>, Error>;
 
     /// Link an existing user to an OAuth account
     async fn link_oauth_account(
@@ -100,7 +87,7 @@ pub trait OAuthStorage: UserStorage {
         user_id: &UserId,
         provider: &str,
         subject: &str,
-    ) -> Result<(), <Self as OAuthStorage>::Error>;
+    ) -> Result<(), Error>;
 
     /// Store a PKCE verifier with an expiration time
     async fn store_pkce_verifier(
@@ -108,13 +95,10 @@ pub trait OAuthStorage: UserStorage {
         csrf_state: &str,
         pkce_verifier: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), <Self as OAuthStorage>::Error>;
+    ) -> Result<(), Error>;
 
     /// Retrieve a stored PKCE verifier by CSRF state
-    async fn get_pkce_verifier(
-        &self,
-        csrf_state: &str,
-    ) -> Result<Option<String>, <Self as OAuthStorage>::Error>;
+    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,27 +177,22 @@ impl NewUserBuilder {
 /// storing and retrieving passkey credentials for a user.
 #[async_trait]
 pub trait PasskeyStorage: UserStorage {
-    type Error: std::error::Error + Send + Sync + 'static;
-
     /// Add a passkey credential for a user
     async fn add_passkey(
         &self,
         user_id: &UserId,
         credential_id: &str,
         passkey_json: &str,
-    ) -> Result<(), <Self as PasskeyStorage>::Error>;
+    ) -> Result<(), Error>;
 
     /// Get a passkey by credential ID
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &str,
-    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error>;
+    ) -> Result<Option<String>, Error>;
 
     /// Get all passkeys for a user
-    async fn get_passkeys(
-        &self,
-        user_id: &UserId,
-    ) -> Result<Vec<String>, <Self as PasskeyStorage>::Error>;
+    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, Error>;
 
     /// Set a passkey challenge for a user
     async fn set_passkey_challenge(
@@ -221,13 +200,10 @@ pub trait PasskeyStorage: UserStorage {
         challenge_id: &str,
         challenge: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), <Self as PasskeyStorage>::Error>;
+    ) -> Result<(), Error>;
 
     /// Get a passkey challenge
-    async fn get_passkey_challenge(
-        &self,
-        challenge_id: &str,
-    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error>;
+    async fn get_passkey_challenge(&self, challenge_id: &str) -> Result<Option<String>, Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -278,18 +254,7 @@ impl PartialEq for MagicToken {
 
 #[async_trait]
 pub trait MagicLinkStorage: UserStorage {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn save_magic_token(
-        &self,
-        token: &MagicToken,
-    ) -> Result<(), <Self as MagicLinkStorage>::Error>;
-    async fn get_magic_token(
-        &self,
-        token: &str,
-    ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error>;
-    async fn set_magic_token_used(
-        &self,
-        token: &str,
-    ) -> Result<(), <Self as MagicLinkStorage>::Error>;
+    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Error>;
+    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Error>;
+    async fn set_magic_token_used(&self, token: &str) -> Result<(), Error>;
 }

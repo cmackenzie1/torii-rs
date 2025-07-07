@@ -49,12 +49,7 @@ impl From<&MagicToken> for SqliteMagicToken {
 
 #[async_trait]
 impl MagicLinkStorage for SqliteStorage {
-    type Error = StorageError;
-
-    async fn save_magic_token(
-        &self,
-        token: &MagicToken,
-    ) -> Result<(), <Self as MagicLinkStorage>::Error> {
+    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), torii_core::Error> {
         let row = SqliteMagicToken::from(token);
 
         sqlx::query("INSERT INTO magic_links (user_id, token, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
@@ -70,10 +65,7 @@ impl MagicLinkStorage for SqliteStorage {
         Ok(())
     }
 
-    async fn get_magic_token(
-        &self,
-        token: &str,
-    ) -> Result<Option<MagicToken>, <Self as MagicLinkStorage>::Error> {
+    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, torii_core::Error> {
         let row: Option<SqliteMagicToken> = sqlx::query_as(
             r#"
             SELECT id, user_id, token, used_at, expires_at, created_at, updated_at 
@@ -90,10 +82,7 @@ impl MagicLinkStorage for SqliteStorage {
         Ok(row.map(|row| row.into()))
     }
 
-    async fn set_magic_token_used(
-        &self,
-        token: &str,
-    ) -> Result<(), <Self as MagicLinkStorage>::Error> {
+    async fn set_magic_token_used(&self, token: &str) -> Result<(), torii_core::Error> {
         sqlx::query("UPDATE magic_links SET used_at = ? WHERE token = ?")
             .bind(Utc::now().timestamp())
             .bind(token)

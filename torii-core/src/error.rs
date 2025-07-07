@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error("Session error: {0}")]
     Session(#[from] SessionError),
+
+    #[error("Cryptographic error: {0}")]
+    Crypto(#[from] CryptoError),
 }
 
 #[derive(Debug, Error)]
@@ -55,9 +58,6 @@ pub enum SessionError {
 
     #[error("Invalid token: {0}")]
     InvalidToken(String),
-
-    #[error("JWT verification failed: {0}")]
-    JwtVerification(String),
 }
 
 #[derive(Debug, Error)]
@@ -73,6 +73,9 @@ pub enum StorageError {
 
     #[error("Record not found")]
     NotFound,
+
+    #[error("Constraint violation: {0}")]
+    Constraint(String),
 }
 
 #[derive(Debug, Error)]
@@ -99,6 +102,21 @@ pub enum EventError {
     HandlerError(String),
 }
 
+#[derive(Debug, Error)]
+pub enum CryptoError {
+    #[error("JWT signing failed: {0}")]
+    JwtSigning(String),
+
+    #[error("JWT verification failed: {0}")]
+    JwtVerification(String),
+
+    #[error("Password hashing failed: {0}")]
+    PasswordHash(String),
+
+    #[error("Passkey operation failed: {0}")]
+    Passkey(String),
+}
+
 impl Error {
     pub fn is_auth_error(&self) -> bool {
         matches!(
@@ -117,6 +135,18 @@ impl Error {
                 | Error::Validation(ValidationError::InvalidField(_))
                 | Error::Validation(ValidationError::MissingField(_))
         )
+    }
+
+    pub fn is_storage_error(&self) -> bool {
+        matches!(self, Error::Storage(_))
+    }
+
+    pub fn is_session_error(&self) -> bool {
+        matches!(self, Error::Session(_))
+    }
+
+    pub fn is_crypto_error(&self) -> bool {
+        matches!(self, Error::Crypto(_))
     }
 }
 

@@ -175,9 +175,7 @@ impl From<User> for PostgresUser {
 
 #[async_trait]
 impl UserStorage for PostgresStorage {
-    type Error = torii_core::Error;
-
-    async fn create_user(&self, user: &NewUser) -> Result<User, Self::Error> {
+    async fn create_user(&self, user: &NewUser) -> Result<User, torii_core::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             INSERT INTO users (id, email) 
@@ -197,7 +195,7 @@ impl UserStorage for PostgresStorage {
         Ok(user.into())
     }
 
-    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Self::Error> {
+    async fn get_user(&self, id: &UserId) -> Result<Option<User>, torii_core::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             SELECT id, email, name, email_verified_at, created_at, updated_at 
@@ -219,7 +217,7 @@ impl UserStorage for PostgresStorage {
         }
     }
 
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Self::Error> {
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, torii_core::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             SELECT id, email, name, email_verified_at, created_at, updated_at 
@@ -241,7 +239,7 @@ impl UserStorage for PostgresStorage {
         }
     }
 
-    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Self::Error> {
+    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, torii_core::Error> {
         let user = self.get_user_by_email(email).await?;
         if let Some(user) = user {
             return Ok(user);
@@ -264,7 +262,7 @@ impl UserStorage for PostgresStorage {
         Ok(user)
     }
 
-    async fn update_user(&self, user: &User) -> Result<User, Self::Error> {
+    async fn update_user(&self, user: &User) -> Result<User, torii_core::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             UPDATE users 
@@ -288,7 +286,7 @@ impl UserStorage for PostgresStorage {
         Ok(user.into())
     }
 
-    async fn delete_user(&self, id: &UserId) -> Result<(), Self::Error> {
+    async fn delete_user(&self, id: &UserId) -> Result<(), torii_core::Error> {
         sqlx::query("DELETE FROM users WHERE id = $1")
             .bind(id.as_str())
             .execute(&self.pool)
@@ -301,7 +299,7 @@ impl UserStorage for PostgresStorage {
         Ok(())
     }
 
-    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Self::Error> {
+    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), torii_core::Error> {
         sqlx::query("UPDATE users SET email_verified_at = $1 WHERE id = $2")
             .bind(Utc::now())
             .bind(user_id.as_str())

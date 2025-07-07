@@ -7,14 +7,12 @@ use torii_core::storage::PasskeyStorage;
 
 #[async_trait]
 impl PasskeyStorage for SqliteStorage {
-    type Error = StorageError;
-
     async fn add_passkey(
         &self,
         user_id: &UserId,
         credential_id: &str,
         passkey_json: &str,
-    ) -> Result<(), <Self as PasskeyStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         sqlx::query(
             r#"
             INSERT INTO passkeys (credential_id, user_id, public_key) 
@@ -33,7 +31,7 @@ impl PasskeyStorage for SqliteStorage {
     async fn get_passkey_by_credential_id(
         &self,
         credential_id: &str,
-    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let passkey: Option<String> = sqlx::query_scalar(
             r#"
             SELECT public_key 
@@ -48,10 +46,7 @@ impl PasskeyStorage for SqliteStorage {
         Ok(passkey)
     }
 
-    async fn get_passkeys(
-        &self,
-        user_id: &UserId,
-    ) -> Result<Vec<String>, <Self as PasskeyStorage>::Error> {
+    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, torii_core::Error> {
         let passkeys: Vec<String> = sqlx::query_scalar(
             r#"
             SELECT public_key 
@@ -71,7 +66,7 @@ impl PasskeyStorage for SqliteStorage {
         challenge_id: &str,
         challenge: &str,
         expires_in: chrono::Duration,
-    ) -> Result<(), <Self as PasskeyStorage>::Error> {
+    ) -> Result<(), torii_core::Error> {
         sqlx::query(
             r#"
             INSERT INTO passkey_challenges (challenge_id, challenge, expires_at) 
@@ -90,7 +85,7 @@ impl PasskeyStorage for SqliteStorage {
     async fn get_passkey_challenge(
         &self,
         challenge_id: &str,
-    ) -> Result<Option<String>, <Self as PasskeyStorage>::Error> {
+    ) -> Result<Option<String>, torii_core::Error> {
         let challenge: Option<String> = sqlx::query_scalar(
             r#"
             SELECT challenge 
