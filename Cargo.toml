@@ -15,9 +15,12 @@ members = [
     
     # Level 4: Main library (depends on all above)
     "torii",
+
+    # Level 5: Wrappers and helpers
+    "torii-axum",
     
     # Examples (not published)
-    "examples/todos",
+    "examples/todos", "examples/axum-sqlite-password",
 ]
 resolver = "3"
 
