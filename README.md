@@ -47,7 +47,7 @@ Add Torii to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii = { version = "0.2.0", features = ["sqlite", "password"] }
+torii = { version = "0.4.0", features = ["sqlite", "password"] }
 ```
 
 Basic usage example:
@@ -86,6 +86,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Axum Integration
+
+For web applications, use the `torii-axum` crate for plug-and-play integration:
+
+```toml
+[dependencies]
+torii-axum = { version = "0.4.0", features = ["sqlite", "password"] }
+```
+
+```rust
+use torii_axum::{AuthRoutes, CookieConfig, AuthUser};
+use axum::{routing::get, Router, Json};
+
+#[tokio::main]
+async fn main() {
+    let storage = /* ... setup storage ... */;
+    let torii = /* ... setup torii ... */;
+    
+    // Create authentication routes with cookie configuration
+    let auth_routes = AuthRoutes::new(torii.clone())
+        .with_cookie_config(CookieConfig::development());
+    
+    // Build your application with auth routes
+    let app = Router::new()
+        .route("/protected", get(protected_handler))
+        .merge(auth_routes.into_router())
+        .with_state(torii);
+    
+    // Start server
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+// Protected route handler
+async fn protected_handler(user: AuthUser) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "user_id": user.id,
+        "email": user.email
+    }))
+}
+```
+
 ## Project Structure
 
 The Torii project is organized into several crates:
@@ -102,9 +144,14 @@ The Torii project is organized into several crates:
 - **[`torii-storage-postgres`](./torii-storage-postgres/)** - PostgreSQL storage implementation  
 - **[`torii-storage-seaorm`](./torii-storage-seaorm/)** - Multi-database storage via SeaORM (SQLite, PostgreSQL, MySQL)
 
+### Integration Crates
+
+- **[`torii-axum`](./torii-axum/)** - Plug-and-play Axum integration with routes, middleware, and extractors
+
 ### Examples
 
 - **[`examples/todos`](./examples/todos/)** - Complete todo application demonstrating Torii integration
+- **[`examples/axum-sqlite-password`](./examples/axum-sqlite-password/)** - Axum web server with SQLite and password authentication
 
 ## Architecture
 

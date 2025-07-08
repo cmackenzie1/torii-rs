@@ -16,7 +16,7 @@ Add Torii to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-torii = { version = "0.3", features = ["password", "sqlite"] }
+torii = { version = "0.4.0", features = ["password", "sqlite"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -39,21 +39,19 @@ Here's a minimal example to set up Torii with a SQLite database and password aut
 ```rust,no_run
 use std::sync::Arc;
 use torii::Torii;
-use torii::SqliteRepositoryProvider;
+use torii_storage_seaorm::SeaORMStorage;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the database connection
-    let pool = sqlx::SqlitePool::connect("sqlite://auth.db?mode=rwc").await?;
+    let storage = SeaORMStorage::connect("sqlite://auth.db?mode=rwc").await?;
     
-    // Create repository provider
-    let repositories = Arc::new(SqliteRepositoryProvider::new(pool));
+    // Run migrations to set up the database schema
+    storage.migrate().await?;
     
-    // Migrate the database schema
-    repositories.migrate().await?;
-
-    // Create a Torii instance
-    let torii = Torii::new(repositories);
+    // Create repository provider and Torii instance
+    let repositories = Arc::new(storage.into_repository_provider());
+    let torii = Arc::new(Torii::new(repositories));
 
     // Now torii is ready to use for authentication
     Ok(())
@@ -111,40 +109,22 @@ Here's a complete example with JWT sessions and password authentication:
 
 ```rust,no_run
 use std::sync::Arc;
-use torii::{Torii, JwtConfig, SessionConfig};
-use chrono::Duration;
+use torii::Torii;
+use torii_storage_seaorm::SeaORMStorage;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up database
-    let pool = sqlx::SqlitePool::connect("sqlite://auth.db?mode=rwc").await?;
-    let repositories = Arc::new(torii::SqliteRepositoryProvider::new(pool));
-    repositories.migrate().await?;
+    let storage = SeaORMStorage::connect("sqlite://auth.db?mode=rwc").await?;
+    storage.migrate().await?;
 
-    // Configure JWT sessions
-    let jwt_config = JwtConfig::new_hs256(
-        std::env::var("JWT_SECRET")
-            .expect("JWT_SECRET environment variable")
-            .as_bytes()
-            .to_vec()
-    )
-    .with_issuer("my-app")
-    .with_metadata(true);
-
-    // Create Torii instance
-    let torii = Torii::new(repositories)
-        .with_session_config(
-            SessionConfig::default()
-                .with_jwt(jwt_config)
-                .expires_in(Duration::hours(24))
-        );
+    // Create repository provider and Torii instance
+    let repositories = Arc::new(storage.into_repository_provider());
+    let torii = Arc::new(Torii::new(repositories));
 
     // Register a user
     let user = torii.register_user_with_password("user@example.com", "secure_password").await?;
     println!("User registered: {}", user.id);
-
-    // Verify email (required for login)
-    torii.set_user_email_verified(&user.id).await?;
 
     // Login and create session
     let (user, session) = torii.login_user_with_password(
@@ -393,13 +373,76 @@ async fn verify_magic_link(
 }
 ```
 
-## Example Application
+## Web Framework Integration
 
-You can find a complete example of a Todo application using Torii with Axum in the [examples/todos](https://github.com/cmackenzie1/torii-rs/tree/main/examples/todos) directory. This example demonstrates:
+### Axum Integration
 
-- Setting up Torii with SQLite
+For Axum web applications, use the `torii-axum` crate for plug-and-play authentication:
+
+```toml
+[dependencies]
+torii-axum = { version = "0.4.0", features = ["password", "sqlite"] }
+```
+
+```rust,no_run
+use std::sync::Arc;
+use axum::{response::Json, routing::get, Router};
+use torii::Torii;
+use torii_axum::{AuthUser, CookieConfig};
+use torii_storage_seaorm::SeaORMStorage;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Set up database and Torii
+    let storage = SeaORMStorage::connect("sqlite::memory:").await?;
+    storage.migrate().await?;
+    let repositories = Arc::new(storage.into_repository_provider());
+    let torii = Arc::new(Torii::new(repositories));
+
+    // Create authentication routes with cookie configuration
+    let auth_routes = torii_axum::routes(torii.clone())
+        .with_cookie_config(CookieConfig::development())
+        .build();
+
+    // Build your application with auth routes
+    let app = Router::new()
+        .nest("/auth", auth_routes)
+        .route("/protected", get(protected_handler))
+        .with_state(torii);
+
+    // Start server
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+// Protected route handler
+async fn protected_handler(user: AuthUser) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "user_id": user.id,
+        "email": user.email
+    }))
+}
+```
+
+This provides automatic endpoints for:
+- `POST /auth/register` - User registration
+- `POST /auth/login` - User login
+- `GET /auth/user` - Get current user
+- `POST /auth/logout` - User logout
+- And more...
+
+## Example Applications
+
+You can find complete examples in the repository:
+
+- **[examples/axum-sqlite-password](https://github.com/cmackenzie1/torii-rs/tree/main/examples/axum-sqlite-password)** - Axum integration with SQLite and password authentication
+- **[examples/todos](https://github.com/cmackenzie1/torii-rs/tree/main/examples/todos)** - Complete todo application demonstrating Torii integration
+
+These examples demonstrate:
+- Setting up Torii with different storage backends
 - Adding password authentication
-- Creating a web server with Axum
+- Creating web servers with Axum
 - Implementing user registration and login
 - Managing authenticated sessions with cookies
 

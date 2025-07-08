@@ -23,7 +23,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii-storage-seaorm = "0.2"
+torii-storage-seaorm = "0.4.0"
 ```
 
 ### Basic Setup

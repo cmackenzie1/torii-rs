@@ -20,7 +20,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii-storage-sqlite = "0.2"
+torii-storage-sqlite = "0.4.0"
 ```
 
 ### Basic Setup

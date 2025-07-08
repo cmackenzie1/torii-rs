@@ -8,7 +8,7 @@ The Torii framework consists of several key components:
 
 1. **The Torii Coordinator**: The main `Torii` struct that coordinates all authentication activities
 2. **Storage Backends**: Implementations for persisting user and session data
-3. **Authentication Plugins**: Modules for different authentication methods
+3. **Authentication Services**: Modules for different authentication methods
 4. **User and Session Management**: APIs for creating and verifying sessions
 
 ## Users
@@ -33,7 +33,7 @@ The core `User` struct contains the following fields:
 Each user has a unique `UserId` that identifies them in the system. This ID is:
 
 - Stable and will not change during the user's lifetime
-- Treated as an opaque identifier rather than a specific format (though it uses UUIDs internally by default)
+- Treated as an opaque identifier rather than a specific format (uses base58-encoded IDs)
 - Used to link user accounts to authentication methods, sessions, and application data
 
 ## Sessions
@@ -71,7 +71,7 @@ Torii supports two types of sessions:
 
 ## Authentication Methods
 
-Torii provides several authentication methods through its plugin system:
+Torii provides several authentication methods through its service architecture:
 
 ### Password Authentication
 
@@ -155,7 +155,7 @@ Torii provides several ways to initialize the system based on your application's
 
 Torii uses a structured error system with the `ToriiError` enum that includes:
 
-- `PluginNotFound`: When an authentication plugin is not available
+- `ServiceNotFound`: When an authentication service is not available
 - `AuthError`: When authentication fails
 - `StorageError`: When there's an issue with the storage backend
 

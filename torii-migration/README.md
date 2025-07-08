@@ -21,7 +21,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii-migration = "0.2"
+torii-migration = "0.4.0"
 ```
 
 ### Basic Migration

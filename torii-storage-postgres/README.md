@@ -21,7 +21,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii-storage-postgres = "0.2"
+torii-storage-postgres = "0.4.0"
 ```
 
 ### Basic Setup

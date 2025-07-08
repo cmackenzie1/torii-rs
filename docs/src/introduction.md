@@ -1,6 +1,6 @@
 # Introduction to Torii
 
-Torii is a powerful authentication framework for Rust applications that gives you complete control over your users' data. Unlike hosted solutions like Auth0, Clerk, or WorkOS that store user information in their cloud, Torii lets you own and manage your authentication stack while providing modern auth features through a flexible plugin system.
+Torii is a powerful authentication framework for Rust applications that gives you complete control over your users' data. Unlike hosted solutions like Auth0, Clerk, or WorkOS that store user information in their cloud, Torii lets you own and manage your authentication stack while providing modern auth features through a flexible service architecture.
 
 With Torii, you get the best of both worlds - powerful authentication capabilities combined with full data sovereignty and the ability to store user data wherever you choose.
 
@@ -16,13 +16,13 @@ With Torii, you get the best of both worlds - powerful authentication capabiliti
   - Magic Link authentication
 - **Flexible Storage**: Store user data in SQLite, PostgreSQL, or MySQL (using SeaORM)
 - **JWT Support**: Optional stateless JWT sessions
-- **Extensible Plugin System**: Add custom authentication methods or storage backends
+- **Extensible Service Architecture**: Add custom authentication methods or storage backends
 
 ## Storage Support
 
-| Plugin             | SQLite | PostgreSQL | MySQL (using SeaORM) |
-|--------------------|--------|------------|----------------------|
-| Password           | ✅     | ✅         | ✅                   |
-| OAuth2/OIDC        | ✅     | ✅         | ✅                   |
-| Passkey            | ✅     | ✅         | ✅                   |
-| Magic Link         | ✅     | ✅         | ✅                   |
+| Authentication Method | SQLite | PostgreSQL | MySQL (using SeaORM) |
+|-----------------------|--------|------------|----------------------|
+| Password              | ✅     | ✅         | ✅                   |
+| OAuth2/OIDC           | ✅     | ✅         | ✅                   |
+| Passkey               | ✅     | ✅         | ✅                   |
+| Magic Link            | ✅     | ✅         | ✅                   |
