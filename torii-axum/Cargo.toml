@@ -1,0 +1,26 @@
+[package]
+name = "torii-axum"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+torii = { path = "../torii", default-features = false }
+torii-core = { path = "../torii-core" }
+axum = "0.8"
+axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tower = "0.5"
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+[features]
+default = []
+password = ["torii/password"]
+magic-link = ["torii/magic-link"]
+oauth = ["torii/oauth"]
+passkey = ["torii/passkey"]
