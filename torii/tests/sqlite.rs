@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use torii::{SqliteRepositoryProvider, Torii};
+use torii::{Torii, sqlite::SqliteRepositoryProvider};
 use torii_core::repositories::RepositoryProvider;
 
 #[tokio::test]

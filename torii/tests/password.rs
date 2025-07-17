@@ -5,7 +5,7 @@ use torii_core::repositories::RepositoryProvider;
 use torii_core::session::{JwtConfig, SessionToken};
 
 #[cfg(feature = "sqlite")]
-use torii::SqliteRepositoryProvider;
+use torii::sqlite::SqliteRepositoryProvider;
 
 // Test secret for HS256
 const TEST_HS256_SECRET: &[u8] = b"this_is_a_test_secret_key_for_hs256_jwt_tokens_not_for_prod";

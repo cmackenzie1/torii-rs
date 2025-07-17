@@ -54,7 +54,7 @@ Basic usage example:
 
 ```rust
 use torii::Torii;
-use torii_storage_sqlite::SqliteStorage;
+use torii::sqlite::SqliteStorage;
 use std::sync::Arc;
 
 #[tokio::main]

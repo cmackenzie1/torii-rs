@@ -1,6 +1,9 @@
 use dashmap::DashMap;
 use std::{net::SocketAddr, sync::Arc};
-use torii::{SeaORMRepositoryProvider, SeaORMStorage, Torii};
+use torii::{
+    seaorm::{SeaORMRepositoryProvider, SeaORMStorage},
+    Torii,
+};
 
 mod routes;
 mod templates;

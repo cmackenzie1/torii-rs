@@ -3,7 +3,7 @@
 #[cfg(feature = "seaorm")]
 mod tests {
     use std::sync::Arc;
-    use torii::{SeaORMStorage, Torii};
+    use torii::{Torii, seaorm::SeaORMStorage};
     use torii_core::repositories::RepositoryProvider;
 
     #[tokio::test]
