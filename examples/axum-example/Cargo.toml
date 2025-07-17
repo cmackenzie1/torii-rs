@@ -1,13 +1,17 @@
 [package]
-name = "axum-sqlite-password-example"
+name = "axum-example"
 version = "0.4.0"
 edition = "2021"
 publish = false
 
 [dependencies]
-torii = { path = "../../torii", features = ["password"] }
+torii = { path = "../../torii", features = [
+    "password",
+    "mailer",
+    "magic-link",
+    "seaorm-sqlite",
+] }
 torii-axum = { path = "../../torii-axum", features = ["password"] }
-torii-storage-seaorm = { path = "../../torii-storage-seaorm", features = ["sqlite"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

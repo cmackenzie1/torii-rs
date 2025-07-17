@@ -291,14 +291,18 @@ impl<R: RepositoryProvider> MagicLinkRepositoryAdapter<R> {
 
 #[async_trait]
 impl<R: RepositoryProvider> MagicLinkRepository for MagicLinkRepositoryAdapter<R> {
-    async fn create_token(&self, email: &str, expires_in: Duration) -> Result<MagicToken, Error> {
+    async fn create_token(
+        &self,
+        user_id: &UserId,
+        expires_in: Duration,
+    ) -> Result<MagicToken, Error> {
         self.provider
             .magic_link()
-            .create_token(email, expires_in)
+            .create_token(user_id, expires_in)
             .await
     }
 
-    async fn verify_token(&self, token: &str) -> Result<Option<String>, Error> {
+    async fn verify_token(&self, token: &str) -> Result<Option<MagicToken>, Error> {
         self.provider.magic_link().verify_token(token).await
     }
 

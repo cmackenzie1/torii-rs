@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::Duration;
 use sea_orm::DatabaseConnection;
 use torii_core::{
-    Error,
+    Error, UserId,
     repositories::MagicLinkRepository,
     storage::{MagicLinkStorage, MagicToken},
 };
@@ -22,9 +22,12 @@ impl SeaORMMagicLinkRepository {
 
 #[async_trait]
 impl MagicLinkRepository for SeaORMMagicLinkRepository {
-    async fn create_token(&self, _email: &str, expires_in: Duration) -> Result<MagicToken, Error> {
+    async fn create_token(
+        &self,
+        user_id: &UserId,
+        expires_in: Duration,
+    ) -> Result<MagicToken, Error> {
         use chrono::Utc;
-        use torii_core::UserId;
         use uuid::Uuid;
 
         // Generate a random token
@@ -32,7 +35,7 @@ impl MagicLinkRepository for SeaORMMagicLinkRepository {
 
         // Create magic token
         let magic_token = MagicToken::new(
-            UserId::default(), // This should be looked up by email
+            user_id.clone(),
             token,
             None,
             Utc::now() + expires_in,
@@ -50,13 +53,13 @@ impl MagicLinkRepository for SeaORMMagicLinkRepository {
         Ok(magic_token)
     }
 
-    async fn verify_token(&self, token: &str) -> Result<Option<String>, Error> {
+    async fn verify_token(&self, token: &str) -> Result<Option<MagicToken>, Error> {
         let magic_token = self.storage.get_magic_token(token).await.map_err(|e| {
             Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
         })?;
 
-        if let Some(token) = magic_token {
-            if !token.used() {
+        if let Some(mut token) = magic_token {
+            if !token.used() && token.expires_at > chrono::Utc::now() {
                 // Mark token as used
                 self.storage
                     .set_magic_token_used(&token.token)
@@ -65,8 +68,11 @@ impl MagicLinkRepository for SeaORMMagicLinkRepository {
                         Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
                     })?;
 
-                // Return the user ID or email associated with the token
-                Ok(Some(token.user_id.to_string()))
+                // Update the token to reflect it has been used
+                token.used_at = Some(chrono::Utc::now());
+                token.updated_at = chrono::Utc::now();
+
+                Ok(Some(token))
             } else {
                 Ok(None)
             }

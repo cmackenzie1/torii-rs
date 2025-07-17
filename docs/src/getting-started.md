@@ -122,7 +122,7 @@ let (user, session) = torii.verify_magic_token(
 
 Check out the complete examples in the repository:
 
-- **[examples/axum-sqlite-password](https://github.com/cmackenzie1/torii-rs/tree/main/examples/axum-sqlite-password)** - Web server with authentication
+- **[examples/axum-example](https://github.com/cmackenzie1/torii-rs/tree/main/examples/axum-example)** - Complete web server with authentication and email support
 - **[examples/todos](https://github.com/cmackenzie1/torii-rs/tree/main/examples/todos)** - Complete todo application
 
 ## Next Steps

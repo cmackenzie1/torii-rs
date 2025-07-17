@@ -4,6 +4,7 @@
 //! authentication and user management logic.
 
 pub mod magic_link;
+pub mod mailer;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -16,3 +17,6 @@ pub use passkey::PasskeyService;
 pub use password::PasswordService;
 pub use session::SessionService;
 pub use user::UserService;
+
+#[cfg(feature = "mailer")]
+pub use mailer::{MailerService, ToriiMailerService};

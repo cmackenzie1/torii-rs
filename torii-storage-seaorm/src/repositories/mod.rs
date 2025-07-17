@@ -38,6 +38,7 @@ impl SeaORMRepositoryProvider {
         let password = Arc::new(SeaORMPasswordRepository::new(pool.clone()));
         let oauth = Arc::new(SeaORMOAuthRepository::new(pool.clone()));
         let passkey = Arc::new(SeaORMPasskeyRepository::new(pool.clone()));
+
         let magic_link = Arc::new(SeaORMMagicLinkRepository::new(pool.clone()));
 
         Self {
