@@ -8,3 +8,6 @@ title = "Torii Documentation"
 [output.html]
 git-repository-url = "https://github.com/cmackenzie1/torii-rs"
 edit-url-template = "https://github.com/cmackenzie1/torii-rs/edit/main/docs/{path}"
+
+[rust]
+edition = "2024"
