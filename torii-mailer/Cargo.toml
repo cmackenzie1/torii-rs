@@ -1,0 +1,36 @@
+[package]
+name = "torii-mailer"
+description = "Pluggable email system for the torii authentication ecosystem"
+version = "0.4.0"
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# Email functionality
+lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "sendmail-transport", "file-transport", "builder"] }
+askama = { version = "0.12", features = ["serde-json"] }
+regex.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile = "3.8"
+
+[features]
+default = ["smtp", "file"]
+
+# Transport features
+smtp = ["lettre/smtp-transport"]
+sendmail = ["lettre/sendmail-transport"] 
+file = ["lettre/file-transport"]
+
+# TLS features
+native-tls = ["lettre/tokio1-native-tls"]
+rustls = ["lettre/tokio1-rustls-tls"]

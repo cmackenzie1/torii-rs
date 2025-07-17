@@ -8,6 +8,11 @@ use sea_orm::{
 };
 use sea_orm_migration::{MigrationTrait, MigratorTrait};
 
+use crate::migrations::{
+    m20250304_000004_create_passkeys_table::CreatePasskeys,
+    m20250304_000005_create_magic_links::CreateMagicLinks,
+};
+
 mod m20250304_000001_create_user_table;
 mod m20250304_000002_create_session_table;
 mod m20250304_000003_create_oauth_table;
@@ -29,6 +34,8 @@ impl MigratorTrait for Migrator {
             Box::new(CreateUsers),
             Box::new(CreateSessions),
             Box::new(CreateOAuthAccounts),
+            Box::new(CreatePasskeys),
+            Box::new(CreateMagicLinks),
         ]
     }
 }

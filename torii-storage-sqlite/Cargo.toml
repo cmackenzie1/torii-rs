@@ -13,6 +13,7 @@ async-trait.workspace = true
 chrono.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

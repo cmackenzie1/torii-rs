@@ -151,7 +151,7 @@ The Torii project is organized into several crates:
 ### Examples
 
 - **[`examples/todos`](./examples/todos/)** - Complete todo application demonstrating Torii integration
-- **[`examples/axum-sqlite-password`](./examples/axum-sqlite-password/)** - Axum web server with SQLite and password authentication
+- **[`examples/axum-example`](./examples/axum-example/)** - Complete Axum web server with SQLite, password authentication, and email support
 
 ## Architecture
 

@@ -71,6 +71,9 @@ use torii_core::services::PasskeyService;
 #[cfg(feature = "magic-link")]
 use torii_core::services::MagicLinkService;
 
+#[cfg(feature = "mailer")]
+use torii_core::services::{MailerService, ToriiMailerService};
+
 /// Re-export core types from torii_core
 ///
 /// These types are commonly used when working with the Torii API.
@@ -80,6 +83,10 @@ pub use torii_core::{
 
 /// Re-export storage types
 pub use torii_core::storage::MagicToken;
+
+/// Re-export mailer types when mailer feature is enabled
+#[cfg(feature = "mailer")]
+pub use torii_mailer::{MailerConfig, TemplateContext};
 
 // Note: Authentication is now handled by services rather than plugins
 // The old plugin system has been replaced with a service-based architecture
@@ -214,7 +221,7 @@ impl SessionConfig {
 ///     let user_id = UserId::new("example-user-id");
 ///     let user = torii.get_user(&user_id).await?;
 ///     println!("User: {:?}", user);
-///     
+///
 ///     Ok(())
 /// }
 /// ```
@@ -239,6 +246,9 @@ pub struct Torii<R: RepositoryProvider> {
     #[allow(dead_code)] // TODO: Expose magic link service methods in Torii API
     magic_link_service:
         Arc<MagicLinkService<UserRepositoryAdapter<R>, MagicLinkRepositoryAdapter<R>>>,
+
+    #[cfg(feature = "mailer")]
+    mailer_service: Option<Arc<ToriiMailerService>>,
 
     session_config: SessionConfig,
 }
@@ -304,6 +314,9 @@ impl<R: RepositoryProvider> Torii<R> {
                 )),
             )),
 
+            #[cfg(feature = "mailer")]
+            mailer_service: None,
+
             session_config: SessionConfig::default(),
         }
     }
@@ -345,6 +358,42 @@ impl<R: RepositoryProvider> Torii<R> {
     pub fn with_jwt_sessions(self, jwt_config: JwtConfig) -> Self {
         let config = SessionConfig::default().with_jwt(jwt_config);
         self.with_session_config(config)
+    }
+
+    /// Configure the mailer service
+    ///
+    /// This method allows you to add email functionality to Torii for sending
+    /// authentication-related emails like magic links, welcome emails, and password reset notifications.
+    ///
+    /// # Arguments
+    ///
+    /// * `mailer_config` - The mailer configuration to use
+    ///
+    /// # Returns
+    ///
+    /// Returns a Result with the updated Torii instance or an error if the mailer configuration is invalid
+    #[cfg(feature = "mailer")]
+    pub fn with_mailer(mut self, mailer_config: MailerConfig) -> Result<Self, ToriiError> {
+        let mailer = ToriiMailerService::new(mailer_config)
+            .map_err(|e| ToriiError::StorageError(format!("Failed to configure mailer: {e}")))?;
+        self.mailer_service = Some(Arc::new(mailer));
+        Ok(self)
+    }
+
+    /// Configure the mailer service from environment variables
+    ///
+    /// This is a convenience method that reads mailer configuration from environment variables.
+    ///
+    /// # Returns
+    ///
+    /// Returns a Result with the updated Torii instance or an error if the environment configuration is invalid
+    #[cfg(feature = "mailer")]
+    pub fn with_mailer_from_env(mut self) -> Result<Self, ToriiError> {
+        let mailer = ToriiMailerService::from_env().map_err(|e| {
+            ToriiError::StorageError(format!("Failed to configure mailer from environment: {e}"))
+        })?;
+        self.mailer_service = Some(Arc::new(mailer));
+        Ok(self)
     }
 
     /// Run migrations for all repositories
@@ -490,10 +539,44 @@ impl<R: RepositoryProvider> Torii<R> {
         email: &str,
         password: &str,
     ) -> Result<User, ToriiError> {
-        self.password_service
-            .register_user(email, password, None)
+        self.register_user_with_password_and_name(email, password, None)
             .await
-            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Register a user with a password and optional name
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email of the user to register
+    /// * `password`: The password of the user to register
+    /// * `name`: Optional name for the user
+    ///
+    /// # Returns
+    ///
+    /// Returns the registered user
+    pub async fn register_user_with_password_and_name(
+        &self,
+        email: &str,
+        password: &str,
+        name: Option<&str>,
+    ) -> Result<User, ToriiError> {
+        let user = self
+            .password_service
+            .register_user(email, password, name.map(|n| n.to_string()))
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Send welcome email if mailer is configured
+        #[cfg(feature = "mailer")]
+        if let Some(mailer) = &self.mailer_service {
+            let user_name = user.name.as_deref();
+            if let Err(e) = mailer.send_welcome_email(&user.email, user_name).await {
+                tracing::warn!("Failed to send welcome email: {}", e);
+                // Don't fail the registration if email sending fails
+            }
+        }
+
+        Ok(user)
     }
 
     /// Login a user with a password
@@ -543,6 +626,12 @@ impl<R: RepositoryProvider> Torii<R> {
         old_password: &str,
         new_password: &str,
     ) -> Result<(), ToriiError> {
+        // Get user details before changing password for potential email notification
+        let user = self
+            .get_user(user_id)
+            .await?
+            .ok_or_else(|| ToriiError::AuthError("User not found".to_string()))?;
+
         self.password_service
             .change_password(user_id, old_password, new_password)
             .await
@@ -550,6 +639,19 @@ impl<R: RepositoryProvider> Torii<R> {
 
         // Remove all existing sessions for the user.
         self.delete_sessions_for_user(user_id).await?;
+
+        // Send password changed notification email if mailer is configured
+        #[cfg(feature = "mailer")]
+        if let Some(mailer) = &self.mailer_service {
+            let user_name = user.name.as_deref();
+            if let Err(e) = mailer
+                .send_password_changed_email(&user.email, user_name)
+                .await
+            {
+                tracing::warn!("Failed to send password changed email: {}", e);
+                // Don't fail the password change if email sending fails
+            }
+        }
 
         Ok(())
     }
@@ -571,6 +673,53 @@ impl<R: RepositoryProvider> Torii<R> {
             .generate_token(email)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Generate a magic token and automatically send it via email if mailer is configured
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email of the user to generate a token for
+    /// * `magic_link_url_base`: The base URL for the magic link (e.g., "https://yourapp.com/auth/magic")
+    ///
+    /// # Returns
+    ///
+    /// Returns the generated magic token
+    pub async fn generate_magic_token_with_email(
+        &self,
+        email: &str,
+        magic_link_url_base: &str,
+    ) -> Result<MagicToken, ToriiError> {
+        let token = self.generate_magic_token(email).await?;
+
+        // Send magic link email if mailer is configured
+        #[cfg(feature = "mailer")]
+        if let Some(mailer) = &self.mailer_service {
+            let magic_link = format!(
+                "{}/{}",
+                magic_link_url_base.trim_end_matches('/'),
+                token.token
+            );
+
+            // Get user name if the user exists
+            let user = self
+                .user_service
+                .get_user_by_email(email)
+                .await
+                .ok()
+                .flatten();
+            let user_name = user.as_ref().and_then(|u| u.name.as_deref());
+
+            if let Err(e) = mailer
+                .send_magic_link_email(email, &magic_link, user_name)
+                .await
+            {
+                tracing::warn!("Failed to send magic link email: {}", e);
+                // Don't fail the token generation if email sending fails
+            }
+        }
+
+        Ok(token)
     }
 
     /// Verify a magic token and return the user and session

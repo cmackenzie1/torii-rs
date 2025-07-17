@@ -19,8 +19,11 @@ members = [
     # Level 5: Wrappers and helpers
     "torii-axum",
     
+    # Level 6: Email functionality
+    "torii-mailer",
+    
     # Examples (not published)
-    "examples/todos", "examples/axum-sqlite-password",
+    "examples/todos", "examples/axum-example",
 ]
 resolver = "3"
 

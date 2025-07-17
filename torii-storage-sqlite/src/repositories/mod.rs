@@ -37,6 +37,7 @@ impl SqliteRepositoryProvider {
         let password = Arc::new(SqlitePasswordRepository::new(pool.clone()));
         let oauth = Arc::new(SqliteOAuthRepository::new(pool.clone()));
         let passkey = Arc::new(SqlitePasskeyRepository::new(pool.clone()));
+
         let magic_link = Arc::new(SqliteMagicLinkRepository::new(pool.clone()));
 
         Self {

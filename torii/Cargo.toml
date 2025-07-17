@@ -11,6 +11,7 @@ torii-core = { path = "../torii-core", version = "0.4.0" }
 torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.4.0", optional = true }
 torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.4.0", optional = true }
 torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.4.0", optional = true }
+torii-mailer = { path = "../torii-mailer", version = "0.4.0", optional = true }
 
 # dependencies
 chrono.workspace = true # TODO: Make this optional and expose std::time::Duration in APIs
@@ -43,3 +44,6 @@ password = []
 oauth = []
 passkey = []
 magic-link = []
+
+# mailer feature
+mailer = ["dep:torii-mailer", "torii-core/mailer"]
