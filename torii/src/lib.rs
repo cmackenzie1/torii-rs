@@ -30,7 +30,7 @@
 //!
 //! ```rust,no_run
 //! use torii::Torii;
-//! use torii_storage_sqlite::SqliteRepositoryProvider;
+//! use torii::sqlite::SqliteRepositoryProvider;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
@@ -84,23 +84,32 @@ pub use torii_core::storage::MagicToken;
 // Note: Authentication is now handled by services rather than plugins
 // The old plugin system has been replaced with a service-based architecture
 
-/// Re-export storage backends
-///
-/// These storage implementations are available when the corresponding feature is enabled.
+// Re-export storage backends
+// These storage implementations are available when the corresponding feature is enabled.
+
+/// SQLite storage backend
 #[cfg(feature = "sqlite")]
-pub use torii_storage_sqlite::{SqliteRepositoryProvider, SqliteStorage};
+pub mod sqlite {
+    pub use torii_storage_sqlite::{SqliteRepositoryProvider, SqliteStorage};
+}
 
+/// PostgreSQL storage backend
 #[cfg(feature = "postgres")]
-pub use torii_storage_postgres::PostgresStorage;
-// TODO: Add PostgresRepositoryProvider once implemented
+pub mod postgres {
+    pub use torii_storage_postgres::PostgresStorage;
+    // TODO: Add PostgresRepositoryProvider once implemented
+}
 
+/// SeaORM storage backend
 #[cfg(any(
     feature = "seaorm-sqlite",
     feature = "seaorm-postgres",
     feature = "seaorm-mysql",
     feature = "seaorm"
 ))]
-pub use torii_storage_seaorm::{SeaORMStorage, repositories::SeaORMRepositoryProvider};
+pub mod seaorm {
+    pub use torii_storage_seaorm::{SeaORMStorage, repositories::SeaORMRepositoryProvider};
+}
 
 /// Errors that can occur when using Torii.
 ///
@@ -190,7 +199,7 @@ impl SessionConfig {
 ///
 /// ```rust,no_run
 /// use torii::{Torii, UserId};
-/// use torii_storage_sqlite::SqliteRepositoryProvider;
+/// use torii::sqlite::SqliteRepositoryProvider;
 /// use std::sync::Arc;
 ///
 /// #[tokio::main]

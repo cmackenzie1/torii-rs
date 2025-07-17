@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use torii::{SqliteRepositoryProvider, Torii};
+use torii::{Torii, sqlite::SqliteRepositoryProvider};
 use torii_core::repositories::RepositoryProvider;
 
 // Magic link tests are disabled until MagicLinkService methods are exposed in Torii API

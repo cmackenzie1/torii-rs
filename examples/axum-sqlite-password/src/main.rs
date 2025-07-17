@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use axum::{response::Json, routing::get, Router};
 use serde_json::{json, Value};
+use torii::seaorm::SeaORMStorage;
 use torii::Torii;
 use torii_axum::{
     AuthUser, CookieConfig, OptionalAuthUser, SessionTokenFromBearer, SessionTokenFromRequest,
 };
-use torii_storage_seaorm::SeaORMStorage;
 use tracing::{info, warn};
 
 #[tokio::main]

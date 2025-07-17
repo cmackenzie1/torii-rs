@@ -4,7 +4,7 @@ use torii::Torii;
 #[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn test_basic_torii_functionality() -> Result<(), Box<dyn std::error::Error>> {
-    use torii::SqliteRepositoryProvider;
+    use torii::sqlite::SqliteRepositoryProvider;
 
     // Create in-memory SQLite database
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await?;
@@ -32,7 +32,7 @@ async fn test_basic_torii_functionality() -> Result<(), Box<dyn std::error::Erro
 #[cfg(all(feature = "sqlite", feature = "password"))]
 #[tokio::test]
 async fn test_password_authentication() -> Result<(), Box<dyn std::error::Error>> {
-    use torii::SqliteRepositoryProvider;
+    use torii::sqlite::SqliteRepositoryProvider;
 
     // Create in-memory SQLite database
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await?;

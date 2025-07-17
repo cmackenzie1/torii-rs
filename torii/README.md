@@ -32,7 +32,7 @@ torii = { version = "0.2.0", features = ["sqlite", "password"] }
 
 ```rust
 use torii::{Torii, SessionConfig};
-use torii_storage_sqlite::SqliteStorage;
+use torii::sqlite::SqliteStorage;
 use std::sync::Arc;
 
 #[tokio::main]
