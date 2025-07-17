@@ -1,0 +1,1 @@
+Torii::new(storage)

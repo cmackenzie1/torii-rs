@@ -1,0 +1,1 @@
+Torii::with_storages(user_storage, session_storage)
