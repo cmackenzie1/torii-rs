@@ -72,7 +72,11 @@ impl UserStorage for SeaORMStorage {
 
     async fn update_user(&self, user: &ToriiUser) -> Result<ToriiUser, torii_core::Error> {
         let model = user::ActiveModel {
+            id: Set(user.id.as_str().to_string()),
             name: Set(user.name.to_owned()),
+            email: Set(user.email.to_owned()),
+            email_verified_at: Set(user.email_verified_at.to_owned()),
+            updated_at: Set(Utc::now()),
             ..Default::default()
         };
 
