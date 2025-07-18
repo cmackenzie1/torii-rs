@@ -1,11 +1,11 @@
 use crate::{
     Error, OAuthAccount, Session, SessionStorage, User, UserId,
     repositories::{
-        MagicLinkRepository, OAuthRepository, PasskeyCredential, PasskeyRepository,
+        OAuthRepository, PasskeyCredential, PasskeyRepository,
         PasswordRepository, RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
     },
     session::SessionToken,
-    storage::{MagicToken, NewUser, SecureToken, TokenPurpose},
+    storage::{NewUser, SecureToken, TokenPurpose},
 };
 use async_trait::async_trait;
 use chrono::Duration;
@@ -279,37 +279,6 @@ impl<R: RepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
     }
 }
 
-pub struct MagicLinkRepositoryAdapter<R: RepositoryProvider> {
-    provider: Arc<R>,
-}
-
-impl<R: RepositoryProvider> MagicLinkRepositoryAdapter<R> {
-    pub fn new(provider: Arc<R>) -> Self {
-        Self { provider }
-    }
-}
-
-#[async_trait]
-impl<R: RepositoryProvider> MagicLinkRepository for MagicLinkRepositoryAdapter<R> {
-    async fn create_token(
-        &self,
-        user_id: &UserId,
-        expires_in: Duration,
-    ) -> Result<MagicToken, Error> {
-        self.provider
-            .magic_link()
-            .create_token(user_id, expires_in)
-            .await
-    }
-
-    async fn verify_token(&self, token: &str) -> Result<Option<MagicToken>, Error> {
-        self.provider.magic_link().verify_token(token).await
-    }
-
-    async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
-        self.provider.magic_link().cleanup_expired_tokens().await
-    }
-}
 
 /// Adapter that wraps a RepositoryProvider and implements TokenRepository
 pub struct TokenRepositoryAdapter<R: RepositoryProvider> {

@@ -4,7 +4,6 @@
 //! These traits provide a clean abstraction over the underlying storage implementation.
 
 pub mod adapter;
-pub mod magic_link;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -13,11 +12,10 @@ pub mod token;
 pub mod user;
 
 pub use adapter::{
-    MagicLinkRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
+    OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
     PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
     UserRepositoryAdapter,
 };
-pub use magic_link::MagicLinkRepository;
 pub use oauth::OAuthRepository;
 pub use passkey::{PasskeyCredential, PasskeyRepository};
 pub use password::PasswordRepository;
@@ -37,7 +35,6 @@ pub trait RepositoryProvider: Send + Sync + 'static {
     type Password: PasswordRepository;
     type OAuth: OAuthRepository;
     type Passkey: PasskeyRepository;
-    type MagicLink: MagicLinkRepository;
     type Token: TokenRepository;
 
     /// Get the user repository
@@ -55,8 +52,6 @@ pub trait RepositoryProvider: Send + Sync + 'static {
     /// Get the passkey repository
     fn passkey(&self) -> &Self::Passkey;
 
-    /// Get the magic link repository
-    fn magic_link(&self) -> &Self::MagicLink;
 
     /// Get the token repository
     fn token(&self) -> &Self::Token;

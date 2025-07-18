@@ -15,7 +15,6 @@
 //! - **Password Authentication**: Secure password hashing and verification
 //! - **OAuth Integration**: Store OAuth account connections and tokens
 //! - **Passkey Support**: WebAuthn/FIDO2 passkey storage and challenge management
-//! - **Magic Link Authentication**: Generate and verify magic links for passwordless login
 //!
 //! # Usage
 //!
@@ -59,7 +58,6 @@
 //! - Password credential storage with secure hashing
 //! - OAuth account connections and token management
 //! - WebAuthn passkey credentials and challenge handling
-//! - Magic link token generation and verification
 //!
 //! # Entity Models
 //!
@@ -70,12 +68,10 @@
 //! - `OAuthAccount` - Connected OAuth accounts
 //! - `Passkey` - WebAuthn passkey credentials
 //! - `PasskeyChallenge` - Temporary passkey challenges
-//! - `MagicLink` - Magic link tokens and metadata
 //!
 //! All entities include appropriate relationships and indexes for optimal performance.
 
 mod entities;
-mod magic_link;
 mod migrations;
 mod oauth;
 mod passkey;

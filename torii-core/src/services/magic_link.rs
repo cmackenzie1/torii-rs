@@ -1,37 +1,37 @@
 use crate::{
     Error, User,
-    repositories::{MagicLinkRepository, UserRepository},
+    repositories::{TokenRepository, UserRepository},
     services::UserService,
-    storage::MagicToken,
+    storage::{SecureToken, TokenPurpose},
 };
 use chrono::Duration;
 use std::sync::Arc;
 
 /// Service for magic link authentication operations
-pub struct MagicLinkService<U: UserRepository, M: MagicLinkRepository> {
+pub struct MagicLinkService<U: UserRepository, T: TokenRepository> {
     user_service: Arc<UserService<U>>,
-    magic_link_repository: Arc<M>,
+    token_repository: Arc<T>,
 }
 
-impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
+impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
     /// Create a new MagicLinkService with the given repositories
-    pub fn new(user_repository: Arc<U>, magic_link_repository: Arc<M>) -> Self {
+    pub fn new(user_repository: Arc<U>, token_repository: Arc<T>) -> Self {
         let user_service = Arc::new(UserService::new(user_repository));
         Self {
             user_service,
-            magic_link_repository,
+            token_repository,
         }
     }
 
     /// Generate a magic token for a user
-    pub async fn generate_token(&self, email: &str) -> Result<MagicToken, Error> {
+    pub async fn generate_token(&self, email: &str) -> Result<SecureToken, Error> {
         // Ensure user exists (or create them) - email validation happens in UserService
         let user = self.user_service.get_or_create_user(email).await?;
 
         // Generate the token with default expiration (15 minutes)
         let expires_in = Duration::minutes(15);
-        self.magic_link_repository
-            .create_token(&user.id, expires_in)
+        self.token_repository
+            .create_token(&user.id, TokenPurpose::MagicLink, expires_in)
             .await
     }
 
@@ -40,23 +40,26 @@ impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
         &self,
         email: &str,
         expires_in: Duration,
-    ) -> Result<MagicToken, Error> {
+    ) -> Result<SecureToken, Error> {
         // Ensure user exists (or create them) - email validation happens in UserService
         let user = self.user_service.get_or_create_user(email).await?;
 
-        self.magic_link_repository
-            .create_token(&user.id, expires_in)
+        self.token_repository
+            .create_token(&user.id, TokenPurpose::MagicLink, expires_in)
             .await
     }
 
     /// Verify a magic token and return the associated user
     pub async fn verify_token(&self, token: &str) -> Result<Option<User>, Error> {
         // Verify and consume the token
-        let magic_token = self.magic_link_repository.verify_token(token).await?;
+        let secure_token = self
+            .token_repository
+            .verify_token(token, TokenPurpose::MagicLink)
+            .await?;
 
-        if let Some(magic_token) = magic_token {
+        if let Some(secure_token) = secure_token {
             // Get the user by ID
-            let user = self.user_service.get_user(&magic_token.user_id).await?;
+            let user = self.user_service.get_user(&secure_token.user_id).await?;
             Ok(user)
         } else {
             Ok(None)
@@ -65,15 +68,15 @@ impl<U: UserRepository, M: MagicLinkRepository> MagicLinkService<U, M> {
 
     /// Clean up expired tokens
     pub async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
-        self.magic_link_repository.cleanup_expired_tokens().await
+        self.token_repository.cleanup_expired_tokens().await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::{MagicLinkRepository, UserRepository};
-    use crate::storage::MagicToken;
+    use crate::repositories::{TokenRepository, UserRepository};
+    use crate::storage::{SecureToken, TokenPurpose};
     use crate::{User, UserId};
     use async_trait::async_trait;
     use chrono::{DateTime, Utc};
@@ -172,42 +175,51 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MockMagicLinkRepository {
-        tokens: Arc<Mutex<HashMap<String, MagicToken>>>,
+    struct MockTokenRepository {
+        tokens: Arc<Mutex<HashMap<String, SecureToken>>>,
     }
 
     #[async_trait]
-    impl MagicLinkRepository for MockMagicLinkRepository {
+    impl TokenRepository for MockTokenRepository {
         async fn create_token(
             &self,
             user_id: &UserId,
+            purpose: TokenPurpose,
             expires_in: Duration,
-        ) -> Result<MagicToken, Error> {
+        ) -> Result<SecureToken, Error> {
             let token_str = "test_token_123".to_string();
             let expires_at = Utc::now() + expires_in;
 
-            let magic_token = MagicToken {
-                user_id: user_id.clone(),
-                token: token_str.clone(),
-                used_at: None,
+            let secure_token = SecureToken::new(
+                user_id.clone(),
+                token_str.clone(),
+                purpose,
+                None,
                 expires_at,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            };
+                Utc::now(),
+                Utc::now(),
+            );
 
             self.tokens
                 .lock()
                 .await
-                .insert(token_str, magic_token.clone());
+                .insert(token_str, secure_token.clone());
 
-            Ok(magic_token)
+            Ok(secure_token)
         }
 
-        async fn verify_token(&self, token: &str) -> Result<Option<MagicToken>, Error> {
+        async fn verify_token(
+            &self,
+            token: &str,
+            purpose: TokenPurpose,
+        ) -> Result<Option<SecureToken>, Error> {
             let mut tokens = self.tokens.lock().await;
-            if let Some(magic_token) = tokens.get(token) {
-                if magic_token.expires_at > Utc::now() && magic_token.used_at.is_none() {
-                    let mut verified_token = magic_token.clone();
+            if let Some(secure_token) = tokens.get(token) {
+                if secure_token.purpose == purpose
+                    && secure_token.expires_at > Utc::now()
+                    && secure_token.used_at.is_none()
+                {
+                    let mut verified_token = secure_token.clone();
                     verified_token.used_at = Some(Utc::now());
                     verified_token.updated_at = Utc::now();
                     tokens.insert(token.to_string(), verified_token.clone());
@@ -217,6 +229,17 @@ mod tests {
                 }
             } else {
                 Ok(None)
+            }
+        }
+
+        async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
+            let tokens = self.tokens.lock().await;
+            if let Some(secure_token) = tokens.get(token) {
+                Ok(secure_token.purpose == purpose
+                    && secure_token.expires_at > Utc::now()
+                    && secure_token.used_at.is_none())
+            } else {
+                Ok(false)
             }
         }
 
@@ -231,22 +254,22 @@ mod tests {
     #[tokio::test]
     async fn test_generate_token() {
         let user_repo = Arc::new(MockUserRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
-        let service = MagicLinkService::new(user_repo, magic_link_repo);
+        let token_repo = Arc::new(MockTokenRepository::default());
+        let service = MagicLinkService::new(user_repo, token_repo);
 
         let result = service.generate_token("test@example.com").await;
         assert!(result.is_ok());
 
         let token = result.unwrap();
-        // MagicToken doesn't have email field directly
         assert_eq!(token.token, "test_token_123");
+        assert_eq!(token.purpose, TokenPurpose::MagicLink);
     }
 
     #[tokio::test]
     async fn test_generate_token_with_expiration() {
         let user_repo = Arc::new(MockUserRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
-        let service = MagicLinkService::new(user_repo, magic_link_repo);
+        let token_repo = Arc::new(MockTokenRepository::default());
+        let service = MagicLinkService::new(user_repo, token_repo);
 
         let expires_in = Duration::minutes(30);
         let result = service
@@ -254,15 +277,15 @@ mod tests {
             .await;
         assert!(result.is_ok());
 
-        let _token = result.unwrap();
-        // MagicToken doesn't have email field directly
+        let token = result.unwrap();
+        assert_eq!(token.purpose, TokenPurpose::MagicLink);
     }
 
     #[tokio::test]
     async fn test_verify_token_success() {
         let user_repo = Arc::new(MockUserRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
-        let service = MagicLinkService::new(user_repo, magic_link_repo);
+        let token_repo = Arc::new(MockTokenRepository::default());
+        let service = MagicLinkService::new(user_repo, token_repo);
 
         // First generate a token
         let token = service.generate_token("test@example.com").await.unwrap();
@@ -279,8 +302,8 @@ mod tests {
     #[tokio::test]
     async fn test_verify_token_not_found() {
         let user_repo = Arc::new(MockUserRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
-        let service = MagicLinkService::new(user_repo, magic_link_repo);
+        let token_repo = Arc::new(MockTokenRepository::default());
+        let service = MagicLinkService::new(user_repo, token_repo);
 
         let result = service.verify_token("invalid_token").await;
         assert!(result.is_ok());
@@ -290,8 +313,8 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_expired_tokens() {
         let user_repo = Arc::new(MockUserRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
-        let service = MagicLinkService::new(user_repo, magic_link_repo);
+        let token_repo = Arc::new(MockTokenRepository::default());
+        let service = MagicLinkService::new(user_repo, token_repo);
 
         let result = service.cleanup_expired_tokens().await;
         assert!(result.is_ok());

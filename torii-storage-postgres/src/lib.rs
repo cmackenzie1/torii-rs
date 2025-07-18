@@ -11,7 +11,6 @@
 //! - **Password Authentication**: Secure password hashing and verification
 //! - **OAuth Integration**: Store OAuth account connections and tokens
 //! - **Passkey Support**: WebAuthn/FIDO2 passkey storage and challenge management
-//! - **Magic Link Authentication**: Generate and verify magic links for passwordless login
 //! - **Database Migrations**: Automatic schema management and upgrades
 //! - **Production Ready**: Designed for high-performance production workloads
 //!
@@ -50,7 +49,6 @@
 //! - Password repository for secure password storage
 //! - OAuth repository for third-party authentication
 //! - Passkey repository for WebAuthn support
-//! - Magic link repository for passwordless authentication
 //!
 //! # Database Schema
 //!
@@ -61,11 +59,9 @@
 //! - `oauth_accounts` - Connected OAuth accounts
 //! - `passkeys` - WebAuthn passkey credentials
 //! - `passkey_challenges` - Temporary passkey challenges
-//! - `magic_links` - Magic link tokens and metadata
 //!
 //! All tables include appropriate indexes and constraints for optimal query performance and data integrity.
 
-mod magic_link;
 mod migrations;
 mod oauth;
 mod passkey;
@@ -76,7 +72,6 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use migrations::CreateIndexes;
-use migrations::CreateMagicLinksTable;
 use migrations::CreateOAuthAccountsTable;
 use migrations::CreatePasskeyChallengesTable;
 use migrations::CreatePasskeysTable;
@@ -125,7 +120,6 @@ impl PostgresStorage {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
-            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
