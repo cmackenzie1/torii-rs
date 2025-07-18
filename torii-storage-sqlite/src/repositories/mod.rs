@@ -80,16 +80,14 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         &self.passkey
     }
 
-
     fn token(&self) -> &Self::Token {
         &self.token
     }
 
     async fn migrate(&self) -> Result<(), torii_core::Error> {
         use crate::migrations::{
-            CreateIndexes, CreateOAuthAccountsTable,
-            CreatePasskeyChallengesTable, CreatePasskeysTable, CreateSessionsTable,
-            CreateUsersTable, SqliteMigrationManager,
+            CreateIndexes, CreateOAuthAccountsTable, CreatePasskeyChallengesTable,
+            CreatePasskeysTable, CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
         };
         use torii_migration::{Migration, MigrationManager};
 

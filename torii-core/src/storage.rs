@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use crate::{
-    Error, OAuthAccount, Session, User, UserId, error::ValidationError, session::SessionToken,
+    Error, OAuthAccount, Session, User, UserId, error::utilities::RequiredFieldExt,
+    session::SessionToken,
 };
 
 #[async_trait]
@@ -163,9 +164,7 @@ impl NewUserBuilder {
     pub fn build(self) -> Result<NewUser, Error> {
         Ok(NewUser {
             id: self.id.unwrap_or_default(),
-            email: self.email.ok_or(ValidationError::MissingField(
-                "Email is required".to_string(),
-            ))?,
+            email: self.email.require_field("Email")?,
             name: self.name,
             email_verified_at: self.email_verified_at,
         })
@@ -295,7 +294,6 @@ impl PartialEq for SecureToken {
             && self.updated_at.timestamp() == other.updated_at.timestamp()
     }
 }
-
 
 /// Storage methods for secure tokens
 ///

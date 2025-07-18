@@ -1,3 +1,5 @@
+pub mod utilities;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -83,8 +85,20 @@ pub enum ValidationError {
     #[error("Invalid email format: {0}")]
     InvalidEmail(String),
 
+    #[error("Invalid password: {0}")]
+    InvalidPassword(String),
+
     #[error("Weak password")]
     WeakPassword,
+
+    #[error("Invalid name: {0}")]
+    InvalidName(String),
+
+    #[error("Invalid user ID: {0}")]
+    InvalidUserId(String),
+
+    #[error("Invalid provider: {0}")]
+    InvalidProvider(String),
 
     #[error("Invalid field: {0}")]
     InvalidField(String),

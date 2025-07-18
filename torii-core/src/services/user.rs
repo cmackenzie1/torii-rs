@@ -1,5 +1,5 @@
 use crate::{
-    Error, User, UserId, error::ValidationError, repositories::UserRepository, storage::NewUser,
+    Error, User, UserId, repositories::UserRepository, storage::NewUser, validation::validate_email,
 };
 use std::sync::Arc;
 
@@ -17,11 +17,7 @@ impl<R: UserRepository> UserService<R> {
     /// Create a new user
     pub async fn create_user(&self, email: &str, name: Option<String>) -> Result<User, Error> {
         // Validate email format
-        if !Self::is_valid_email(email) {
-            return Err(Error::Validation(ValidationError::InvalidEmail(
-                email.to_string(),
-            )));
-        }
+        validate_email(email)?;
 
         let mut builder = NewUser::builder()
             .id(UserId::new_random())
@@ -49,11 +45,7 @@ impl<R: UserRepository> UserService<R> {
     /// Get or create a user by email
     pub async fn get_or_create_user(&self, email: &str) -> Result<User, Error> {
         // Validate email format
-        if !Self::is_valid_email(email) {
-            return Err(Error::Validation(ValidationError::InvalidEmail(
-                email.to_string(),
-            )));
-        }
+        validate_email(email)?;
 
         self.repository.find_or_create_by_email(email).await
     }
@@ -71,12 +63,5 @@ impl<R: UserRepository> UserService<R> {
     /// Mark a user's email as verified
     pub async fn verify_email(&self, user_id: &UserId) -> Result<(), Error> {
         self.repository.mark_email_verified(user_id).await
-    }
-
-    /// Validate email format
-    fn is_valid_email(email: &str) -> bool {
-        use regex::Regex;
-        let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
-        email_regex.is_match(email)
     }
 }
