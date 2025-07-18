@@ -10,7 +10,7 @@ torii = { path = "../../torii", version = "0.4.0", features = [
     "password",
     "seaorm-sqlite",
 ] }
-torii-core = { path = "../../torii-core", version = "0.4.0" }
+torii-core = { path = "../../torii-core", version = "0.4.1" }
 
 # database - SeaORM handles the database connection
 # sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
