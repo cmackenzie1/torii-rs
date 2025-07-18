@@ -7,7 +7,7 @@ async fn register_user(
     password: &str
 ) -> Result<(), ToriiError> {
     // Register a new user
-    let user = torii.register_user_with_password(email, password).await?;
+    let user = torii.password().register(email, password).await?;
 
     println!("User registered: {}", user.id);
     Ok(())

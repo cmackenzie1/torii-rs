@@ -310,7 +310,7 @@ async fn index_handler(
 
         <div class="section">
             <h2>🔄 Password Reset</h2>
-            
+
             <div style="display: flex; gap: 20px;">
                 <div style="flex: 1;">
                     <h3>Request Password Reset</h3>

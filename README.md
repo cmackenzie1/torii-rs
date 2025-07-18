@@ -68,13 +68,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let torii = Torii::new(repositories);
     
     // Register a user
-    let user = torii.register_user_with_password(
+    let user = torii.password().register(
         "user@example.com", 
         "secure_password"
     ).await?;
     
     // Login user
-    let (user, session) = torii.login_user_with_password(
+    let (user, session) = torii.password().authenticate(
         "user@example.com", 
         "secure_password",
         None, // user_agent
