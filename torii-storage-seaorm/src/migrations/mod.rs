@@ -109,7 +109,6 @@ pub enum PasskeyChallenges {
     UpdatedAt,
 }
 
-
 #[derive(DeriveIden)]
 #[allow(dead_code)]
 pub enum SecureTokens {

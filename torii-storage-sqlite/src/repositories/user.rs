@@ -2,7 +2,8 @@ use crate::SqliteUser;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use torii_core::{
-    Error, User, UserId, error::StorageError, repositories::UserRepository, storage::NewUser,
+    Error, User, UserId, error::utilities::DatabaseResultExt, repositories::UserRepository,
+    storage::NewUser,
 };
 
 pub struct SqliteUserRepository {
@@ -36,7 +37,7 @@ impl UserRepository for SqliteUserRepository {
         .bind(now)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+        .map_db_err_with_context("Failed to create user")?;
 
         Ok(sqlite_user.into())
     }
@@ -46,7 +47,7 @@ impl UserRepository for SqliteUserRepository {
             .bind(id.as_str())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+            .map_db_err_with_context("Failed to find user by ID")?;
 
         Ok(sqlite_user.map(|u| u.into()))
     }
@@ -56,7 +57,7 @@ impl UserRepository for SqliteUserRepository {
             .bind(email)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+            .map_db_err_with_context("Failed to find user by email")?;
 
         Ok(sqlite_user.map(|u| u.into()))
     }
@@ -89,7 +90,7 @@ impl UserRepository for SqliteUserRepository {
         .bind(now)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+        .map_db_err_with_context("Failed to update user")?;
 
         Ok(sqlite_user.into())
     }
@@ -99,7 +100,7 @@ impl UserRepository for SqliteUserRepository {
             .bind(id.as_str())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+            .map_db_err_with_context("Failed to delete user")?;
 
         Ok(())
     }
@@ -113,7 +114,7 @@ impl UserRepository for SqliteUserRepository {
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+            .map_db_err_with_context("Failed to mark email verified")?;
 
         Ok(())
     }

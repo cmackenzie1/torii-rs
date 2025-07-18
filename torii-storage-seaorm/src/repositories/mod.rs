@@ -81,7 +81,6 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
         &self.passkey
     }
 
-
     fn token(&self) -> &Self::Token {
         &self.token
     }

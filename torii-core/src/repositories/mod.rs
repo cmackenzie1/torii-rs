@@ -12,9 +12,8 @@ pub mod token;
 pub mod user;
 
 pub use adapter::{
-    OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
-    PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
-    UserRepositoryAdapter,
+    OAuthRepositoryAdapter, PasskeyRepositoryAdapter, PasswordRepositoryAdapter,
+    SessionRepositoryAdapter, TokenRepositoryAdapter, UserRepositoryAdapter,
 };
 pub use oauth::OAuthRepository;
 pub use passkey::{PasskeyCredential, PasskeyRepository};
@@ -51,7 +50,6 @@ pub trait RepositoryProvider: Send + Sync + 'static {
 
     /// Get the passkey repository
     fn passkey(&self) -> &Self::Passkey;
-
 
     /// Get the token repository
     fn token(&self) -> &Self::Token;

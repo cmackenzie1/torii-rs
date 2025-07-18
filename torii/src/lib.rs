@@ -59,7 +59,6 @@ use torii_core::repositories::OAuthRepositoryAdapter;
 #[cfg(feature = "passkey")]
 use torii_core::repositories::PasskeyRepositoryAdapter;
 
-
 #[cfg(feature = "password")]
 use torii_core::services::PasswordService;
 
@@ -248,8 +247,7 @@ pub struct Torii<R: RepositoryProvider> {
 
     #[cfg(feature = "magic-link")]
     #[allow(dead_code)] // TODO: Expose magic link service methods in Torii API
-    magic_link_service:
-        Arc<MagicLinkService<UserRepositoryAdapter<R>, TokenRepositoryAdapter<R>>>,
+    magic_link_service: Arc<MagicLinkService<UserRepositoryAdapter<R>, TokenRepositoryAdapter<R>>>,
 
     #[cfg(all(feature = "password", feature = "magic-link"))]
     password_reset_service: Arc<

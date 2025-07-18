@@ -16,6 +16,7 @@ pub mod services;
 pub mod session;
 pub mod storage;
 pub mod user;
+pub mod validation;
 
 pub use error::Error;
 pub use repositories::RepositoryProvider;

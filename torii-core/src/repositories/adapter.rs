@@ -1,8 +1,8 @@
 use crate::{
     Error, OAuthAccount, Session, SessionStorage, User, UserId,
     repositories::{
-        OAuthRepository, PasskeyCredential, PasskeyRepository,
-        PasswordRepository, RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
+        OAuthRepository, PasskeyCredential, PasskeyRepository, PasswordRepository,
+        RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
     },
     session::SessionToken,
     storage::{NewUser, SecureToken, TokenPurpose},
@@ -278,7 +278,6 @@ impl<R: RepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
         self.provider.passkey().delete_all_for_user(user_id).await
     }
 }
-
 
 /// Adapter that wraps a RepositoryProvider and implements TokenRepository
 pub struct TokenRepositoryAdapter<R: RepositoryProvider> {
