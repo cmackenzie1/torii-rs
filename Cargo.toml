@@ -2,28 +2,30 @@
 # This is the list of crates in the workspace, ordered by dependency hierarchy (leaf to root).
 # Publishing order: torii-core → torii-migration → storage/auth crates → torii
 members = [
-    # Level 1: Core (no internal dependencies)
+    # Level 1: Email functionality
+    "torii-mailer",
+
+    # Level 2: Core (no internal dependencies)
     "torii-core",
-    
-    # Level 2: Migration (depends on torii-core)
+
+    # Level 3: Migration (depends on torii-core)
     "torii-migration",
-    
-    # Level 3: Storage backends (depend on torii-core and torii-migration)
+
+    # Level 4: Storage backends (depend on torii-core and torii-migration)
     "torii-storage-sqlite",
     "torii-storage-postgres",
     "torii-storage-seaorm",
-    
-    # Level 4: Main library (depends on all above)
+
+    # Level 5: Main library (depends on all above)
     "torii",
 
     # Level 5: Wrappers and helpers
     "torii-axum",
-    
-    # Level 6: Email functionality
-    "torii-mailer",
-    
+
+
     # Examples (not published)
-    "examples/todos", "examples/axum-example",
+    "examples/todos",
+    "examples/axum-example",
 ]
 resolver = "3"
 
