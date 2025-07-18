@@ -72,7 +72,7 @@ use torii_core::services::PasskeyService;
 use torii_core::services::MagicLinkService;
 
 #[cfg(any(feature = "password", feature = "magic-link"))]
-use torii_core::services::PasswordResetService;
+pub use torii_core::services::PasswordResetService;
 
 #[cfg(feature = "mailer")]
 use torii_core::services::{MailerService, ToriiMailerService};
@@ -763,7 +763,7 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// # Returns
     ///
     /// Always returns Ok() to prevent email enumeration attacks
-    #[cfg(feature = "magic-link")]
+    #[cfg(any(feature = "password", feature = "magic-link"))]
     pub async fn reset_password_initiate(
         &self,
         email: &str,
@@ -802,7 +802,7 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// * `email`: The email address to send the password reset to
     /// * `reset_url_base`: The base URL for the password reset form
     /// * `expires_in`: How long the reset token should be valid
-    #[cfg(feature = "magic-link")]
+    #[cfg(any(feature = "password", feature = "magic-link"))]
     pub async fn reset_password_initiate_with_expiration(
         &self,
         email: &str,
@@ -846,7 +846,7 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// # Returns
     ///
     /// Returns true if the token is valid and not expired
-    #[cfg(feature = "magic-link")]
+    #[cfg(any(feature = "password", feature = "magic-link"))]
     pub async fn reset_password_verify_token(&self, token: &str) -> Result<bool, ToriiError> {
         self.torii()
             .password_reset_service
@@ -871,7 +871,7 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// # Returns
     ///
     /// Returns the user whose password was reset
-    #[cfg(feature = "magic-link")]
+    #[cfg(any(feature = "password", feature = "magic-link"))]
     pub async fn reset_password_complete(
         &self,
         token: &str,
