@@ -7,7 +7,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.4.0" }
+torii-core = { path = "../torii-core", version = "0.4.0", default-features = false }
 torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.4.0", optional = true }
 torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.4.0", optional = true }
 torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.4.0", optional = true }
