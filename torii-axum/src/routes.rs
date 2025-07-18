@@ -51,7 +51,7 @@ where
         router = router.merge(magic_link_routes());
     }
 
-    #[cfg(all(feature = "password", feature = "magic-link"))]
+    #[cfg(any(feature = "password", feature = "magic-link"))]
     {
         router = router.merge(password_reset_routes());
     }
@@ -216,7 +216,7 @@ where
     ))
 }
 
-#[cfg(all(feature = "password", feature = "magic-link"))]
+#[cfg(any(feature = "password", feature = "magic-link"))]
 fn password_reset_routes<R>() -> Router<AuthState<R>>
 where
     R: RepositoryProvider + 'static,
@@ -230,7 +230,7 @@ where
         .route("/password/reset/confirm", post(reset_password_handler))
 }
 
-#[cfg(all(feature = "password", feature = "magic-link"))]
+#[cfg(any(feature = "password", feature = "magic-link"))]
 async fn request_password_reset_handler<R>(
     State(state): State<AuthState<R>>,
     Json(payload): Json<PasswordResetRequest>,
@@ -254,7 +254,7 @@ where
     }))
 }
 
-#[cfg(all(feature = "password", feature = "magic-link"))]
+#[cfg(any(feature = "password", feature = "magic-link"))]
 async fn verify_reset_token_handler<R>(
     State(state): State<AuthState<R>>,
     Json(payload): Json<VerifyResetTokenRequest>,
@@ -271,7 +271,7 @@ where
     Ok(Json(VerifyResetTokenResponse { valid }))
 }
 
-#[cfg(all(feature = "password", feature = "magic-link"))]
+#[cfg(any(feature = "password", feature = "magic-link"))]
 async fn reset_password_handler<R>(
     State(state): State<AuthState<R>>,
     Json(payload): Json<ResetPasswordRequest>,

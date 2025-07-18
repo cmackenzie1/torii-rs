@@ -71,7 +71,7 @@ use torii_core::services::PasskeyService;
 #[cfg(feature = "magic-link")]
 use torii_core::services::MagicLinkService;
 
-#[cfg(all(feature = "password", feature = "magic-link"))]
+#[cfg(any(feature = "password", feature = "magic-link"))]
 use torii_core::services::PasswordResetService;
 
 #[cfg(feature = "mailer")]
@@ -285,7 +285,7 @@ pub struct Torii<R: RepositoryProvider> {
     #[allow(dead_code)] // TODO: Expose magic link service methods in Torii API
     magic_link_service: Arc<MagicLinkService<UserRepositoryAdapter<R>, TokenRepositoryAdapter<R>>>,
 
-    #[cfg(all(feature = "password", feature = "magic-link"))]
+    #[cfg(any(feature = "password", feature = "magic-link"))]
     password_reset_service: Arc<
         PasswordResetService<
             UserRepositoryAdapter<R>,
@@ -388,7 +388,7 @@ impl<R: RepositoryProvider> Torii<R> {
                 )),
             )),
 
-            #[cfg(all(feature = "password", feature = "magic-link"))]
+            #[cfg(any(feature = "password", feature = "magic-link"))]
             password_reset_service: Arc::new(PasswordResetService::new(
                 user_repo,
                 Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
