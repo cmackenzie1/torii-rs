@@ -1,6 +1,6 @@
 [package]
 name = "torii"
-version = "0.5.0"
+version = "0.5.1"
 description = "A modular authentication ecosystem for Rust applications"
 edition.workspace = true
 repository.workspace = true

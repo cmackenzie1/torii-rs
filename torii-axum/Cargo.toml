@@ -7,7 +7,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii = { path = "../torii", version = "0.5.0", default-features = false }
+torii = { path = "../torii", version = "0.5.1", default-features = false }
 torii-core = { path = "../torii-core", version = "0.5.0" }
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
