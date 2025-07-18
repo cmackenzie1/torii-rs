@@ -1,17 +1,17 @@
 [package]
 name = "torii"
-version = "0.4.0"
+version = "0.5.0"
 description = "A modular authentication ecosystem for Rust applications"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii-core = { path = "../torii-core", version = "0.4.1", default-features = false }
-torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.4.0", optional = true }
-torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.4.0", optional = true }
-torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.4.0", optional = true }
-torii-mailer = { path = "../torii-mailer", version = "0.4.0", optional = true }
+torii-core = { path = "../torii-core", version = "0.5.0", default-features = false }
+torii-storage-sqlite = { path = "../torii-storage-sqlite", version = "0.5.0", optional = true }
+torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.5.0", optional = true }
+torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.5.0", optional = true }
+torii-mailer = { path = "../torii-mailer", version = "0.5.0", optional = true }
 
 # dependencies
 chrono.workspace = true # TODO: Make this optional and expose std::time::Duration in APIs
