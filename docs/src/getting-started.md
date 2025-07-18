@@ -98,6 +98,15 @@ This provides automatic endpoints:
 
 ## Other Authentication Methods
 
+Torii provides organized namespaces for different authentication methods:
+
+- **`torii.password()`**: Traditional email/password authentication
+- **`torii.oauth()`**: Social login (Google, GitHub, etc.)  
+- **`torii.passkey()`**: Modern biometric authentication
+- **`torii.magic_link()`**: Email-based passwordless login
+
+Each namespace contains focused methods for that authentication type.
+
 ### OAuth Authentication
 
 ```rust,edition2024,ignore,ignore
@@ -108,10 +117,10 @@ This provides automatic endpoints:
 
 ```rust,edition2024,ignore,ignore
 // Generate magic token
-let token = torii.generate_magic_token("user@example.com").await?;
+let token = torii.magic_link().generate_token("user@example.com").await?;
 
 // Verify magic token
-let (user, session) = torii.verify_magic_token(
+let (user, session) = torii.magic_link().authenticate(
     &token.token,
     Some("Browser".to_string()),
     Some("127.0.0.1".to_string())

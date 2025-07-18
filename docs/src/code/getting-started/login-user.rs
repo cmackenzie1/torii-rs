@@ -7,7 +7,7 @@ async fn login_user(
     password: &str
 ) -> Result<(), ToriiError> {
     // Authenticate user - optional user_agent and ip_address for tracking
-    let (user, session) = torii.login_user_with_password(
+    let (user, session) = torii.password().authenticate(
         email,
         password,
         Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string()),

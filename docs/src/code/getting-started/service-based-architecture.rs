@@ -15,8 +15,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let torii = Arc::new(Torii::new(repositories));
 
     // All authentication methods are now available as services
-    let user = torii.register_user_with_password("user@example.com", "password").await?;
-    let (_user, session) = torii.login_user_with_password("user@example.com", "password", None, None).await?;
+    let user = torii.password().register("user@example.com", "password").await?;
+    let (_user, session) = torii.password().authenticate("user@example.com", "password", None, None).await?;
 
     Ok(())
 }

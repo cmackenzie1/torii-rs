@@ -34,10 +34,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Example: Register and login a user
-    let user = torii.register_user_with_password("user@example.com", "secure_password").await?;
+    let user = torii.password().register("user@example.com", "secure_password").await?;
     println!("User registered: {}", user.id);
 
-    let (login_user, session) = torii.login_user_with_password(
+    let (login_user, session) = torii.password().authenticate(
         "user@example.com",
         "secure_password",
         Some("Mozilla/5.0 (compatible browser)".to_string()),

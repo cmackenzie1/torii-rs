@@ -118,7 +118,6 @@ pub struct MagicLinkAuth<'a, R: RepositoryProvider> {
 ///
 /// Provides methods for OAuth flows and account linking.
 #[cfg(feature = "oauth")]
-#[allow(dead_code)] // TODO: Implement OAuth namespace methods
 pub struct OAuthAuth<'a, R: RepositoryProvider> {
     torii: &'a Torii<R>,
 }
@@ -127,7 +126,6 @@ pub struct OAuthAuth<'a, R: RepositoryProvider> {
 ///
 /// Provides methods for WebAuthn/passkey registration and authentication.
 #[cfg(feature = "passkey")]
-#[allow(dead_code)] // TODO: Implement Passkey namespace methods
 pub struct PasskeyAuth<'a, R: RepositoryProvider> {
     torii: &'a Torii<R>,
 }
@@ -1013,4 +1011,312 @@ impl<R: RepositoryProvider> MagicLinkAuth<'_, R> {
     }
 }
 
-// TODO: Implement OAuthAuth and PasskeyAuth namespaces
+/// Implementation of OAuth authentication methods
+#[cfg(feature = "oauth")]
+impl<R: RepositoryProvider> OAuthAuth<'_, R> {
+    /// Get reference to the underlying Torii instance
+    fn torii(&self) -> &Torii<R> {
+        self.torii
+    }
+
+    /// Create or get a user from OAuth provider information
+    ///
+    /// # Arguments
+    ///
+    /// * `provider`: The OAuth provider name (e.g., "google", "github")
+    /// * `subject`: The user's ID from the OAuth provider
+    /// * `email`: The user's email address from the OAuth provider
+    /// * `name`: Optional display name from the OAuth provider
+    ///
+    /// # Returns
+    ///
+    /// Returns the user (either existing or newly created)
+    pub async fn get_or_create_user(
+        &self,
+        provider: &str,
+        subject: &str,
+        email: &str,
+        name: Option<String>,
+    ) -> Result<User, ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .get_or_create_user(provider, subject, email, name)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Link an existing user to an OAuth account
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to link
+    /// * `provider`: The OAuth provider name
+    /// * `subject`: The user's ID from the OAuth provider
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok() if linking succeeds, or an error if the account is already linked
+    pub async fn link_account(
+        &self,
+        user_id: &UserId,
+        provider: &str,
+        subject: &str,
+    ) -> Result<(), ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .link_account(user_id, provider, subject)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Get OAuth account information
+    ///
+    /// # Arguments
+    ///
+    /// * `provider`: The OAuth provider name
+    /// * `subject`: The user's ID from the OAuth provider
+    ///
+    /// # Returns
+    ///
+    /// Returns the OAuth account if found
+    pub async fn get_account(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<torii_core::OAuthAccount>, ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .get_account(provider, subject)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Store a PKCE verifier for OAuth flows
+    ///
+    /// # Arguments
+    ///
+    /// * `csrf_state`: The CSRF state token
+    /// * `pkce_verifier`: The PKCE verifier string
+    /// * `expires_in`: How long the verifier should be valid
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok() if the verifier is stored successfully
+    pub async fn store_pkce_verifier(
+        &self,
+        csrf_state: &str,
+        pkce_verifier: &str,
+        expires_in: chrono::Duration,
+    ) -> Result<(), ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .store_pkce_verifier(csrf_state, pkce_verifier, expires_in)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Get and consume a PKCE verifier (one-time use)
+    ///
+    /// # Arguments
+    ///
+    /// * `csrf_state`: The CSRF state token
+    ///
+    /// # Returns
+    ///
+    /// Returns the PKCE verifier if found and valid
+    pub async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .get_pkce_verifier(csrf_state)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Complete OAuth authentication flow and create session
+    ///
+    /// # Arguments
+    ///
+    /// * `provider`: The OAuth provider name
+    /// * `subject`: The user's ID from the OAuth provider
+    /// * `email`: The user's email address from the OAuth provider
+    /// * `name`: Optional display name from the OAuth provider
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
+    ///
+    /// # Returns
+    ///
+    /// Returns the user and session if authentication succeeds
+    pub async fn authenticate(
+        &self,
+        provider: &str,
+        subject: &str,
+        email: &str,
+        name: Option<String>,
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<(User, Session), ToriiError> {
+        let user = self
+            .get_or_create_user(provider, subject, email, name)
+            .await?;
+
+        let torii = self.torii();
+        let session = torii
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
+
+        Ok((user, session))
+    }
+}
+
+/// Implementation of Passkey authentication methods
+#[cfg(feature = "passkey")]
+impl<R: RepositoryProvider> PasskeyAuth<'_, R> {
+    /// Get reference to the underlying Torii instance
+    fn torii(&self) -> &Torii<R> {
+        self.torii
+    }
+
+    /// Register a new passkey credential for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to register the credential for
+    /// * `credential_id`: The credential ID from the WebAuthn response
+    /// * `public_key`: The public key from the WebAuthn response
+    /// * `name`: Optional name for the credential (e.g., "iPhone", "YubiKey")
+    ///
+    /// # Returns
+    ///
+    /// Returns the registered passkey credential
+    pub async fn register_credential(
+        &self,
+        user_id: &UserId,
+        credential_id: Vec<u8>,
+        public_key: Vec<u8>,
+        name: Option<String>,
+    ) -> Result<torii_core::repositories::PasskeyCredential, ToriiError> {
+        let torii = self.torii();
+        torii
+            .passkey_service
+            .register_credential(user_id, credential_id, public_key, name)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Get all passkey credentials for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to get credentials for
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of passkey credentials for the user
+    pub async fn get_user_credentials(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<torii_core::repositories::PasskeyCredential>, ToriiError> {
+        let torii = self.torii();
+        torii
+            .passkey_service
+            .get_user_credentials(user_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Get a specific passkey credential
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id`: The credential ID to look up
+    ///
+    /// # Returns
+    ///
+    /// Returns the passkey credential if found
+    pub async fn get_credential(
+        &self,
+        credential_id: &[u8],
+    ) -> Result<Option<torii_core::repositories::PasskeyCredential>, ToriiError> {
+        let torii = self.torii();
+        torii
+            .passkey_service
+            .get_credential(credential_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Authenticate with a passkey credential and create session
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id`: The credential ID from the WebAuthn response
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
+    ///
+    /// # Returns
+    ///
+    /// Returns the user and session if authentication succeeds
+    pub async fn authenticate(
+        &self,
+        credential_id: &[u8],
+        user_agent: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<(User, Session), ToriiError> {
+        let torii = self.torii();
+        let user = torii
+            .passkey_service
+            .authenticate_credential(credential_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?
+            .ok_or_else(|| ToriiError::AuthError("Invalid passkey credential".to_string()))?;
+
+        let session = torii
+            .create_session(&user.id, user_agent, ip_address)
+            .await?;
+
+        Ok((user, session))
+    }
+
+    /// Delete a passkey credential
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id`: The credential ID to delete
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok() if the credential is deleted successfully
+    pub async fn delete_credential(&self, credential_id: &[u8]) -> Result<(), ToriiError> {
+        let torii = self.torii();
+        torii
+            .passkey_service
+            .delete_credential(credential_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Delete all passkey credentials for a user
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to delete credentials for
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok() if all credentials are deleted successfully
+    pub async fn delete_user_credentials(&self, user_id: &UserId) -> Result<(), ToriiError> {
+        let torii = self.torii();
+        torii
+            .passkey_service
+            .delete_user_credentials(user_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+}
+
+// All namespace methods implemented!
