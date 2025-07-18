@@ -71,6 +71,9 @@ use torii_core::services::PasskeyService;
 #[cfg(feature = "magic-link")]
 use torii_core::services::MagicLinkService;
 
+#[cfg(all(feature = "password", feature = "magic-link"))]
+use torii_core::services::PasswordResetService;
+
 #[cfg(feature = "mailer")]
 use torii_core::services::{MailerService, ToriiMailerService};
 
@@ -247,6 +250,15 @@ pub struct Torii<R: RepositoryProvider> {
     magic_link_service:
         Arc<MagicLinkService<UserRepositoryAdapter<R>, MagicLinkRepositoryAdapter<R>>>,
 
+    #[cfg(all(feature = "password", feature = "magic-link"))]
+    password_reset_service: Arc<
+        PasswordResetService<
+            UserRepositoryAdapter<R>,
+            PasswordRepositoryAdapter<R>,
+            MagicLinkRepositoryAdapter<R>,
+        >,
+    >,
+
     #[cfg(feature = "mailer")]
     mailer_service: Option<Arc<ToriiMailerService>>,
 
@@ -308,7 +320,16 @@ impl<R: RepositoryProvider> Torii<R> {
 
             #[cfg(feature = "magic-link")]
             magic_link_service: Arc::new(MagicLinkService::new(
+                user_repo.clone(),
+                Arc::new(torii_core::repositories::MagicLinkRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
+
+            #[cfg(all(feature = "password", feature = "magic-link"))]
+            password_reset_service: Arc::new(PasswordResetService::new(
                 user_repo,
+                Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
                 Arc::new(torii_core::repositories::MagicLinkRepositoryAdapter::new(
                     repositories.clone(),
                 )),
@@ -654,6 +675,154 @@ impl<R: RepositoryProvider> Torii<R> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(all(feature = "password", feature = "magic-link"))]
+impl<R: RepositoryProvider> Torii<R> {
+    /// Request a password reset for the given email address
+    ///
+    /// This will generate a secure reset token and send a password reset email if mailer is configured.
+    /// For security reasons, this method doesn't reveal whether the email exists or not.
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email address to send the password reset to
+    /// * `reset_url_base`: The base URL for the password reset form (e.g., "https://yourapp.com/reset")
+    ///
+    /// # Returns
+    ///
+    /// Always returns Ok() to prevent email enumeration attacks
+    pub async fn request_password_reset(
+        &self,
+        email: &str,
+        reset_url_base: &str,
+    ) -> Result<(), ToriiError> {
+        let result = self
+            .password_reset_service
+            .request_password_reset(email)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Send password reset email if mailer is configured and user exists
+        #[cfg(feature = "mailer")]
+        if let Some((user, token)) = result {
+            if let Some(mailer) = &self.mailer_service {
+                let reset_link = format!("{}/{}", reset_url_base.trim_end_matches('/'), token);
+                if let Err(e) = mailer
+                    .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
+                    .await
+                {
+                    tracing::warn!("Failed to send password reset email: {}", e);
+                    // Don't fail the password reset request if email sending fails
+                }
+            }
+        }
+
+        // Always return Ok() to prevent email enumeration attacks
+        Ok(())
+    }
+
+    /// Request a password reset with custom expiration time
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email address to send the password reset to
+    /// * `reset_url_base`: The base URL for the password reset form
+    /// * `expires_in`: How long the reset token should be valid
+    pub async fn request_password_reset_with_expiration(
+        &self,
+        email: &str,
+        reset_url_base: &str,
+        expires_in: Duration,
+    ) -> Result<(), ToriiError> {
+        let result = self
+            .password_reset_service
+            .request_password_reset_with_expiration(email, expires_in)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Send password reset email if mailer is configured and user exists
+        #[cfg(feature = "mailer")]
+        if let Some((user, token)) = result {
+            if let Some(mailer) = &self.mailer_service {
+                let reset_link = format!("{}/{}", reset_url_base.trim_end_matches('/'), token);
+                if let Err(e) = mailer
+                    .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
+                    .await
+                {
+                    tracing::warn!("Failed to send password reset email: {}", e);
+                    // Don't fail the password reset request if email sending fails
+                }
+            }
+        }
+
+        // Always return Ok() to prevent email enumeration attacks
+        Ok(())
+    }
+
+    /// Verify a password reset token without consuming it
+    ///
+    /// This is useful for frontend validation before showing the password reset form.
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The reset token to verify
+    ///
+    /// # Returns
+    ///
+    /// Returns true if the token is valid and not expired
+    pub async fn verify_password_reset_token(&self, token: &str) -> Result<bool, ToriiError> {
+        self.password_reset_service
+            .verify_reset_token(token)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Complete the password reset process and invalidate all user sessions
+    ///
+    /// This will:
+    /// 1. Verify and consume the reset token
+    /// 2. Update the user's password  
+    /// 3. Invalidate all existing sessions for security
+    /// 4. Send a password changed notification email if mailer is configured
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The reset token received via email
+    /// * `new_password`: The new password to set
+    ///
+    /// # Returns
+    ///
+    /// Returns the user whose password was reset
+    pub async fn reset_password(
+        &self,
+        token: &str,
+        new_password: &str,
+    ) -> Result<User, ToriiError> {
+        let user = self
+            .password_reset_service
+            .reset_password(token, new_password)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Invalidate all existing sessions for security
+        self.delete_sessions_for_user(&user.id).await?;
+
+        // Send password changed notification email if mailer is configured
+        #[cfg(feature = "mailer")]
+        if let Some(mailer) = &self.mailer_service {
+            let user_name = user.name.as_deref();
+            if let Err(e) = mailer
+                .send_password_changed_email(&user.email, user_name)
+                .await
+            {
+                tracing::warn!("Failed to send password changed email: {}", e);
+                // Don't fail the password reset if email sending fails
+            }
+        }
+
+        Ok(user)
     }
 }
 
