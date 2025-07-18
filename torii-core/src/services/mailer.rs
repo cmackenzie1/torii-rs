@@ -165,4 +165,167 @@ mod mailer_impl {
             Ok(())
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::path::PathBuf;
+        use torii_mailer::config::TransportConfig;
+        use torii_mailer::prelude::*;
+
+        struct MockMailer {
+            sent_emails: std::sync::Arc<std::sync::Mutex<Vec<Email>>>,
+        }
+
+        impl MockMailer {
+            fn new() -> Self {
+                Self {
+                    sent_emails: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                }
+            }
+
+            fn get_sent_emails(&self) -> Vec<Email> {
+                self.sent_emails.lock().unwrap().clone()
+            }
+        }
+
+        #[async_trait]
+        impl Mailer for MockMailer {
+            async fn send_email(&self, email: Email) -> Result<(), MailerError> {
+                self.sent_emails.lock().unwrap().push(email);
+                Ok(())
+            }
+        }
+
+        fn create_test_config() -> MailerConfig {
+            MailerConfig {
+                app_name: "Test App".to_string(),
+                app_url: "https://test.com".to_string(),
+                from_address: "test@test.com".to_string(),
+                from_name: Some("Test App".to_string()),
+                transport: TransportConfig::File {
+                    output_dir: PathBuf::from("/tmp"),
+                },
+            }
+        }
+
+        fn create_test_service() -> ToriiMailerService {
+            let config = create_test_config();
+            let transport = Box::new(MockMailer::new());
+            let engine = AskamaTemplateEngine::new();
+
+            ToriiMailerService {
+                transport,
+                engine,
+                config,
+            }
+        }
+
+        #[tokio::test]
+        async fn test_new_service() {
+            let config = create_test_config();
+            let result = ToriiMailerService::new(config);
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_create_context() {
+            let service = create_test_service();
+            let context = service.create_context(Some("John Doe"), Some("john@example.com"));
+
+            assert_eq!(context.app_name, "Test App");
+            assert_eq!(context.app_url, "https://test.com");
+            assert_eq!(context.user_name, Some("John Doe".to_string()));
+            assert_eq!(context.user_email, Some("john@example.com".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_create_context_none_values() {
+            let service = create_test_service();
+            let context = service.create_context(None, None);
+
+            assert_eq!(context.app_name, "Test App");
+            assert_eq!(context.app_url, "https://test.com");
+            assert_eq!(context.user_name, None);
+            assert_eq!(context.user_email, None);
+        }
+
+        #[tokio::test]
+        async fn test_send_magic_link_email() {
+            let service = create_test_service();
+            let result = service
+                .send_magic_link_email("user@example.com", "https://magic.link", Some("John"))
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_welcome_email() {
+            let service = create_test_service();
+            let result = service
+                .send_welcome_email("user@example.com", Some("John"))
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_password_reset_email() {
+            let service = create_test_service();
+            let result = service
+                .send_password_reset_email("user@example.com", "https://reset.link", Some("John"))
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_password_changed_email() {
+            let service = create_test_service();
+            let result = service
+                .send_password_changed_email("user@example.com", Some("John"))
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_magic_link_email_without_name() {
+            let service = create_test_service();
+            let result = service
+                .send_magic_link_email("user@example.com", "https://magic.link", None)
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_welcome_email_without_name() {
+            let service = create_test_service();
+            let result = service.send_welcome_email("user@example.com", None).await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_password_reset_email_without_name() {
+            let service = create_test_service();
+            let result = service
+                .send_password_reset_email("user@example.com", "https://reset.link", None)
+                .await;
+
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn test_send_password_changed_email_without_name() {
+            let service = create_test_service();
+            let result = service
+                .send_password_changed_email("user@example.com", None)
+                .await;
+
+            assert!(result.is_ok());
+        }
+    }
 }
