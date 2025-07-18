@@ -147,7 +147,8 @@ where
 {
     let user = state
         .torii
-        .register_user_with_password(&payload.email, &payload.password)
+        .password()
+        .register(&payload.email, &payload.password)
         .await?;
 
     // Create a session for the newly registered user (auto-login)
@@ -187,7 +188,8 @@ where
 {
     let (user, session) = state
         .torii
-        .login_user_with_password(
+        .password()
+        .authenticate(
             &payload.email,
             &payload.password,
             connection_info.user_agent,
@@ -242,7 +244,8 @@ where
 
     state
         .torii
-        .request_password_reset(&payload.email, reset_url_base)
+        .password()
+        .reset_password_initiate(&payload.email, reset_url_base)
         .await?;
 
     Ok(Json(PasswordResetResponse {
@@ -261,7 +264,8 @@ where
 {
     let valid = state
         .torii
-        .verify_password_reset_token(&payload.token)
+        .password()
+        .reset_password_verify_token(&payload.token)
         .await?;
 
     Ok(Json(VerifyResetTokenResponse { valid }))
@@ -277,7 +281,8 @@ where
 {
     let user = state
         .torii
-        .reset_password(&payload.token, &payload.new_password)
+        .password()
+        .reset_password_complete(&payload.token, &payload.new_password)
         .await?;
 
     Ok(Json(UserResponse { user }))
@@ -294,7 +299,8 @@ where
 {
     state
         .torii
-        .change_user_password(&user.id, &payload.old_password, &payload.new_password)
+        .password()
+        .change_password(&user.id, &payload.old_password, &payload.new_password)
         .await?;
 
     Ok(Json(MessageResponse {
@@ -320,7 +326,11 @@ async fn request_magic_link_handler<R>(
 where
     R: RepositoryProvider,
 {
-    let token = state.torii.generate_magic_token(&payload.email).await?;
+    let token = state
+        .torii
+        .magic_link()
+        .generate_token(&payload.email)
+        .await?;
 
     Ok(Json(MagicLinkResponse {
         message: "Magic link sent to your email".to_string(),
@@ -340,7 +350,8 @@ where
 {
     let (user, session) = state
         .torii
-        .verify_magic_token(
+        .magic_link()
+        .authenticate(
             &payload.token,
             connection_info.user_agent,
             connection_info.ip,

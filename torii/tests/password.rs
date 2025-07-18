@@ -24,10 +24,7 @@ async fn test_register_user_with_password() {
     // Register a user
     let email = "test@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
 
     // Verify user details
     assert_eq!(user.email, email);
@@ -55,17 +52,15 @@ async fn test_login_with_password() {
     // Register a user and verify email
     let email = "test@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
     torii.set_user_email_verified(&user.id).await.unwrap();
 
     // Login with correct credentials
     let user_agent = Some("Test User Agent".to_string());
     let ip_address = Some("127.0.0.1".to_string());
     let (logged_in_user, session) = torii
-        .login_user_with_password(email, password, user_agent.clone(), ip_address.clone())
+        .password()
+        .authenticate(email, password, user_agent.clone(), ip_address.clone())
         .await
         .unwrap();
 
@@ -79,13 +74,15 @@ async fn test_login_with_password() {
 
     // Try login with incorrect password
     let result = torii
-        .login_user_with_password(email, "wrong-password", None, None)
+        .password()
+        .authenticate(email, "wrong-password", None, None)
         .await;
     assert!(result.is_err());
 
     // Try login with non-existent user
     let result = torii
-        .login_user_with_password("nonexistent@example.com", password, None, None)
+        .password()
+        .authenticate("nonexistent@example.com", password, None, None)
         .await;
     assert!(result.is_err());
 }
@@ -104,14 +101,12 @@ async fn test_login_with_unverified_email() {
     // Register a user without verifying email
     let email = "unverified@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
 
     // Attempt to login with unverified email
     let result = torii
-        .login_user_with_password(email, password, None, None)
+        .password()
+        .authenticate(email, password, None, None)
         .await;
 
     // Should succeed even though email is not verified
@@ -140,15 +135,13 @@ async fn test_session_expiration() {
     // Register a user and verify email
     let email = "test@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
     torii.set_user_email_verified(&user.id).await.unwrap();
 
     // Login to create a session
     let (_, session) = torii
-        .login_user_with_password(email, password, None, None)
+        .password()
+        .authenticate(email, password, None, None)
         .await
         .unwrap();
 
@@ -178,15 +171,13 @@ async fn test_multiple_sessions() {
     // Register a user and verify email
     let email = "test@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
     torii.set_user_email_verified(&user.id).await.unwrap();
 
     // Create multiple sessions for the same user
     let (_, session1) = torii
-        .login_user_with_password(
+        .password()
+        .authenticate(
             email,
             password,
             Some("Device 1".to_string()),
@@ -196,7 +187,8 @@ async fn test_multiple_sessions() {
         .unwrap();
 
     let (_, session2) = torii
-        .login_user_with_password(
+        .password()
+        .authenticate(
             email,
             password,
             Some("Device 2".to_string()),
@@ -253,15 +245,13 @@ async fn test_password_auth_with_jwt() {
     // Register a user and verify email
     let email = "test@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
     torii.set_user_email_verified(&user.id).await.unwrap();
 
     // Login with correct credentials
     let (logged_in_user, session) = torii
-        .login_user_with_password(email, password, None, None)
+        .password()
+        .authenticate(email, password, None, None)
         .await
         .unwrap();
 
@@ -283,7 +273,8 @@ async fn test_password_auth_with_jwt() {
 
     // Try login with incorrect password
     let result = torii
-        .login_user_with_password(email, "wrong-password", None, None)
+        .password()
+        .authenticate(email, "wrong-password", None, None)
         .await;
     assert!(result.is_err());
 }
@@ -302,10 +293,7 @@ async fn test_delete_user() {
     // Register a user
     let email = "delete-test@example.com";
     let password = "password123";
-    let user = torii
-        .register_user_with_password(email, password)
-        .await
-        .unwrap();
+    let user = torii.password().register(email, password).await.unwrap();
 
     // Verify email
     torii.set_user_email_verified(&user.id).await.unwrap();

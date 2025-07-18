@@ -11,14 +11,16 @@ async fn test_sqlite_password_auth() {
     let torii = Torii::new(Arc::new(repositories));
 
     let user = torii
-        .register_user_with_password("test@example.com", "password")
+        .password()
+        .register("test@example.com", "password")
         .await
         .unwrap();
     assert_eq!(user.email, "test@example.com");
 
     // Login the user without verifying the email, should now succeed
     let (user, session) = torii
-        .login_user_with_password("test@example.com", "password", None, None)
+        .password()
+        .authenticate("test@example.com", "password", None, None)
         .await
         .unwrap();
     assert_eq!(user.email, "test@example.com");
@@ -30,7 +32,8 @@ async fn test_sqlite_password_auth() {
 
     // Login the user again, should still succeed
     let (user2, session2) = torii
-        .login_user_with_password("test@example.com", "password", None, None)
+        .password()
+        .authenticate("test@example.com", "password", None, None)
         .await
         .unwrap();
     assert_eq!(user2.email, "test@example.com");

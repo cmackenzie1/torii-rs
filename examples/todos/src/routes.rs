@@ -163,7 +163,8 @@ async fn sign_up_form_handler(
 ) -> impl IntoResponse {
     let user = state
         .torii
-        .register_user_with_password(&params.email, &params.password)
+        .password()
+        .register(&params.email, &params.password)
         .await;
 
     info!("User registered: {:?}", user);
@@ -199,7 +200,8 @@ async fn sign_in_form_handler(
 
     let (_, session) = state
         .torii
-        .login_user_with_password(&params.email, &params.password, user_agent, ip_address)
+        .password()
+        .authenticate(&params.email, &params.password, user_agent, ip_address)
         .await
         .unwrap();
 

@@ -46,7 +46,8 @@ async fn test_password_authentication() -> Result<(), Box<dyn std::error::Error>
 
     // Register a user
     let user = torii
-        .register_user_with_password("test@example.com", "password123")
+        .password()
+        .register("test@example.com", "password123")
         .await?;
     assert_eq!(user.email, "test@example.com");
     assert!(!user.is_email_verified());
@@ -56,7 +57,8 @@ async fn test_password_authentication() -> Result<(), Box<dyn std::error::Error>
 
     // Login with correct password
     let (logged_in_user, session) = torii
-        .login_user_with_password(
+        .password()
+        .authenticate(
             "test@example.com",
             "password123",
             Some("test-agent".to_string()),
@@ -70,7 +72,8 @@ async fn test_password_authentication() -> Result<(), Box<dyn std::error::Error>
 
     // Try to login with wrong password
     let result = torii
-        .login_user_with_password("test@example.com", "wrongpassword", None, None)
+        .password()
+        .authenticate("test@example.com", "wrongpassword", None, None)
         .await;
     assert!(result.is_err());
 
