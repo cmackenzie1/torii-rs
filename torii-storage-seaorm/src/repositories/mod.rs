@@ -1,6 +1,5 @@
 //! Repository implementations for SeaORM storage
 
-pub mod magic_link;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -8,7 +7,6 @@ pub mod session;
 pub mod token;
 pub mod user;
 
-pub use magic_link::SeaORMMagicLinkRepository;
 pub use oauth::SeaORMOAuthRepository;
 pub use passkey::SeaORMPasskeyRepository;
 pub use password::SeaORMPasswordRepository;
@@ -30,7 +28,6 @@ pub struct SeaORMRepositoryProvider {
     password: Arc<SeaORMPasswordRepository>,
     oauth: Arc<SeaORMOAuthRepository>,
     passkey: Arc<SeaORMPasskeyRepository>,
-    magic_link: Arc<SeaORMMagicLinkRepository>,
     token: Arc<SeaORMTokenRepository>,
 }
 
@@ -41,7 +38,6 @@ impl SeaORMRepositoryProvider {
         let password = Arc::new(SeaORMPasswordRepository::new(pool.clone()));
         let oauth = Arc::new(SeaORMOAuthRepository::new(pool.clone()));
         let passkey = Arc::new(SeaORMPasskeyRepository::new(pool.clone()));
-        let magic_link = Arc::new(SeaORMMagicLinkRepository::new(pool.clone()));
         let token = Arc::new(SeaORMTokenRepository::new(pool.clone()));
 
         Self {
@@ -51,7 +47,6 @@ impl SeaORMRepositoryProvider {
             password,
             oauth,
             passkey,
-            magic_link,
             token,
         }
     }
@@ -64,7 +59,6 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
     type Password = SeaORMPasswordRepository;
     type OAuth = SeaORMOAuthRepository;
     type Passkey = SeaORMPasskeyRepository;
-    type MagicLink = SeaORMMagicLinkRepository;
     type Token = SeaORMTokenRepository;
 
     fn user(&self) -> &Self::User {
@@ -87,9 +81,6 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
         &self.passkey
     }
 
-    fn magic_link(&self) -> &Self::MagicLink {
-        &self.magic_link
-    }
 
     fn token(&self) -> &Self::Token {
         &self.token

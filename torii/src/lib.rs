@@ -59,8 +59,6 @@ use torii_core::repositories::OAuthRepositoryAdapter;
 #[cfg(feature = "passkey")]
 use torii_core::repositories::PasskeyRepositoryAdapter;
 
-#[cfg(feature = "magic-link")]
-use torii_core::repositories::MagicLinkRepositoryAdapter;
 
 #[cfg(feature = "password")]
 use torii_core::services::PasswordService;
@@ -88,7 +86,7 @@ pub use torii_core::{
 };
 
 /// Re-export storage types
-pub use torii_core::storage::{MagicToken, SecureToken, TokenPurpose};
+pub use torii_core::storage::{SecureToken, TokenPurpose};
 
 /// Re-export mailer types when mailer feature is enabled
 #[cfg(feature = "mailer")]
@@ -251,7 +249,7 @@ pub struct Torii<R: RepositoryProvider> {
     #[cfg(feature = "magic-link")]
     #[allow(dead_code)] // TODO: Expose magic link service methods in Torii API
     magic_link_service:
-        Arc<MagicLinkService<UserRepositoryAdapter<R>, MagicLinkRepositoryAdapter<R>>>,
+        Arc<MagicLinkService<UserRepositoryAdapter<R>, TokenRepositoryAdapter<R>>>,
 
     #[cfg(all(feature = "password", feature = "magic-link"))]
     password_reset_service: Arc<
@@ -324,7 +322,7 @@ impl<R: RepositoryProvider> Torii<R> {
             #[cfg(feature = "magic-link")]
             magic_link_service: Arc::new(MagicLinkService::new(
                 user_repo.clone(),
-                Arc::new(torii_core::repositories::MagicLinkRepositoryAdapter::new(
+                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
                     repositories.clone(),
                 )),
             )),
@@ -840,7 +838,7 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns the generated magic token
-    pub async fn generate_magic_token(&self, email: &str) -> Result<MagicToken, ToriiError> {
+    pub async fn generate_magic_token(&self, email: &str) -> Result<SecureToken, ToriiError> {
         self.magic_link_service
             .generate_token(email)
             .await
@@ -861,7 +859,7 @@ impl<R: RepositoryProvider> Torii<R> {
         &self,
         email: &str,
         magic_link_url_base: &str,
-    ) -> Result<MagicToken, ToriiError> {
+    ) -> Result<SecureToken, ToriiError> {
         let token = self.generate_magic_token(email).await?;
 
         // Send magic link email if mailer is configured

@@ -296,51 +296,6 @@ impl PartialEq for SecureToken {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct MagicToken {
-    pub user_id: UserId,
-    pub token: String,
-    pub used_at: Option<DateTime<Utc>>,
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl MagicToken {
-    pub fn new(
-        user_id: UserId,
-        token: String,
-        used_at: Option<DateTime<Utc>>,
-        expires_at: DateTime<Utc>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
-        Self {
-            user_id,
-            token,
-            used_at,
-            expires_at,
-            created_at,
-            updated_at,
-        }
-    }
-
-    pub fn used(&self) -> bool {
-        self.used_at.is_some()
-    }
-}
-
-impl PartialEq for MagicToken {
-    fn eq(&self, other: &Self) -> bool {
-        self.user_id == other.user_id
-            && self.token == other.token
-            && self.used_at == other.used_at
-            // Some databases may not store the timestamp with more precision than seconds, so we compare the timestamps as integers
-            && self.expires_at.timestamp() == other.expires_at.timestamp()
-            && self.created_at.timestamp() == other.created_at.timestamp()
-            && self.updated_at.timestamp() == other.updated_at.timestamp()
-    }
-}
 
 /// Storage methods for secure tokens
 ///
@@ -363,11 +318,4 @@ pub trait TokenStorage: UserStorage {
 
     /// Clean up expired tokens for all purposes
     async fn cleanup_expired_secure_tokens(&self) -> Result<(), Error>;
-}
-
-#[async_trait]
-pub trait MagicLinkStorage: UserStorage {
-    async fn save_magic_token(&self, token: &MagicToken) -> Result<(), Error>;
-    async fn get_magic_token(&self, token: &str) -> Result<Option<MagicToken>, Error>;
-    async fn set_magic_token_used(&self, token: &str) -> Result<(), Error>;
 }

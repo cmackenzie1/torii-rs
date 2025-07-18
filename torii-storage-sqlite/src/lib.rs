@@ -49,7 +49,6 @@
 //! - Password repository for secure password storage
 //! - OAuth repository for third-party authentication
 //! - Passkey repository for WebAuthn support
-//! - Magic link repository for passwordless authentication
 //!
 //! # Database Schema
 //!
@@ -60,11 +59,9 @@
 //! - `oauth_accounts` - Connected OAuth accounts
 //! - `passkeys` - WebAuthn passkey credentials
 //! - `passkey_challenges` - Temporary passkey challenges
-//! - `magic_links` - Magic link tokens and metadata
 //!
 //! All tables include appropriate indexes for optimal query performance.
 
-mod magic_link;
 mod migrations;
 mod oauth;
 mod passkey;
@@ -76,7 +73,6 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use migrations::CreateIndexes;
-use migrations::CreateMagicLinksTable;
 use migrations::{
     CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
     CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
@@ -124,7 +120,6 @@ impl SqliteStorage {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
-            Box::new(CreateMagicLinksTable),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
