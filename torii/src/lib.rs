@@ -46,7 +46,10 @@ use std::sync::Arc;
 use chrono::Duration;
 use torii_core::{
     JwtSessionProvider, OpaqueSessionProvider, RepositoryProvider, SessionProvider,
-    repositories::{PasswordRepositoryAdapter, SessionRepositoryAdapter, UserRepositoryAdapter},
+    repositories::{
+        PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
+        UserRepositoryAdapter,
+    },
     services::{SessionService, UserService},
 };
 
@@ -85,7 +88,7 @@ pub use torii_core::{
 };
 
 /// Re-export storage types
-pub use torii_core::storage::MagicToken;
+pub use torii_core::storage::{MagicToken, SecureToken, TokenPurpose};
 
 /// Re-export mailer types when mailer feature is enabled
 #[cfg(feature = "mailer")]
@@ -255,7 +258,7 @@ pub struct Torii<R: RepositoryProvider> {
         PasswordResetService<
             UserRepositoryAdapter<R>,
             PasswordRepositoryAdapter<R>,
-            MagicLinkRepositoryAdapter<R>,
+            TokenRepositoryAdapter<R>,
         >,
     >,
 
@@ -330,7 +333,7 @@ impl<R: RepositoryProvider> Torii<R> {
             password_reset_service: Arc::new(PasswordResetService::new(
                 user_repo,
                 Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
-                Arc::new(torii_core::repositories::MagicLinkRepositoryAdapter::new(
+                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
                     repositories.clone(),
                 )),
             )),
