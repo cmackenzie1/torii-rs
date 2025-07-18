@@ -9,17 +9,20 @@ pub mod oauth;
 pub mod passkey;
 pub mod password;
 pub mod session;
+pub mod token;
 pub mod user;
 
 pub use adapter::{
     MagicLinkRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
-    PasswordRepositoryAdapter, SessionRepositoryAdapter, UserRepositoryAdapter,
+    PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
+    UserRepositoryAdapter,
 };
 pub use magic_link::MagicLinkRepository;
 pub use oauth::OAuthRepository;
 pub use passkey::{PasskeyCredential, PasskeyRepository};
 pub use password::PasswordRepository;
 pub use session::SessionRepository;
+pub use token::TokenRepository;
 pub use user::UserRepository;
 
 use async_trait::async_trait;
@@ -35,6 +38,7 @@ pub trait RepositoryProvider: Send + Sync + 'static {
     type OAuth: OAuthRepository;
     type Passkey: PasskeyRepository;
     type MagicLink: MagicLinkRepository;
+    type Token: TokenRepository;
 
     /// Get the user repository
     fn user(&self) -> &Self::User;
@@ -53,6 +57,9 @@ pub trait RepositoryProvider: Send + Sync + 'static {
 
     /// Get the magic link repository
     fn magic_link(&self) -> &Self::MagicLink;
+
+    /// Get the token repository
+    fn token(&self) -> &Self::Token;
 
     /// Run migrations for all repositories
     async fn migrate(&self) -> Result<(), Error>;

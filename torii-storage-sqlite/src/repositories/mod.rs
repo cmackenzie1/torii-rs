@@ -5,6 +5,7 @@ pub mod oauth;
 pub mod passkey;
 pub mod password;
 pub mod session;
+pub mod token;
 pub mod user;
 
 pub use magic_link::SqliteMagicLinkRepository;
@@ -12,6 +13,7 @@ pub use oauth::SqliteOAuthRepository;
 pub use passkey::SqlitePasskeyRepository;
 pub use password::SqlitePasswordRepository;
 pub use session::SqliteSessionRepository;
+pub use token::SqliteTokenRepository;
 pub use user::SqliteUserRepository;
 
 use async_trait::async_trait;
@@ -28,6 +30,7 @@ pub struct SqliteRepositoryProvider {
     oauth: Arc<SqliteOAuthRepository>,
     passkey: Arc<SqlitePasskeyRepository>,
     magic_link: Arc<SqliteMagicLinkRepository>,
+    token: Arc<SqliteTokenRepository>,
 }
 
 impl SqliteRepositoryProvider {
@@ -37,8 +40,8 @@ impl SqliteRepositoryProvider {
         let password = Arc::new(SqlitePasswordRepository::new(pool.clone()));
         let oauth = Arc::new(SqliteOAuthRepository::new(pool.clone()));
         let passkey = Arc::new(SqlitePasskeyRepository::new(pool.clone()));
-
         let magic_link = Arc::new(SqliteMagicLinkRepository::new(pool.clone()));
+        let token = Arc::new(SqliteTokenRepository::new(pool.clone()));
 
         Self {
             pool,
@@ -48,6 +51,7 @@ impl SqliteRepositoryProvider {
             oauth,
             passkey,
             magic_link,
+            token,
         }
     }
 }
@@ -60,6 +64,7 @@ impl RepositoryProvider for SqliteRepositoryProvider {
     type OAuth = SqliteOAuthRepository;
     type Passkey = SqlitePasskeyRepository;
     type MagicLink = SqliteMagicLinkRepository;
+    type Token = SqliteTokenRepository;
 
     fn user(&self) -> &Self::User {
         &self.user
@@ -83,6 +88,10 @@ impl RepositoryProvider for SqliteRepositoryProvider {
 
     fn magic_link(&self) -> &Self::MagicLink {
         &self.magic_link
+    }
+
+    fn token(&self) -> &Self::Token {
+        &self.token
     }
 
     async fn migrate(&self) -> Result<(), torii_core::Error> {

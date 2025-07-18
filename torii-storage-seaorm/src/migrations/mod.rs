@@ -11,6 +11,7 @@ use sea_orm_migration::{MigrationTrait, MigratorTrait};
 use crate::migrations::{
     m20250304_000004_create_passkeys_table::CreatePasskeys,
     m20250304_000005_create_magic_links::CreateMagicLinks,
+    m20250304_000006_create_secure_tokens::Migration as CreateSecureTokens,
 };
 
 mod m20250304_000001_create_user_table;
@@ -18,6 +19,7 @@ mod m20250304_000002_create_session_table;
 mod m20250304_000003_create_oauth_table;
 mod m20250304_000004_create_passkeys_table;
 mod m20250304_000005_create_magic_links;
+mod m20250304_000006_create_secure_tokens;
 
 #[allow(dead_code)]
 pub struct Migrator;
@@ -36,6 +38,7 @@ impl MigratorTrait for Migrator {
             Box::new(CreateOAuthAccounts),
             Box::new(CreatePasskeys),
             Box::new(CreateMagicLinks),
+            Box::new(CreateSecureTokens),
         ]
     }
 }
@@ -115,6 +118,20 @@ pub enum MagicLinks {
     Id,
     UserId,
     Token,
+    UsedAt,
+    ExpiresAt,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+#[allow(dead_code)]
+pub enum SecureTokens {
+    Table,
+    Id,
+    UserId,
+    Token,
+    Purpose,
     UsedAt,
     ExpiresAt,
     CreatedAt,

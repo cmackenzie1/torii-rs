@@ -2,10 +2,10 @@ use crate::{
     Error, OAuthAccount, Session, SessionStorage, User, UserId,
     repositories::{
         MagicLinkRepository, OAuthRepository, PasskeyCredential, PasskeyRepository,
-        PasswordRepository, RepositoryProvider, SessionRepository, UserRepository,
+        PasswordRepository, RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
     },
     session::SessionToken,
-    storage::{MagicToken, NewUser},
+    storage::{MagicToken, NewUser, SecureToken, TokenPurpose},
 };
 use async_trait::async_trait;
 use chrono::Duration;
@@ -308,5 +308,47 @@ impl<R: RepositoryProvider> MagicLinkRepository for MagicLinkRepositoryAdapter<R
 
     async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
         self.provider.magic_link().cleanup_expired_tokens().await
+    }
+}
+
+/// Adapter that wraps a RepositoryProvider and implements TokenRepository
+pub struct TokenRepositoryAdapter<R: RepositoryProvider> {
+    provider: Arc<R>,
+}
+
+impl<R: RepositoryProvider> TokenRepositoryAdapter<R> {
+    pub fn new(provider: Arc<R>) -> Self {
+        Self { provider }
+    }
+}
+
+#[async_trait]
+impl<R: RepositoryProvider> TokenRepository for TokenRepositoryAdapter<R> {
+    async fn create_token(
+        &self,
+        user_id: &UserId,
+        purpose: TokenPurpose,
+        expires_in: Duration,
+    ) -> Result<SecureToken, Error> {
+        self.provider
+            .token()
+            .create_token(user_id, purpose, expires_in)
+            .await
+    }
+
+    async fn verify_token(
+        &self,
+        token: &str,
+        purpose: TokenPurpose,
+    ) -> Result<Option<SecureToken>, Error> {
+        self.provider.token().verify_token(token, purpose).await
+    }
+
+    async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
+        self.provider.token().check_token(token, purpose).await
+    }
+
+    async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
+        self.provider.token().cleanup_expired_tokens().await
     }
 }

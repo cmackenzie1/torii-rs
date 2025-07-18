@@ -81,6 +81,7 @@ mod oauth;
 mod passkey;
 mod password;
 mod session;
+mod token;
 mod user;
 
 pub mod repositories;

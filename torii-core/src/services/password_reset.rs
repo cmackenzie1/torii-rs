@@ -1,27 +1,26 @@
 use crate::{
     Error, User,
     error::AuthError,
-    repositories::{MagicLinkRepository, PasswordRepository, UserRepository},
+    repositories::{PasswordRepository, TokenRepository, UserRepository},
     services::{PasswordService, UserService},
+    storage::TokenPurpose,
 };
 use chrono::Duration;
 use std::sync::Arc;
 
 /// Service for password reset operations
-pub struct PasswordResetService<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository> {
+pub struct PasswordResetService<U: UserRepository, P: PasswordRepository, T: TokenRepository> {
     user_service: Arc<UserService<U>>,
     password_service: Arc<PasswordService<U, P>>,
-    magic_link_repository: Arc<M>,
+    token_repository: Arc<T>,
 }
 
-impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
-    PasswordResetService<U, P, M>
-{
+impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordResetService<U, P, T> {
     /// Create a new PasswordResetService with the given repositories
     pub fn new(
         user_repository: Arc<U>,
         password_repository: Arc<P>,
-        magic_link_repository: Arc<M>,
+        token_repository: Arc<T>,
     ) -> Self {
         let user_service = Arc::new(UserService::new(user_repository.clone()));
         let password_service = Arc::new(PasswordService::new(user_repository, password_repository));
@@ -29,7 +28,7 @@ impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
         Self {
             user_service,
             password_service,
-            magic_link_repository,
+            token_repository,
         }
     }
 
@@ -49,11 +48,11 @@ impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
         let user = self.user_service.get_user_by_email(email).await?;
 
         if let Some(user) = user {
-            // Generate reset token (reusing magic link infrastructure)
+            // Generate password reset token
             let expires_in = Duration::minutes(15);
             let reset_token = self
-                .magic_link_repository
-                .create_token(&user.id, expires_in)
+                .token_repository
+                .create_token(&user.id, TokenPurpose::PasswordReset, expires_in)
                 .await?;
 
             Ok(Some((user, reset_token.token)))
@@ -72,8 +71,8 @@ impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
 
         if let Some(user) = user {
             let reset_token = self
-                .magic_link_repository
-                .create_token(&user.id, expires_in)
+                .token_repository
+                .create_token(&user.id, TokenPurpose::PasswordReset, expires_in)
                 .await?;
 
             Ok(Some((user, reset_token.token)))
@@ -86,9 +85,9 @@ impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
     ///
     /// This is useful for frontend validation before showing the password reset form
     pub async fn verify_reset_token(&self, token: &str) -> Result<bool, Error> {
-        // Check if token exists and is valid (but don't consume it)
-        let magic_token = self.magic_link_repository.verify_token(token).await?;
-        Ok(magic_token.is_some())
+        self.token_repository
+            .check_token(token, TokenPurpose::PasswordReset)
+            .await
     }
 
     /// Complete the password reset process
@@ -100,14 +99,17 @@ impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
     /// Returns the user whose password was reset
     pub async fn reset_password(&self, token: &str, new_password: &str) -> Result<User, Error> {
         // Verify and consume the token
-        let magic_token = self.magic_link_repository.verify_token(token).await?;
+        let secure_token = self
+            .token_repository
+            .verify_token(token, TokenPurpose::PasswordReset)
+            .await?;
 
-        let magic_token = magic_token.ok_or(Error::Auth(AuthError::InvalidCredentials))?;
+        let secure_token = secure_token.ok_or(Error::Auth(AuthError::InvalidCredentials))?;
 
         // Get the user
         let user = self
             .user_service
-            .get_user(&magic_token.user_id)
+            .get_user(&secure_token.user_id)
             .await?
             .ok_or(Error::Auth(AuthError::InvalidCredentials))?;
 
@@ -121,15 +123,15 @@ impl<U: UserRepository, P: PasswordRepository, M: MagicLinkRepository>
 
     /// Clean up expired reset tokens
     pub async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
-        self.magic_link_repository.cleanup_expired_tokens().await
+        self.token_repository.cleanup_expired_tokens().await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::{MagicLinkRepository, PasswordRepository, UserRepository};
-    use crate::storage::{MagicToken, NewUser};
+    use crate::repositories::{PasswordRepository, TokenRepository, UserRepository};
+    use crate::storage::{NewUser, SecureToken, TokenPurpose};
     use crate::{User, UserId};
     use async_trait::async_trait;
     use chrono::{DateTime, Utc};
@@ -250,23 +252,25 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MockMagicLinkRepository {
-        tokens: Arc<Mutex<HashMap<String, MagicToken>>>,
+    struct MockTokenRepository {
+        tokens: Arc<Mutex<HashMap<String, SecureToken>>>,
     }
 
     #[async_trait]
-    impl MagicLinkRepository for MockMagicLinkRepository {
+    impl TokenRepository for MockTokenRepository {
         async fn create_token(
             &self,
             user_id: &UserId,
+            purpose: TokenPurpose,
             expires_in: Duration,
-        ) -> Result<MagicToken, Error> {
-            let token_str = format!("reset_token_{}", uuid::Uuid::new_v4());
+        ) -> Result<SecureToken, Error> {
+            let token_str = format!("token_{}", uuid::Uuid::new_v4());
             let expires_at = Utc::now() + expires_in;
 
-            let magic_token = MagicToken {
+            let secure_token = SecureToken {
                 user_id: user_id.clone(),
                 token: token_str.clone(),
+                purpose,
                 used_at: None,
                 expires_at,
                 created_at: Utc::now(),
@@ -276,15 +280,22 @@ mod tests {
             self.tokens
                 .lock()
                 .await
-                .insert(token_str, magic_token.clone());
-            Ok(magic_token)
+                .insert(token_str, secure_token.clone());
+            Ok(secure_token)
         }
 
-        async fn verify_token(&self, token: &str) -> Result<Option<MagicToken>, Error> {
+        async fn verify_token(
+            &self,
+            token: &str,
+            purpose: TokenPurpose,
+        ) -> Result<Option<SecureToken>, Error> {
             let mut tokens = self.tokens.lock().await;
-            if let Some(magic_token) = tokens.get(token) {
-                if magic_token.expires_at > Utc::now() && magic_token.used_at.is_none() {
-                    let mut verified_token = magic_token.clone();
+            if let Some(secure_token) = tokens.get(token) {
+                if secure_token.expires_at > Utc::now()
+                    && secure_token.used_at.is_none()
+                    && secure_token.purpose == purpose
+                {
+                    let mut verified_token = secure_token.clone();
                     verified_token.used_at = Some(Utc::now());
                     verified_token.updated_at = Utc::now();
                     tokens.insert(token.to_string(), verified_token.clone());
@@ -294,6 +305,17 @@ mod tests {
                 }
             } else {
                 Ok(None)
+            }
+        }
+
+        async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
+            let tokens = self.tokens.lock().await;
+            if let Some(secure_token) = tokens.get(token) {
+                Ok(secure_token.expires_at > Utc::now()
+                    && secure_token.used_at.is_none()
+                    && secure_token.purpose == purpose)
+            } else {
+                Ok(false)
             }
         }
 
@@ -309,7 +331,7 @@ mod tests {
     async fn test_request_password_reset_existing_user() {
         let user_repo = Arc::new(MockUserRepository::default());
         let password_repo = Arc::new(MockPasswordRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
 
         // Create a user first
         let _user = user_repo
@@ -322,14 +344,14 @@ mod tests {
             .await
             .unwrap();
 
-        let service = PasswordResetService::new(user_repo, password_repo, magic_link_repo.clone());
+        let service = PasswordResetService::new(user_repo, password_repo, token_repo.clone());
 
         let result = service.request_password_reset("test@example.com").await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
 
         // Verify a token was created
-        let tokens = magic_link_repo.tokens.lock().await;
+        let tokens = token_repo.tokens.lock().await;
         assert_eq!(tokens.len(), 1);
     }
 
@@ -337,9 +359,9 @@ mod tests {
     async fn test_request_password_reset_nonexistent_user() {
         let user_repo = Arc::new(MockUserRepository::default());
         let password_repo = Arc::new(MockPasswordRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
 
-        let service = PasswordResetService::new(user_repo, password_repo, magic_link_repo.clone());
+        let service = PasswordResetService::new(user_repo, password_repo, token_repo.clone());
 
         // Should not fail even for non-existent user (prevent email enumeration)
         let result = service
@@ -349,7 +371,7 @@ mod tests {
         assert!(result.unwrap().is_none());
 
         // No token should be created
-        let tokens = magic_link_repo.tokens.lock().await;
+        let tokens = token_repo.tokens.lock().await;
         assert_eq!(tokens.len(), 0);
     }
 
@@ -357,7 +379,7 @@ mod tests {
     async fn test_reset_password_success() {
         let user_repo = Arc::new(MockUserRepository::default());
         let password_repo = Arc::new(MockPasswordRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
 
         // Create a user first
         let user = user_repo
@@ -370,24 +392,12 @@ mod tests {
             .await
             .unwrap();
 
-        let service = PasswordResetService::new(user_repo, password_repo.clone(), magic_link_repo);
+        let service =
+            PasswordResetService::new(user_repo, password_repo.clone(), token_repo.clone());
 
-        // Request password reset to get a token
-        service
-            .request_password_reset("test@example.com")
-            .await
-            .unwrap();
-
-        // Get the token that was created
-        let tokens = password_repo.passwords.lock().await;
-        // Find the token (in a real scenario this would come from the email)
-        // For this test, we'll directly create a token since our mock doesn't generate real tokens
-
-        // For this test, we'll directly create a token since our mock doesn't generate real tokens
-        drop(tokens);
-        let token = service
-            .magic_link_repository
-            .create_token(&user.id, Duration::minutes(15))
+        // Create a token directly for testing
+        let token = token_repo
+            .create_token(&user.id, TokenPurpose::PasswordReset, Duration::minutes(15))
             .await
             .unwrap();
 
@@ -409,7 +419,7 @@ mod tests {
     async fn test_verify_reset_token() {
         let user_repo = Arc::new(MockUserRepository::default());
         let password_repo = Arc::new(MockPasswordRepository::default());
-        let magic_link_repo = Arc::new(MockMagicLinkRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
 
         // Create a user first
         let user = user_repo
@@ -422,21 +432,71 @@ mod tests {
             .await
             .unwrap();
 
-        let service = PasswordResetService::new(user_repo, password_repo, magic_link_repo);
+        let service = PasswordResetService::new(user_repo, password_repo, token_repo.clone());
 
         // Create a token
-        let token = service
-            .magic_link_repository
-            .create_token(&user.id, Duration::minutes(15))
+        let token = token_repo
+            .create_token(&user.id, TokenPurpose::PasswordReset, Duration::minutes(15))
             .await
             .unwrap();
 
-        // Verify token
+        // Verify token (should not consume it)
+        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        assert!(is_valid);
+
+        // Verify token again (should still be valid since check_token doesn't consume it)
         let is_valid = service.verify_reset_token(&token.token).await.unwrap();
         assert!(is_valid);
 
         // Test invalid token
         let is_valid = service.verify_reset_token("invalid_token").await.unwrap();
         assert!(!is_valid);
+    }
+
+    #[tokio::test]
+    async fn test_verify_then_reset_password() {
+        let user_repo = Arc::new(MockUserRepository::default());
+        let password_repo = Arc::new(MockPasswordRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
+
+        // Create a user first
+        let user = user_repo
+            .create(
+                NewUser::builder()
+                    .email("test@example.com".to_string())
+                    .build()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let service =
+            PasswordResetService::new(user_repo, password_repo.clone(), token_repo.clone());
+
+        // Create a token
+        let token = token_repo
+            .create_token(&user.id, TokenPurpose::PasswordReset, Duration::minutes(15))
+            .await
+            .unwrap();
+
+        // Verify token first (should not consume it)
+        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        assert!(is_valid);
+
+        // Now reset the password (should consume the token)
+        let result = service
+            .reset_password(&token.token, "new_password123")
+            .await;
+        assert!(result.is_ok());
+
+        // Verify token should now be false since it was consumed
+        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        assert!(!is_valid);
+
+        // Attempting to reset again should fail
+        let result = service
+            .reset_password(&token.token, "another_password")
+            .await;
+        assert!(result.is_err());
     }
 }
