@@ -94,6 +94,44 @@ pub use torii_mailer::{MailerConfig, TemplateContext};
 // Note: Authentication is now handled by services rather than plugins
 // The old plugin system has been replaced with a service-based architecture
 
+/// Namespaced authentication providers for clean API organization
+///
+/// These structs provide focused interfaces for specific authentication methods
+/// while maintaining access to the underlying Torii functionality.
+/// Password-based authentication provider
+///
+/// Provides methods for password registration, login, password changes, and password resets.
+#[cfg(feature = "password")]
+pub struct PasswordAuth<'a, R: RepositoryProvider> {
+    torii: &'a Torii<R>,
+}
+
+/// Magic link authentication provider
+///
+/// Provides methods for generating and verifying magic link tokens.
+#[cfg(feature = "magic-link")]
+pub struct MagicLinkAuth<'a, R: RepositoryProvider> {
+    torii: &'a Torii<R>,
+}
+
+/// OAuth authentication provider
+///
+/// Provides methods for OAuth flows and account linking.
+#[cfg(feature = "oauth")]
+#[allow(dead_code)] // TODO: Implement OAuth namespace methods
+pub struct OAuthAuth<'a, R: RepositoryProvider> {
+    torii: &'a Torii<R>,
+}
+
+/// Passkey authentication provider
+///
+/// Provides methods for WebAuthn/passkey registration and authentication.
+#[cfg(feature = "passkey")]
+#[allow(dead_code)] // TODO: Implement Passkey namespace methods
+pub struct PasskeyAuth<'a, R: RepositoryProvider> {
+    torii: &'a Torii<R>,
+}
+
 // Re-export storage backends
 // These storage implementations are available when the corresponding feature is enabled.
 
@@ -262,6 +300,33 @@ pub struct Torii<R: RepositoryProvider> {
     mailer_service: Option<Arc<ToriiMailerService>>,
 
     session_config: SessionConfig,
+}
+
+// Namespace accessor methods
+impl<R: RepositoryProvider> Torii<R> {
+    /// Access password-based authentication methods
+    #[cfg(feature = "password")]
+    pub fn password(&self) -> PasswordAuth<R> {
+        PasswordAuth { torii: self }
+    }
+
+    /// Access magic link authentication methods
+    #[cfg(feature = "magic-link")]
+    pub fn magic_link(&self) -> MagicLinkAuth<R> {
+        MagicLinkAuth { torii: self }
+    }
+
+    /// Access OAuth authentication methods
+    #[cfg(feature = "oauth")]
+    pub fn oauth(&self) -> OAuthAuth<R> {
+        OAuthAuth { torii: self }
+    }
+
+    /// Access passkey authentication methods
+    #[cfg(feature = "passkey")]
+    pub fn passkey(&self) -> PasskeyAuth<R> {
+        PasskeyAuth { torii: self }
+    }
 }
 
 impl<R: RepositoryProvider> Torii<R> {
@@ -542,8 +607,18 @@ impl<R: RepositoryProvider> Torii<R> {
     }
 }
 
+// Password authentication implementation moved to PasswordAuth namespace
+
+// Password reset methods moved to PasswordAuth namespace
+
+/// Implementation of password-based authentication methods
 #[cfg(feature = "password")]
-impl<R: RepositoryProvider> Torii<R> {
+impl<R: RepositoryProvider> PasswordAuth<'_, R> {
+    /// Get reference to the underlying Torii instance
+    fn torii(&self) -> &Torii<R> {
+        self.torii
+    }
+
     /// Register a user with a password
     ///
     /// # Arguments
@@ -554,13 +629,8 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns the registered user
-    pub async fn register_user_with_password(
-        &self,
-        email: &str,
-        password: &str,
-    ) -> Result<User, ToriiError> {
-        self.register_user_with_password_and_name(email, password, None)
-            .await
+    pub async fn register(&self, email: &str, password: &str) -> Result<User, ToriiError> {
+        self.register_with_name(email, password, None).await
     }
 
     /// Register a user with a password and optional name
@@ -574,13 +644,14 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns the registered user
-    pub async fn register_user_with_password_and_name(
+    pub async fn register_with_name(
         &self,
         email: &str,
         password: &str,
         name: Option<&str>,
     ) -> Result<User, ToriiError> {
-        let user = self
+        let torii = self.torii();
+        let user = torii
             .password_service
             .register_user(email, password, name.map(|n| n.to_string()))
             .await
@@ -588,7 +659,7 @@ impl<R: RepositoryProvider> Torii<R> {
 
         // Send welcome email if mailer is configured
         #[cfg(feature = "mailer")]
-        if let Some(mailer) = &self.mailer_service {
+        if let Some(mailer) = &torii.mailer_service {
             let user_name = user.name.as_deref();
             if let Err(e) = mailer.send_welcome_email(&user.email, user_name).await {
                 tracing::warn!("Failed to send welcome email: {}", e);
@@ -599,37 +670,40 @@ impl<R: RepositoryProvider> Torii<R> {
         Ok(user)
     }
 
-    /// Login a user with a password
+    /// Authenticate a user with email and password
     ///
     /// # Arguments
     ///
-    /// * `email`: The email of the user to login
-    /// * `password`: The password of the user to login
+    /// * `email`: The email of the user to authenticate
+    /// * `password`: The password of the user to authenticate
+    /// * `user_agent`: Optional user agent to associate with the session
+    /// * `ip_address`: Optional IP address to associate with the session
     ///
     /// # Returns
     ///
-    /// Returns the user and session if the login is successful
-    pub async fn login_user_with_password(
+    /// Returns the user and session if authentication is successful
+    pub async fn authenticate(
         &self,
         email: &str,
         password: &str,
         user_agent: Option<String>,
         ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
-        let user = self
+        let torii = self.torii();
+        let user = torii
             .password_service
             .authenticate(email, password)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
-        let session = self
+        let session = torii
             .create_session(&user.id, user_agent, ip_address)
             .await?;
 
         Ok((user, session))
     }
 
-    /// Change a user's password and invalidate all existing sessions for the user.
+    /// Change a user's password and invalidate all existing sessions
     ///
     /// This method changes the user's password after verifying the old password
     /// is correct. For security reasons, it also invalidates all existing sessions
@@ -640,29 +714,31 @@ impl<R: RepositoryProvider> Torii<R> {
     /// * `user_id`: The ID of the user to change the password for
     /// * `old_password`: The current password for verification
     /// * `new_password`: The new password to set for the user
-    pub async fn change_user_password(
+    pub async fn change_password(
         &self,
         user_id: &UserId,
         old_password: &str,
         new_password: &str,
     ) -> Result<(), ToriiError> {
+        let torii = self.torii();
         // Get user details before changing password for potential email notification
-        let user = self
+        let user = torii
             .get_user(user_id)
             .await?
             .ok_or_else(|| ToriiError::AuthError("User not found".to_string()))?;
 
-        self.password_service
+        torii
+            .password_service
             .change_password(user_id, old_password, new_password)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
-        // Remove all existing sessions for the user.
-        self.delete_sessions_for_user(user_id).await?;
+        // Remove all existing sessions for the user
+        torii.delete_sessions_for_user(user_id).await?;
 
         // Send password changed notification email if mailer is configured
         #[cfg(feature = "mailer")]
-        if let Some(mailer) = &self.mailer_service {
+        if let Some(mailer) = &torii.mailer_service {
             let user_name = user.name.as_deref();
             if let Err(e) = mailer
                 .send_password_changed_email(&user.email, user_name)
@@ -675,10 +751,7 @@ impl<R: RepositoryProvider> Torii<R> {
 
         Ok(())
     }
-}
 
-#[cfg(all(feature = "password", feature = "magic-link"))]
-impl<R: RepositoryProvider> Torii<R> {
     /// Request a password reset for the given email address
     ///
     /// This will generate a secure reset token and send a password reset email if mailer is configured.
@@ -692,12 +765,14 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Always returns Ok() to prevent email enumeration attacks
-    pub async fn request_password_reset(
+    #[cfg(feature = "magic-link")]
+    pub async fn reset_password_initiate(
         &self,
         email: &str,
         reset_url_base: &str,
     ) -> Result<(), ToriiError> {
-        let result = self
+        let torii = self.torii();
+        let result = torii
             .password_reset_service
             .request_password_reset(email)
             .await
@@ -706,7 +781,7 @@ impl<R: RepositoryProvider> Torii<R> {
         // Send password reset email if mailer is configured and user exists
         #[cfg(feature = "mailer")]
         if let Some((user, token)) = result {
-            if let Some(mailer) = &self.mailer_service {
+            if let Some(mailer) = &torii.mailer_service {
                 let reset_link = format!("{}/{}", reset_url_base.trim_end_matches('/'), token);
                 if let Err(e) = mailer
                     .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
@@ -729,13 +804,15 @@ impl<R: RepositoryProvider> Torii<R> {
     /// * `email`: The email address to send the password reset to
     /// * `reset_url_base`: The base URL for the password reset form
     /// * `expires_in`: How long the reset token should be valid
-    pub async fn request_password_reset_with_expiration(
+    #[cfg(feature = "magic-link")]
+    pub async fn reset_password_initiate_with_expiration(
         &self,
         email: &str,
         reset_url_base: &str,
         expires_in: Duration,
     ) -> Result<(), ToriiError> {
-        let result = self
+        let torii = self.torii();
+        let result = torii
             .password_reset_service
             .request_password_reset_with_expiration(email, expires_in)
             .await
@@ -744,7 +821,7 @@ impl<R: RepositoryProvider> Torii<R> {
         // Send password reset email if mailer is configured and user exists
         #[cfg(feature = "mailer")]
         if let Some((user, token)) = result {
-            if let Some(mailer) = &self.mailer_service {
+            if let Some(mailer) = &torii.mailer_service {
                 let reset_link = format!("{}/{}", reset_url_base.trim_end_matches('/'), token);
                 if let Err(e) = mailer
                     .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
@@ -771,8 +848,10 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns true if the token is valid and not expired
-    pub async fn verify_password_reset_token(&self, token: &str) -> Result<bool, ToriiError> {
-        self.password_reset_service
+    #[cfg(feature = "magic-link")]
+    pub async fn reset_password_verify_token(&self, token: &str) -> Result<bool, ToriiError> {
+        self.torii()
+            .password_reset_service
             .verify_reset_token(token)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))
@@ -782,7 +861,7 @@ impl<R: RepositoryProvider> Torii<R> {
     ///
     /// This will:
     /// 1. Verify and consume the reset token
-    /// 2. Update the user's password  
+    /// 2. Update the user's password
     /// 3. Invalidate all existing sessions for security
     /// 4. Send a password changed notification email if mailer is configured
     ///
@@ -794,23 +873,25 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns the user whose password was reset
-    pub async fn reset_password(
+    #[cfg(feature = "magic-link")]
+    pub async fn reset_password_complete(
         &self,
         token: &str,
         new_password: &str,
     ) -> Result<User, ToriiError> {
-        let user = self
+        let torii = self.torii();
+        let user = torii
             .password_reset_service
             .reset_password(token, new_password)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
 
         // Invalidate all existing sessions for security
-        self.delete_sessions_for_user(&user.id).await?;
+        torii.delete_sessions_for_user(&user.id).await?;
 
         // Send password changed notification email if mailer is configured
         #[cfg(feature = "mailer")]
-        if let Some(mailer) = &self.mailer_service {
+        if let Some(mailer) = &torii.mailer_service {
             let user_name = user.name.as_deref();
             if let Err(e) = mailer
                 .send_password_changed_email(&user.email, user_name)
@@ -825,8 +906,14 @@ impl<R: RepositoryProvider> Torii<R> {
     }
 }
 
+/// Implementation of magic link authentication methods
 #[cfg(feature = "magic-link")]
-impl<R: RepositoryProvider> Torii<R> {
+impl<R: RepositoryProvider> MagicLinkAuth<'_, R> {
+    /// Get reference to the underlying Torii instance
+    fn torii(&self) -> &Torii<R> {
+        self.torii
+    }
+
     /// Generate a magic token for a user
     ///
     /// # Arguments
@@ -836,33 +923,36 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns the generated magic token
-    pub async fn generate_magic_token(&self, email: &str) -> Result<SecureToken, ToriiError> {
-        self.magic_link_service
+    pub async fn generate_token(&self, email: &str) -> Result<SecureToken, ToriiError> {
+        let torii = self.torii();
+        torii
+            .magic_link_service
             .generate_token(email)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))
     }
 
-    /// Generate a magic token and automatically send it via email if mailer is configured
+    /// Send a magic link via email
     ///
     /// # Arguments
     ///
-    /// * `email`: The email of the user to generate a token for
+    /// * `email`: The email of the user to send the magic link to
     /// * `magic_link_url_base`: The base URL for the magic link (e.g., "https://yourapp.com/auth/magic")
     ///
     /// # Returns
     ///
     /// Returns the generated magic token
-    pub async fn generate_magic_token_with_email(
+    pub async fn send_link(
         &self,
         email: &str,
         magic_link_url_base: &str,
     ) -> Result<SecureToken, ToriiError> {
-        let token = self.generate_magic_token(email).await?;
+        let token = self.generate_token(email).await?;
+        let torii = self.torii();
 
         // Send magic link email if mailer is configured
         #[cfg(feature = "mailer")]
-        if let Some(mailer) = &self.mailer_service {
+        if let Some(mailer) = &torii.mailer_service {
             let magic_link = format!(
                 "{}/{}",
                 magic_link_url_base.trim_end_matches('/'),
@@ -870,7 +960,7 @@ impl<R: RepositoryProvider> Torii<R> {
             );
 
             // Get user name if the user exists
-            let user = self
+            let user = torii
                 .user_service
                 .get_user_by_email(email)
                 .await
@@ -890,7 +980,7 @@ impl<R: RepositoryProvider> Torii<R> {
         Ok(token)
     }
 
-    /// Verify a magic token and return the user and session
+    /// Authenticate a user with a magic link token
     ///
     /// # Arguments
     ///
@@ -901,23 +991,26 @@ impl<R: RepositoryProvider> Torii<R> {
     /// # Returns
     ///
     /// Returns the user and session if the token is valid
-    pub async fn verify_magic_token(
+    pub async fn authenticate(
         &self,
         token: &str,
         user_agent: Option<String>,
         ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
-        let user = self
+        let torii = self.torii();
+        let user = torii
             .magic_link_service
             .verify_token(token)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?
             .ok_or_else(|| ToriiError::AuthError("Invalid magic token".to_string()))?;
 
-        let session = self
+        let session = torii
             .create_session(&user.id, user_agent, ip_address)
             .await?;
 
         Ok((user, session))
     }
 }
+
+// TODO: Implement OAuthAuth and PasskeyAuth namespaces

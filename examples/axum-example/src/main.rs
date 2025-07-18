@@ -805,7 +805,8 @@ async fn request_magic_link_handler(
 ) -> Result<Json<ApiResponse>, StatusCode> {
     // Example of how magic link would work when storage backend is implemented
     match torii
-        .generate_magic_token_with_email(&req.email, "http://localhost:3000/magic-link")
+        .magic_link()
+        .send_link(&req.email, "http://localhost:3000/magic-link")
         .await
     {
         Ok(token) => {
@@ -843,7 +844,7 @@ async fn verify_magic_link_handler(
     // Note: Magic link functionality requires full implementation in storage backend
     info!("Magic link verification attempt for token: {}", token);
 
-    match torii.verify_magic_token(&token, None, None).await {
+    match torii.magic_link().authenticate(&token, None, None).await {
         Ok((user, session)) => Ok(Json(ApiResponse {
             success: true,
             message: "Magic link verified successfully.".to_string(),

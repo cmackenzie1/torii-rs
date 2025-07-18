@@ -83,8 +83,9 @@ impl<T> RequiredFieldExt<T> for Option<T> {
 #[macro_export]
 macro_rules! map_storage_err {
     ($result:expr) => {
-        $result
-            .map_err(|e| $crate::Error::Storage($crate::error::StorageError::Database(e.to_string())))
+        $result.map_err(|e| {
+            $crate::Error::Storage($crate::error::StorageError::Database(e.to_string()))
+        })
     };
 }
 

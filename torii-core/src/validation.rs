@@ -6,7 +6,6 @@ use std::sync::LazyLock;
 ///
 /// This module provides a single source of truth for all validation logic,
 /// reducing code duplication and ensuring consistent validation across the codebase.
-
 /// Lazy-loaded email validation regex
 ///
 /// This regex validates email addresses according to a practical subset of RFC 5322.
