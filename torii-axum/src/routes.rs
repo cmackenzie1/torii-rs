@@ -51,6 +51,11 @@ where
         router = router.merge(magic_link_routes());
     }
 
+    #[cfg(all(feature = "password", feature = "magic-link"))]
+    {
+        router = router.merge(password_reset_routes());
+    }
+
     router
         .with_state(state)
         .layer(axum::Extension(cookie_config))
@@ -133,6 +138,8 @@ where
 #[cfg(feature = "password")]
 async fn register_handler<R>(
     State(state): State<AuthState<R>>,
+    axum::Extension(cookie_config): axum::Extension<CookieConfig>,
+    connection_info: ConnectionInfo,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse>
 where
@@ -143,7 +150,29 @@ where
         .register_user_with_password(&payload.email, &payload.password)
         .await?;
 
-    Ok((StatusCode::CREATED, Json(UserResponse { user })))
+    // Create a session for the newly registered user (auto-login)
+    let session = state
+        .torii
+        .create_session(&user.id, connection_info.user_agent, connection_info.ip)
+        .await?;
+
+    let same_site = match cookie_config.same_site {
+        CookieSameSite::Strict => SameSite::Strict,
+        CookieSameSite::Lax => SameSite::Lax,
+        CookieSameSite::None => SameSite::None,
+    };
+
+    let cookie = Cookie::build((cookie_config.name, session.token.to_string()))
+        .path(cookie_config.path)
+        .http_only(cookie_config.http_only)
+        .secure(cookie_config.secure)
+        .same_site(same_site);
+
+    Ok((
+        StatusCode::CREATED,
+        [(header::SET_COOKIE, cookie.to_string())],
+        Json(AuthResponse { user, session }),
+    ))
 }
 
 #[cfg(feature = "password")]
@@ -183,6 +212,75 @@ where
         [(header::SET_COOKIE, cookie.to_string())],
         Json(AuthResponse { user, session }),
     ))
+}
+
+#[cfg(all(feature = "password", feature = "magic-link"))]
+fn password_reset_routes<R>() -> Router<AuthState<R>>
+where
+    R: RepositoryProvider + 'static,
+{
+    Router::new()
+        .route(
+            "/password/reset/request",
+            post(request_password_reset_handler),
+        )
+        .route("/password/reset/verify", post(verify_reset_token_handler))
+        .route("/password/reset/confirm", post(reset_password_handler))
+}
+
+#[cfg(all(feature = "password", feature = "magic-link"))]
+async fn request_password_reset_handler<R>(
+    State(state): State<AuthState<R>>,
+    Json(payload): Json<PasswordResetRequest>,
+) -> Result<impl IntoResponse>
+where
+    R: RepositoryProvider,
+{
+    // For demonstration, we'll use a hardcoded base URL.
+    // In a real application, this should come from configuration.
+    let reset_url_base = "https://yourapp.com/reset";
+
+    state
+        .torii
+        .request_password_reset(&payload.email, reset_url_base)
+        .await?;
+
+    Ok(Json(PasswordResetResponse {
+        message: "If an account with that email exists, a password reset link has been sent."
+            .to_string(),
+    }))
+}
+
+#[cfg(all(feature = "password", feature = "magic-link"))]
+async fn verify_reset_token_handler<R>(
+    State(state): State<AuthState<R>>,
+    Json(payload): Json<VerifyResetTokenRequest>,
+) -> Result<impl IntoResponse>
+where
+    R: RepositoryProvider,
+{
+    let valid = state
+        .torii
+        .verify_password_reset_token(&payload.token)
+        .await?;
+
+    Ok(Json(VerifyResetTokenResponse { valid }))
+}
+
+#[cfg(all(feature = "password", feature = "magic-link"))]
+async fn reset_password_handler<R>(
+    State(state): State<AuthState<R>>,
+    Json(payload): Json<ResetPasswordRequest>,
+) -> Result<impl IntoResponse>
+where
+    R: RepositoryProvider,
+{
+    let user = state
+        .torii
+        .reset_password(&payload.token, &payload.new_password)
+        .await?;
+
+    Ok(Json(UserResponse { user }))
 }
 
 #[cfg(feature = "password")]

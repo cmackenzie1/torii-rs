@@ -62,7 +62,9 @@ pub use routes::create_router;
 pub use types::{
     AuthResponse, ChangePasswordRequest, ConnectionInfo, CookieConfig, CookieSameSite,
     HealthResponse, LoginRequest, MagicLinkRequest, MagicLinkResponse, MessageResponse,
-    RegisterRequest, SessionResponse, UserResponse, VerifyMagicTokenRequest,
+    PasswordResetRequest, PasswordResetResponse, RegisterRequest, ResetPasswordRequest,
+    SessionResponse, UserResponse, VerifyMagicTokenRequest, VerifyResetTokenRequest,
+    VerifyResetTokenResponse,
 };
 
 use axum::Router;

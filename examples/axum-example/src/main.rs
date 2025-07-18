@@ -83,15 +83,20 @@ async fn main() -> anyhow::Result<()> {
     info!("  GET  /optional            - Optional authentication endpoint");
     info!("  GET  /bearer-only         - Bearer token only endpoint");
     info!("  GET  /token-info          - Token information endpoint");
-    info!("  POST /auth/register       - Register new user (with automatic welcome email)");
-    info!("  POST /auth/login          - Login user");
-    info!("  POST /auth/password       - Change password (with automatic email notification)");
-    info!("  GET  /auth/user           - Get current user");
-    info!("  GET  /auth/session        - Get current session");
-    info!("  POST /auth/logout         - Logout user");
-    info!("  GET  /auth/health         - Health check");
-    info!("  POST /magic-link          - Request magic link (placeholder)");
-    info!("  GET  /magic-link/{{token}}  - Verify magic link (placeholder)");
+    info!(
+        "  POST /auth/register                - Register new user (with automatic welcome email)"
+    );
+    info!("  POST /auth/login                   - Login user");
+    info!("  POST /auth/password                - Change password (with automatic email notification)");
+    info!("  POST /auth/password/reset/request  - Request password reset");
+    info!("  POST /auth/password/reset/verify   - Verify password reset token");
+    info!("  POST /auth/password/reset/confirm  - Confirm password reset");
+    info!("  GET  /auth/user                    - Get current user");
+    info!("  GET  /auth/session                 - Get current session");
+    info!("  POST /auth/logout                  - Logout user");
+    info!("  GET  /auth/health                  - Health check");
+    info!("  POST /magic-link                   - Request magic link (placeholder)");
+    info!("  GET  /magic-link/{{token}}           - Verify magic link (placeholder)");
 
     // Start the server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
@@ -184,7 +189,7 @@ async fn index_handler(
             margin-bottom: 5px;
             font-weight: bold;
         }
-        input[type="email"], input[type="password"] {
+        input[type="email"], input[type="password"], input[type="text"] {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
@@ -301,6 +306,39 @@ async fn index_handler(
             </div>
             <button onclick="requestMagicLink()">Request Magic Link</button>
             <div id="magic-status" class="status"></div>
+        </div>
+
+        <div class="section">
+            <h2>🔄 Password Reset</h2>
+            
+            <div style="display: flex; gap: 20px;">
+                <div style="flex: 1;">
+                    <h3>Request Password Reset</h3>
+                    <div class="form-group">
+                        <label for="reset-email">Email:</label>
+                        <input type="email" id="reset-email" placeholder="user@example.com">
+                    </div>
+                    <button onclick="requestPasswordReset()">Request Password Reset</button>
+                    <div id="reset-request-status" class="status"></div>
+                </div>
+
+                <div style="flex: 1;">
+                    <h3>Reset Password</h3>
+                    <div class="form-group">
+                        <label for="reset-token">Reset Token:</label>
+                        <input type="text" id="reset-token" placeholder="Enter reset token">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">New Password:</label>
+                        <input type="password" id="new-password" placeholder="Enter new password">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <button onclick="verifyResetToken()">Verify Token</button>
+                        <button onclick="resetPassword()">Reset Password</button>
+                    </div>
+                    <div id="reset-confirm-status" class="status"></div>
+                </div>
+            </div>
         </div>
 
         <div class="section">
@@ -507,6 +545,108 @@ async fn index_handler(
                 responseDiv.textContent = `Status: ${response.status}\n\n${JSON.stringify(data, null, 2)}`;
             } catch (error) {
                 responseDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function requestPasswordReset() {
+            const email = document.getElementById('reset-email').value;
+            const statusDiv = document.getElementById('reset-request-status');
+
+            if (!email) {
+                showStatus(statusDiv, 'Please enter an email address', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/auth/password/reset/request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email }),
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus(statusDiv, data.message, 'success');
+                    document.getElementById('reset-email').value = '';
+                } else {
+                    showStatus(statusDiv, data.message || 'Password reset request failed', 'error');
+                }
+            } catch (error) {
+                showStatus(statusDiv, 'Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function verifyResetToken() {
+            const token = document.getElementById('reset-token').value;
+            const statusDiv = document.getElementById('reset-confirm-status');
+
+            if (!token) {
+                showStatus(statusDiv, 'Please enter a reset token', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/auth/password/reset/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token }),
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (data.valid) {
+                        showStatus(statusDiv, 'Token is valid! You can now reset your password.', 'success');
+                    } else {
+                        showStatus(statusDiv, 'Token is invalid or has expired.', 'error');
+                    }
+                } else {
+                    showStatus(statusDiv, 'Failed to verify token', 'error');
+                }
+            } catch (error) {
+                showStatus(statusDiv, 'Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function resetPassword() {
+            const token = document.getElementById('reset-token').value;
+            const newPassword = document.getElementById('new-password').value;
+            const statusDiv = document.getElementById('reset-confirm-status');
+
+            if (!token || !newPassword) {
+                showStatus(statusDiv, 'Please enter both token and new password', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/auth/password/reset/confirm', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token, new_password: newPassword }),
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus(statusDiv, 'Password reset successfully! You can now log in with your new password.', 'success');
+                    document.getElementById('reset-token').value = '';
+                    document.getElementById('new-password').value = '';
+                    checkUserStatus(); // Update user status in case they're now logged in
+                } else {
+                    showStatus(statusDiv, data.message || 'Password reset failed', 'error');
+                }
+            } catch (error) {
+                showStatus(statusDiv, 'Network error: ' + error.message, 'error');
             }
         }
 

@@ -29,6 +29,22 @@ pub struct VerifyMagicTokenRequest {
     pub token: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasswordResetRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyResetTokenRequest {
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthResponse {
     pub user: User,
@@ -55,6 +71,16 @@ pub struct MagicLinkResponse {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PasswordResetResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VerifyResetTokenResponse {
+    pub valid: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

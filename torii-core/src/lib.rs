@@ -20,8 +20,11 @@ pub mod user;
 pub use error::Error;
 pub use repositories::RepositoryProvider;
 pub use services::{
-    MagicLinkService, OAuthService, PasskeyService, PasswordService, SessionService, UserService,
+    MagicLinkService, OAuthService, PasskeyService, PasswordResetService, PasswordService,
+    SessionService, UserService,
 };
+#[cfg(feature = "mailer")]
+pub use services::{MailerService, ToriiMailerService};
 pub use session::{
     JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, JwtSessionProvider, OpaqueSessionProvider,
     Session, SessionProvider, SessionToken,
