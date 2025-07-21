@@ -1,5 +1,7 @@
 use sea_orm_migration::prelude::*;
 
+use super::{SecureTokens, Users};
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -9,44 +11,44 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(SecureToken::Table)
+                    .table(SecureTokens::Table)
                     .if_not_exists()
                     .col(
-                        ColumnDef::new(SecureToken::Id)
+                        ColumnDef::new(SecureTokens::Id)
                             .big_integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(SecureToken::UserId).string().not_null())
+                    .col(ColumnDef::new(SecureTokens::UserId).string().not_null())
                     .col(
-                        ColumnDef::new(SecureToken::Token)
+                        ColumnDef::new(SecureTokens::Token)
                             .string()
                             .not_null()
                             .unique_key(),
                     )
-                    .col(ColumnDef::new(SecureToken::Purpose).string().not_null())
-                    .col(ColumnDef::new(SecureToken::UsedAt).timestamp_with_time_zone())
+                    .col(ColumnDef::new(SecureTokens::Purpose).string().not_null())
+                    .col(ColumnDef::new(SecureTokens::UsedAt).timestamp_with_time_zone())
                     .col(
-                        ColumnDef::new(SecureToken::ExpiresAt)
+                        ColumnDef::new(SecureTokens::ExpiresAt)
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(SecureToken::CreatedAt)
+                        ColumnDef::new(SecureTokens::CreatedAt)
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(SecureToken::UpdatedAt)
+                        ColumnDef::new(SecureTokens::UpdatedAt)
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk-secure-token-user-id")
-                            .from(SecureToken::Table, SecureToken::UserId)
-                            .to(User::Table, User::Id)
+                            .from(SecureTokens::Table, SecureTokens::UserId)
+                            .to(Users::Table, Users::Id)
                             .on_delete(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
@@ -58,8 +60,8 @@ impl MigrationTrait for Migration {
             .create_index(
                 Index::create()
                     .name("idx-secure-tokens-token")
-                    .table(SecureToken::Table)
-                    .col(SecureToken::Token)
+                    .table(SecureTokens::Table)
+                    .col(SecureTokens::Token)
                     .to_owned(),
             )
             .await?;
@@ -69,9 +71,9 @@ impl MigrationTrait for Migration {
             .create_index(
                 Index::create()
                     .name("idx-secure-tokens-purpose-expires")
-                    .table(SecureToken::Table)
-                    .col(SecureToken::Purpose)
-                    .col(SecureToken::ExpiresAt)
+                    .table(SecureTokens::Table)
+                    .col(SecureTokens::Purpose)
+                    .col(SecureTokens::ExpiresAt)
                     .to_owned(),
             )
             .await?;
@@ -81,27 +83,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(SecureToken::Table).to_owned())
+            .drop_table(Table::drop().table(SecureTokens::Table).to_owned())
             .await
     }
-}
-
-#[derive(DeriveIden)]
-enum SecureToken {
-    Table,
-    Id,
-    UserId,
-    Token,
-    Purpose,
-    UsedAt,
-    ExpiresAt,
-    CreatedAt,
-    UpdatedAt,
-}
-
-// Reference the existing User table
-#[derive(DeriveIden)]
-enum User {
-    Table,
-    Id,
 }
