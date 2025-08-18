@@ -14,7 +14,7 @@ jobs:
       MDBOOK_VERSION: v0.4.51 # https://github.com/rust-lang/mdBook/releases
       WRANGLER_VERSION: 4.22.0 # https://www.npmjs.com/package/wrangler
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.87
