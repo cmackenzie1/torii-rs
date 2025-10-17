@@ -6,6 +6,7 @@ use crate::{
     },
     session::SessionToken,
     storage::{NewUser, SecureToken, TokenPurpose},
+    tenant::TenantId,
 };
 use async_trait::async_trait;
 use chrono::Duration;
@@ -51,6 +52,35 @@ impl<R: RepositoryProvider> UserRepository for UserRepositoryAdapter<R> {
     async fn mark_email_verified(&self, user_id: &UserId) -> Result<(), Error> {
         self.provider.user().mark_email_verified(user_id).await
     }
+
+    // Tenant-scoped methods - delegate to provider
+    async fn find_by_id_in_tenant(&self, id: &UserId, tenant_id: &TenantId) -> Result<Option<User>, Error> {
+        self.provider.user().find_by_id_in_tenant(id, tenant_id).await
+    }
+
+    async fn find_by_email_in_tenant(&self, email: &str, tenant_id: &TenantId) -> Result<Option<User>, Error> {
+        self.provider.user().find_by_email_in_tenant(email, tenant_id).await
+    }
+
+    async fn find_or_create_by_email_in_tenant(&self, email: &str, tenant_id: &TenantId) -> Result<User, Error> {
+        self.provider.user().find_or_create_by_email_in_tenant(email, tenant_id).await
+    }
+
+    async fn list_users_in_tenant(&self, tenant_id: &TenantId, limit: Option<u32>, offset: Option<u32>) -> Result<Vec<User>, Error> {
+        self.provider.user().list_users_in_tenant(tenant_id, limit, offset).await
+    }
+
+    async fn count_users_in_tenant(&self, tenant_id: &TenantId) -> Result<u64, Error> {
+        self.provider.user().count_users_in_tenant(tenant_id).await
+    }
+
+    async fn mark_email_verified_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.user().mark_email_verified_in_tenant(user_id, tenant_id).await
+    }
+
+    async fn delete_in_tenant(&self, id: &UserId, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.user().delete_in_tenant(id, tenant_id).await
+    }
 }
 
 pub struct SessionRepositoryAdapter<R: RepositoryProvider> {
@@ -83,6 +113,31 @@ impl<R: RepositoryProvider> SessionRepository for SessionRepositoryAdapter<R> {
 
     async fn cleanup_expired(&self) -> Result<(), Error> {
         self.provider.session().cleanup_expired().await
+    }
+
+    // Tenant-scoped methods - delegate to provider
+    async fn find_by_token_in_tenant(&self, token: &SessionToken, tenant_id: &TenantId) -> Result<Option<Session>, Error> {
+        self.provider.session().find_by_token_in_tenant(token, tenant_id).await
+    }
+
+    async fn delete_in_tenant(&self, token: &SessionToken, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.session().delete_in_tenant(token, tenant_id).await
+    }
+
+    async fn delete_by_user_id_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.session().delete_by_user_id_in_tenant(user_id, tenant_id).await
+    }
+
+    async fn list_user_sessions_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<Vec<Session>, Error> {
+        self.provider.session().list_user_sessions_in_tenant(user_id, tenant_id).await
+    }
+
+    async fn count_sessions_in_tenant(&self, tenant_id: &TenantId) -> Result<u64, Error> {
+        self.provider.session().count_sessions_in_tenant(tenant_id).await
+    }
+
+    async fn cleanup_expired_in_tenant(&self, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.session().cleanup_expired_in_tenant(tenant_id).await
     }
 }
 
@@ -136,6 +191,19 @@ impl<R: RepositoryProvider> PasswordRepository for PasswordRepositoryAdapter<R> 
 
     async fn remove_password_hash(&self, user_id: &UserId) -> Result<(), Error> {
         self.provider.password().remove_password_hash(user_id).await
+    }
+
+    // Tenant-scoped methods - delegate to provider
+    async fn set_password_hash_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId, hash: &str) -> Result<(), Error> {
+        self.provider.password().set_password_hash_in_tenant(user_id, tenant_id, hash).await
+    }
+
+    async fn get_password_hash_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<Option<String>, Error> {
+        self.provider.password().get_password_hash_in_tenant(user_id, tenant_id).await
+    }
+
+    async fn remove_password_hash_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.password().remove_password_hash_in_tenant(user_id, tenant_id).await
     }
 }
 
@@ -216,6 +284,49 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
     async fn delete_pkce_verifier(&self, csrf_state: &str) -> Result<(), Error> {
         self.provider.oauth().delete_pkce_verifier(csrf_state).await
     }
+
+    // Tenant-scoped methods - delegate to provider
+    async fn create_account_in_tenant(
+        &self,
+        provider: &str,
+        subject: &str,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+    ) -> Result<OAuthAccount, Error> {
+        self.provider.oauth().create_account_in_tenant(provider, subject, user_id, tenant_id).await
+    }
+
+    async fn find_user_by_provider_in_tenant(
+        &self,
+        provider: &str,
+        subject: &str,
+        tenant_id: &TenantId,
+    ) -> Result<Option<User>, Error> {
+        self.provider.oauth().find_user_by_provider_in_tenant(provider, subject, tenant_id).await
+    }
+
+    async fn find_account_by_provider_in_tenant(
+        &self,
+        provider: &str,
+        subject: &str,
+        tenant_id: &TenantId,
+    ) -> Result<Option<OAuthAccount>, Error> {
+        self.provider.oauth().find_account_by_provider_in_tenant(provider, subject, tenant_id).await
+    }
+
+    async fn link_account_in_tenant(
+        &self,
+        user_id: &UserId,
+        provider: &str,
+        subject: &str,
+        tenant_id: &TenantId,
+    ) -> Result<(), Error> {
+        self.provider.oauth().link_account_in_tenant(user_id, provider, subject, tenant_id).await
+    }
+
+    async fn list_user_accounts_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<Vec<OAuthAccount>, Error> {
+        self.provider.oauth().list_user_accounts_in_tenant(user_id, tenant_id).await
+    }
 }
 
 pub struct PasskeyRepositoryAdapter<R: RepositoryProvider> {
@@ -277,6 +388,46 @@ impl<R: RepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
     async fn delete_all_for_user(&self, user_id: &UserId) -> Result<(), Error> {
         self.provider.passkey().delete_all_for_user(user_id).await
     }
+
+    // Tenant-scoped methods - delegate to provider
+    async fn add_credential_in_tenant(
+        &self,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+        credential_id: Vec<u8>,
+        public_key: Vec<u8>,
+        name: Option<String>,
+    ) -> Result<PasskeyCredential, Error> {
+        self.provider.passkey().add_credential_in_tenant(user_id, tenant_id, credential_id, public_key, name).await
+    }
+
+    async fn get_credentials_for_user_in_tenant(
+        &self,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+    ) -> Result<Vec<PasskeyCredential>, Error> {
+        self.provider.passkey().get_credentials_for_user_in_tenant(user_id, tenant_id).await
+    }
+
+    async fn get_credential_in_tenant(
+        &self,
+        credential_id: &[u8],
+        tenant_id: &TenantId,
+    ) -> Result<Option<PasskeyCredential>, Error> {
+        self.provider.passkey().get_credential_in_tenant(credential_id, tenant_id).await
+    }
+
+    async fn update_last_used_in_tenant(&self, credential_id: &[u8], tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.passkey().update_last_used_in_tenant(credential_id, tenant_id).await
+    }
+
+    async fn delete_credential_in_tenant(&self, credential_id: &[u8], tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.passkey().delete_credential_in_tenant(credential_id, tenant_id).await
+    }
+
+    async fn delete_all_for_user_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.passkey().delete_all_for_user_in_tenant(user_id, tenant_id).await
+    }
 }
 
 /// Adapter that wraps a RepositoryProvider and implements TokenRepository
@@ -318,5 +469,37 @@ impl<R: RepositoryProvider> TokenRepository for TokenRepositoryAdapter<R> {
 
     async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
         self.provider.token().cleanup_expired_tokens().await
+    }
+
+    // Tenant-scoped methods - delegate to provider
+    async fn create_token_in_tenant(
+        &self,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+        purpose: TokenPurpose,
+        expires_in: Duration,
+    ) -> Result<SecureToken, Error> {
+        self.provider.token().create_token_in_tenant(user_id, tenant_id, purpose, expires_in).await
+    }
+
+    async fn verify_token_in_tenant(
+        &self,
+        token: &str,
+        purpose: TokenPurpose,
+        tenant_id: &TenantId,
+    ) -> Result<Option<SecureToken>, Error> {
+        self.provider.token().verify_token_in_tenant(token, purpose, tenant_id).await
+    }
+
+    async fn check_token_in_tenant(&self, token: &str, purpose: TokenPurpose, tenant_id: &TenantId) -> Result<bool, Error> {
+        self.provider.token().check_token_in_tenant(token, purpose, tenant_id).await
+    }
+
+    async fn cleanup_expired_tokens_in_tenant(&self, tenant_id: &TenantId) -> Result<(), Error> {
+        self.provider.token().cleanup_expired_tokens_in_tenant(tenant_id).await
+    }
+
+    async fn list_user_tokens_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<Vec<SecureToken>, Error> {
+        self.provider.token().list_user_tokens_in_tenant(user_id, tenant_id).await
     }
 }

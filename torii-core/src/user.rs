@@ -17,6 +17,7 @@ use crate::{
     error::ValidationError,
     id::{generate_prefixed_id, validate_prefixed_id},
     storage::NewUser,
+    tenant::TenantId,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -111,6 +112,9 @@ pub struct User {
     // The unique identifier for the user.
     pub id: UserId,
 
+    // The tenant identifier for multi-tenancy support.
+    pub tenant_id: TenantId,
+
     // The name of the user.
     pub name: Option<String>,
 
@@ -141,6 +145,7 @@ impl User {
 #[derive(Default)]
 pub struct UserBuilder {
     id: Option<UserId>,
+    tenant_id: Option<TenantId>,
     name: Option<String>,
     email: Option<String>,
     email_verified_at: Option<DateTime<Utc>>,
@@ -151,6 +156,11 @@ pub struct UserBuilder {
 impl UserBuilder {
     pub fn id(mut self, id: UserId) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    pub fn tenant_id(mut self, tenant_id: TenantId) -> Self {
+        self.tenant_id = Some(tenant_id);
         self
     }
 
@@ -183,6 +193,7 @@ impl UserBuilder {
         let now = Utc::now();
         Ok(User {
             id: self.id.unwrap_or_default(),
+            tenant_id: self.tenant_id.unwrap_or_else(|| TenantId::default_tenant()),
             name: self.name,
             email: self.email.ok_or(ValidationError::InvalidField(
                 "Email is required".to_string(),
@@ -273,6 +284,7 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthAccount {
     pub user_id: UserId,
+    pub tenant_id: TenantId,
     pub provider: String,
     pub subject: String,
     pub created_at: DateTime<Utc>,
@@ -288,6 +300,7 @@ impl OAuthAccount {
 #[derive(Default)]
 pub struct OAuthAccountBuilder {
     user_id: Option<UserId>,
+    tenant_id: Option<TenantId>,
     provider: Option<String>,
     subject: Option<String>,
     created_at: Option<DateTime<Utc>>,
@@ -297,6 +310,11 @@ pub struct OAuthAccountBuilder {
 impl OAuthAccountBuilder {
     pub fn user_id(mut self, user_id: UserId) -> Self {
         self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn tenant_id(mut self, tenant_id: TenantId) -> Self {
+        self.tenant_id = Some(tenant_id);
         self
     }
 
@@ -326,6 +344,7 @@ impl OAuthAccountBuilder {
             user_id: self.user_id.ok_or(ValidationError::MissingField(
                 "User ID is required".to_string(),
             ))?,
+            tenant_id: self.tenant_id.unwrap_or_else(|| TenantId::default_tenant()),
             provider: self.provider.ok_or(ValidationError::MissingField(
                 "Provider is required".to_string(),
             ))?,

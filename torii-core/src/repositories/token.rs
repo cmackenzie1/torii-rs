@@ -1,6 +1,7 @@
 use crate::{
     Error, UserId,
     storage::{SecureToken, TokenPurpose},
+    tenant::TenantId,
 };
 use async_trait::async_trait;
 use chrono::Duration;
@@ -35,4 +36,32 @@ pub trait TokenRepository: Send + Sync + 'static {
 
     /// Clean up expired tokens for all purposes
     async fn cleanup_expired_tokens(&self) -> Result<(), Error>;
+
+    // Tenant-scoped methods for multi-tenancy support
+
+    /// Create a new secure token for a specific purpose within a specific tenant
+    async fn create_token_in_tenant(
+        &self,
+        user_id: &UserId,
+        tenant_id: &TenantId,
+        purpose: TokenPurpose,
+        expires_in: Duration,
+    ) -> Result<SecureToken, Error>;
+
+    /// Verify and consume a secure token for a specific purpose within a specific tenant
+    async fn verify_token_in_tenant(
+        &self,
+        token: &str,
+        purpose: TokenPurpose,
+        tenant_id: &TenantId,
+    ) -> Result<Option<SecureToken>, Error>;
+
+    /// Check if a secure token is valid without consuming it within a specific tenant
+    async fn check_token_in_tenant(&self, token: &str, purpose: TokenPurpose, tenant_id: &TenantId) -> Result<bool, Error>;
+
+    /// Clean up expired tokens for all purposes within a specific tenant
+    async fn cleanup_expired_tokens_in_tenant(&self, tenant_id: &TenantId) -> Result<(), Error>;
+
+    /// List all tokens for a user within a specific tenant
+    async fn list_user_tokens_in_tenant(&self, user_id: &UserId, tenant_id: &TenantId) -> Result<Vec<SecureToken>, Error>;
 }

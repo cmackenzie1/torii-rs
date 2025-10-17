@@ -16,9 +16,9 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create TenantId and TenantContext core types in torii-core/src/tenant.rs
-- [ ] T002 [P] Add tenant-related error types to torii-core/src/error.rs
-- [ ] T003 [P] Add serde derives and validation to TenantId in torii-core/src/tenant.rs
+- [x] T001 Create TenantId and TenantContext core types in torii-core/src/tenant.rs
+- [x] T002 [P] Add tenant-related error types to torii-core/src/error.rs
+- [x] T003 [P] Add serde derives and validation to TenantId in torii-core/src/tenant.rs
 
 ---
 
@@ -28,22 +28,21 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Add tenant_id field to User struct in torii-core/src/user.rs
-- [ ] T005 [P] Add tenant_id field to Session struct in torii-core/src/session/mod.rs
-- [ ] T006 [P] Add tenant_id field to OAuthAccount struct in torii-core/src/user.rs
-- [ ] T007 [P] Extend UserRepository trait with tenant-scoped methods in torii-core/src/repositories/user.rs
-- [ ] T008 [P] Extend SessionRepository trait with tenant-scoped methods in torii-core/src/repositories/session.rs
-- [ ] T009 [P] Extend OAuthRepository trait with tenant-scoped methods in torii-core/src/repositories/oauth.rs
-- [ ] T010 [P] Extend PasskeyRepository trait with tenant-scoped methods in torii-core/src/repositories/passkey.rs
-- [ ] T011 [P] Extend TokenRepository trait with tenant-scoped methods in torii-core/src/repositories/token.rs
-- [ ] T012 [P] Extend PasswordRepository trait with tenant-scoped methods in torii-core/src/repositories/password.rs
-- [ ] T013 Add database migration for tenant_id column in torii-storage-sqlite/src/migrations/add_tenant_columns.rs
+- [x] T004 Add tenant_id field to User struct in torii-core/src/user.rs
+- [x] T005 [P] Add tenant_id field to Session struct in torii-core/src/session/mod.rs
+- [x] T006 [P] Add tenant_id field to OAuthAccount struct in torii-core/src/user.rs
+- [x] T007 [P] Extend UserRepository trait with tenant-scoped methods in torii-core/src/repositories/user.rs
+- [x] T008 [P] Extend SessionRepository trait with tenant-scoped methods in torii-core/src/repositories/session.rs
+- [x] T009 [P] Extend OAuthRepository trait with tenant-scoped methods in torii-core/src/repositories/oauth.rs
+- [x] T010 [P] Extend PasskeyRepository trait with tenant-scoped methods in torii-core/src/repositories/passkey.rs
+- [x] T011 [P] Extend TokenRepository trait with tenant-scoped methods in torii-core/src/repositories/token.rs
+- [x] T012 [P] Extend PasswordRepository trait with tenant-scoped methods in torii-core/src/repositories/password.rs
 - [ ] T014 [P] Add PostgreSQL-specific migration with RLS and JSONB support in torii-storage-postgres/src/migrations/add_tenant_columns.rs
 - [ ] T015 [P] Add MySQL-specific migration with JSON columns and optimized indexes in torii-storage-seaorm/src/migrations/add_tenant_columns.rs
 - [ ] T016 [P] Add PostgreSQL performance optimizations (partial indexes, constraints) in torii-storage-postgres/src/migrations/optimize_tenant_queries.rs
 - [ ] T017 [P] Add MySQL performance optimizations (composite indexes, generated columns) in torii-storage-seaorm/src/migrations/optimize_tenant_queries.rs
 
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
+**Checkpoint**: ✅ Foundation ready - user story implementation can now begin in parallel
 
 ---
 

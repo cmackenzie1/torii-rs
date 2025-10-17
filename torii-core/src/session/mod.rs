@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Error,
     error::{SessionError, ValidationError},
+    tenant::TenantId,
     user::UserId,
 };
 
@@ -341,6 +342,9 @@ pub struct Session {
     /// The unique identifier for the user.
     pub user_id: UserId,
 
+    /// The tenant identifier for multi-tenancy support.
+    pub tenant_id: TenantId,
+
     /// The user agent of the client that created the session.
     pub user_agent: Option<String>,
 
@@ -401,6 +405,7 @@ impl Session {
         Self {
             token,
             user_id: UserId::new(&claims.sub),
+            tenant_id: TenantId::default_tenant(), // JWT claims don't include tenant_id yet
             user_agent,
             ip_address,
             created_at,
@@ -414,6 +419,7 @@ impl Session {
 pub struct SessionBuilder {
     token: Option<SessionToken>,
     user_id: Option<UserId>,
+    tenant_id: Option<TenantId>,
     user_agent: Option<String>,
     ip_address: Option<String>,
     created_at: Option<DateTime<Utc>>,
@@ -429,6 +435,11 @@ impl SessionBuilder {
 
     pub fn user_id(mut self, user_id: UserId) -> Self {
         self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn tenant_id(mut self, tenant_id: TenantId) -> Self {
+        self.tenant_id = Some(tenant_id);
         self
     }
 
@@ -464,6 +475,7 @@ impl SessionBuilder {
             user_id: self.user_id.ok_or(ValidationError::MissingField(
                 "User ID is required".to_string(),
             ))?,
+            tenant_id: self.tenant_id.unwrap_or_else(|| TenantId::default_tenant()),
             user_agent: self.user_agent,
             ip_address: self.ip_address,
             created_at: self.created_at.unwrap_or(now),
