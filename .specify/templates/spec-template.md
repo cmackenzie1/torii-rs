@@ -95,6 +95,15 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+### Security Requirements *(mandatory for auth-related features)*
+
+- **SR-001**: System MUST validate all external input
+- **SR-002**: System MUST use constant-time comparisons for secrets
+- **SR-003**: System MUST implement rate limiting on authentication attempts
+- **SR-004**: System MUST log all security-sensitive operations
+- **SR-005**: System MUST protect against timing attacks
+- **SR-006**: System MUST use secure random number generation for tokens
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]

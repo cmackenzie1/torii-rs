@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+**Modular Architecture**: ✅/❌ Feature implemented as standalone crate with clear boundaries
+**Type Safety**: ✅/❌ Uses newtype patterns, structured errors, async_trait
+**Security-First**: ✅/❌ Security review planned, no custom crypto, structured logging
+**Test-Driven Development**: ✅/❌ TDD workflow planned, integration tests specified
+**Documentation-First**: ✅/❌ Doc comments and examples planned before implementation
 
 ## Project Structure
 

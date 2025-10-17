@@ -1,50 +1,79 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report:
+- Version change: Initial → 1.0.0
+- Added principles: Modular Architecture, Type Safety, Security-First, Test-Driven Development, Documentation-First
+- Added sections: Security Requirements, Development Workflow
+- Templates requiring updates: ✅ All templates reviewed and aligned
+- Follow-up TODOs: None
+-->
+
+# Torii-rs Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Modular Architecture
+Every feature MUST be implemented as a standalone crate with clear boundaries. Crates MUST be self-contained, independently testable, and documented. Each crate MUST have a single, well-defined purpose - no organizational-only crates allowed.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+**Rationale**: Modular design enables independent development, testing, and maintenance while preventing tight coupling that leads to monolithic complexity.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. Type Safety
+All public APIs MUST use newtype patterns for domain-specific types (e.g., `UserId`, `SessionToken`). Error handling MUST use `thiserror` with structured error types and `#[from]` conversions. Async interfaces MUST use `async_trait`.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: Type safety prevents runtime errors and makes APIs self-documenting, while structured error handling improves debugging and user experience.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### III. Security-First (NON-NEGOTIABLE)
+All authentication and authorization code MUST undergo security review before merge. Cryptographic operations MUST use established libraries (no custom crypto). All security-sensitive operations MUST be logged with structured logging.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+**Rationale**: Authentication frameworks are high-value targets; security cannot be retrofitted and must be built-in from the start.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### IV. Test-Driven Development
+TDD is mandatory for all new features: Tests written → User approved → Tests fail → Then implement. Red-Green-Refactor cycle MUST be strictly enforced. Integration tests MUST cover all authentication flows and storage backend interactions.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Rationale**: Authentication systems require extremely high reliability; TDD ensures correctness and prevents regressions in security-critical code.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### V. Documentation-First
+All public interfaces MUST have comprehensive doc comments before implementation. Each crate MUST include usage examples. Breaking changes MUST be documented with migration guides.
+
+**Rationale**: Authentication frameworks are complex; clear documentation reduces integration errors and improves developer experience.
+
+## Security Requirements
+
+All code MUST follow secure coding practices:
+- Input validation on all external data
+- Constant-time comparisons for secrets
+- Secure random number generation for tokens
+- Protection against timing attacks
+- Regular dependency security audits
+
+Authentication flows MUST implement:
+- Rate limiting on login attempts
+- Session timeout and rotation
+- Secure token storage recommendations
+- Protection against common attacks (CSRF, session fixation, etc.)
+
+## Development Workflow
+
+All changes MUST follow this workflow:
+1. Feature specification with security considerations
+2. Test implementation (must fail initially)
+3. Implementation with security review
+4. Documentation updates
+5. Integration testing across all storage backends
+
+Code quality gates:
+- `make fmt` for formatting
+- `make lint` for static analysis
+- `make test` for all tests passing
+- Security review for auth-related changes
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes all other development practices. Amendments require:
+1. Documented justification for the change
+2. Impact assessment on existing code
+3. Migration plan for affected components
+4. Approval from project maintainers
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+All PRs and reviews MUST verify constitutional compliance. Complexity MUST be justified against simpler alternatives. Use `CLAUDE.md` for runtime development guidance and specific tooling instructions.
+
+**Version**: 1.0.0 | **Ratified**: 2025-10-17 | **Last Amended**: 2025-10-17

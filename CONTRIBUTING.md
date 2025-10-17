@@ -6,14 +6,26 @@ Thank you for considering contributing to Torii! This document outlines the proc
 
 Contributors are expected to maintain a respectful and inclusive environment. Be considerate of differing viewpoints and experiences, and focus on constructive feedback and collaboration.
 
+## Project Constitution
+
+All contributions must comply with the Torii-rs Constitution defined in `.specify/memory/constitution.md`. Key requirements include:
+
+- **Modular Architecture**: Features must be implemented as standalone crates
+- **Type Safety**: Use newtype patterns and structured error handling
+- **Security-First**: All auth code requires security review
+- **Test-Driven Development**: Tests must be written before implementation
+- **Documentation-First**: Comprehensive docs required for all public APIs
+
 ## Getting Started
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/your-username/torii-rs.git`
 3. Create a branch for your feature or fix: `git checkout -b your-feature-name`
-4. Make your changes following our code style.
-5. Run tests and linting: `make check` and `make fmt`
-6. Submit a pull request
+4. Read the constitution (`.specify/memory/constitution.md`) and ensure compliance
+5. Write tests first (TDD is mandatory)
+6. Make your changes following our code style and constitutional principles
+7. Run tests and linting: `make check` and `make fmt`
+8. Submit a pull request with security review if auth-related
 
 ## AI/LLM Usage Policy
 
