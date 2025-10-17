@@ -11,6 +11,9 @@ Contributors are expected to maintain a respectful and inclusive environment. Be
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/your-username/torii-rs.git`
 3. Create a branch for your feature or fix: `git checkout -b your-feature-name`
+4. Make your changes following our code style.
+5. Run tests and linting: `make check` and `make fmt`
+6. Submit a pull request
 
 ## AI/LLM Usage Policy
 
