@@ -26,13 +26,3 @@
 ## Project Structure
 - Core functionality in `torii-core` crate
 - Storage backends in separate crates (`torii-storage-*`)
-
-## Security Guidelines
-- All authentication code requires security review before merge
-- Use established crypto libraries (no custom implementations)
-- Implement constant-time comparisons for secrets
-- Add structured logging for all security-sensitive operations
-- Include rate limiting on authentication attempts
-
-## Constitution
-This project follows the principles defined in `.specify/memory/constitution.md`. All development must comply with the constitutional requirements for modular architecture, type safety, security-first design, test-driven development, and documentation-first approach.

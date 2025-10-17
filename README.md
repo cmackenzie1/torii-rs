@@ -32,16 +32,17 @@ Check out the example [todos](./examples/todos/README.md) to see Torii in action
 
 | Authentication Method | SQLite | PostgreSQL | MySQL (SeaORM) |
 |-----------------------|--------|------------|----------------|
-| Password              | ✅     | ✅         | ✅             |
-| OAuth2/OIDC           | ✅     | ✅         | ✅             |
-| Passkey/WebAuthn      | ✅     | ✅         | ✅             |
-| Magic Link            | ✅     | ✅         | ✅             |
-| Multi-Tenancy         | ❌     | 🚧         | 🚧             |
-| SAML                  | 🚧     | 🚧         | 🚧             |
+| Password              | ✅     | ✅         | ✅              |
+| OAuth2/OIDC           | ✅     | ✅         | ✅              |
+| Passkey/WebAuthn      | ✅     | ✅         | ✅              |
+| Magic Link            | ✅     | ✅         | ✅              |
+| Multi-Tenancy         | ❌     | 🚧         | 🚧              |
+| SAML                  | 🚧     | 🚧         | 🚧              |
 
 ✅ = Supported
 🚧 = Planned/In Development
 ❌ = Not Supported
+
 
 ## Quick Start
 
