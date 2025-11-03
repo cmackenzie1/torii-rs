@@ -18,7 +18,7 @@ torii-core = { path = "../../torii-core", version = "0.5.1" }
 # web server
 askama = "0.14"
 axum = { version = "0.8", features = ["macros"] }
-axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
+axum-extra = { version = "0.12", features = ["cookie", "typed-header"] }
 
 # "stdlib"
 chrono = { version = "0.4.39", features = ["serde"] }
