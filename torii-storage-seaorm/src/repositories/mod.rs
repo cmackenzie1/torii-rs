@@ -21,6 +21,7 @@ use std::sync::Arc;
 use torii_core::{Error, error::StorageError, repositories::RepositoryProvider};
 
 /// Repository provider implementation for SeaORM
+#[derive(Clone)]
 pub struct SeaORMRepositoryProvider {
     pool: DatabaseConnection,
     user: Arc<SeaORMUserRepository>,

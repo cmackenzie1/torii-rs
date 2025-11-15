@@ -26,14 +26,14 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Connect to database (supports PostgreSQL, MySQL, SQLite)
 //!     let storage = SeaORMStorage::connect("sqlite://todos.db?mode=rwc").await?;
-//!     
+//!
 //!     // Run migrations to set up the schema
 //!     storage.migrate().await?;
-//!     
+//!
 //!     // Convert to repository provider and use with Torii
 //!     let repositories = std::sync::Arc::new(storage.into_repository_provider());
 //!     let torii = torii::Torii::new(repositories);
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -47,7 +47,7 @@
 //!
 //! This crate can be used with any database backend supported by SeaORM:
 //! - **PostgreSQL**: Production-ready with full feature support
-//! - **MySQL**: Production-ready with full feature support  
+//! - **MySQL**: Production-ready with full feature support
 //! - **SQLite**: Great for development and smaller deployments
 //!
 //! # Storage Implementations
@@ -64,7 +64,7 @@
 //! The crate defines SeaORM entity models for all authentication data:
 //! - `User` - User accounts and profile information
 //! - `Session` - Active user sessions
-//! - `Password` - Hashed password credentials  
+//! - `Password` - Hashed password credentials
 //! - `OAuthAccount` - Connected OAuth accounts
 //! - `Passkey` - WebAuthn passkey credentials
 //! - `PasskeyChallenge` - Temporary passkey challenges

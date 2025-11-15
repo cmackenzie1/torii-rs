@@ -18,7 +18,22 @@
 //! use std::sync::Arc;
 //! use axum::{Router, routing::get};
 //! use torii::{Torii, SeaORMRepositoryProvider};
-//! use torii_axum::{routes, require_auth, CookieConfig};
+//! use torii_axum::{routes, HasTorii, auth_middleware, CookieConfig};
+//!
+//! // Define your application state with a torii field
+//! #[derive(Clone)]
+//! struct AppState {
+//!     torii: Arc<Torii<SeaORMRepositoryProvider>>,
+//!     // Add other state fields as needed
+//!     // database: Arc<sqlx::PgPool>,
+//! }
+//!
+//! // Implement HasTorii for your state
+//! impl HasTorii<SeaORMRepositoryProvider> for AppState {
+//!     fn torii(&self) -> &Arc<Torii<SeaORMRepositoryProvider>> {
+//!         &self.torii
+//!     }
+//! }
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -26,15 +41,23 @@
 //!     let repositories = Arc::new(SeaORMRepositoryProvider::new(pool));
 //!     let torii = Arc::new(Torii::new(repositories));
 //!
+//!     // Create your application state
+//!     let state = AppState { torii: torii.clone() };
+//!
 //!     // Create auth routes with custom cookie configuration
-//!     let auth_routes = routes(torii.clone())
-//!         .with_cookie_config(CookieConfig::development());
+//!     let auth_routes = routes(torii)
+//!         .with_cookie_config(CookieConfig::development())
+//!         .build();
 //!
 //!     // Create your application router
 //!     let app = Router::new()
 //!         .nest("/auth", auth_routes)
 //!         .route("/protected", get(protected_handler))
-//!         .layer(require_auth(torii));
+//!         .with_state(state.clone())
+//!         .layer(axum::middleware::from_fn_with_state(
+//!             state,
+//!             auth_middleware::<AppState, SeaORMRepositoryProvider>
+//!         ));
 //!
 //!     // Run your server
 //!     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
@@ -57,7 +80,7 @@ pub use extractors::{
     AuthUser, OptionalAuthUser, SessionTokenFromBearer, SessionTokenFromCookie,
     SessionTokenFromRequest,
 };
-pub use middleware::{AuthState, auth_middleware, require_auth};
+pub use middleware::{HasTorii, auth_middleware, require_auth};
 pub use routes::create_router;
 pub use types::{
     AuthResponse, ChangePasswordRequest, ConnectionInfo, CookieConfig, CookieSameSite,

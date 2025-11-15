@@ -11,25 +11,59 @@ use torii_core::RepositoryProvider;
 
 use crate::error::AuthError;
 
-pub struct AuthState<R: RepositoryProvider> {
-    pub torii: Arc<Torii<R>>,
+/// Trait for application states that contain a Torii instance.
+///
+/// Your application state must implement this trait to use Torii middleware.
+///
+/// # Example
+///
+/// ```rust
+/// use std::sync::Arc;
+/// use torii::Torii;
+/// use torii_axum::HasTorii;
+///
+/// #[derive(Clone)]
+/// struct AppState<R> {
+///     pub torii: Arc<Torii<R>>,
+///     pub database: Arc<sqlx::PgPool>,
+///     // ... other state fields
+/// }
+///
+/// impl<R> HasTorii<R> for AppState<R>
+/// where
+///     R: RepositoryProvider,
+/// {
+///     fn torii(&self) -> &Torii<R> {
+///         &self.torii
+///     }
+/// }
+/// ```
+pub trait HasTorii<R>
+where
+    R: RepositoryProvider,
+{
+    /// Returns a reference to the Torii instance.
+    fn torii(&self) -> &Torii<R>;
 }
 
-impl<R: RepositoryProvider> Clone for AuthState<R> {
-    fn clone(&self) -> Self {
-        Self {
-            torii: self.torii.clone(),
-        }
+// Blanket implementation for Arc<Torii<R>> - allows using Torii directly as state
+impl<R> HasTorii<R> for Arc<Torii<R>>
+where
+    R: RepositoryProvider,
+{
+    fn torii(&self) -> &Torii<R> {
+        self
     }
 }
 
-pub async fn auth_middleware<R>(
-    State(state): State<AuthState<R>>,
+pub async fn auth_middleware<S, R>(
+    State(state): State<S>,
     jar: CookieJar,
     mut request: Request,
     next: Next,
 ) -> Response
 where
+    S: HasTorii<R>,
     R: RepositoryProvider,
 {
     request.extensions_mut().insert(None::<User>);
@@ -44,8 +78,8 @@ where
     };
 
     if let Some(session_token) = session_token {
-        match state.torii.get_session(&session_token).await {
-            Ok(session) => match state.torii.get_user(&session.user_id).await {
+        match state.torii().get_session(&session_token).await {
+            Ok(session) => match state.torii().get_user(&session.user_id).await {
                 Ok(Some(user)) => {
                     request.extensions_mut().insert(user.clone());
                     request.extensions_mut().insert(Some(user));
@@ -75,13 +109,14 @@ fn extract_bearer_token(request: &Request) -> Option<String> {
         .map(|token| token.to_string())
 }
 
-pub async fn require_auth<R>(
-    State(state): State<AuthState<R>>,
+pub async fn require_auth<S, R>(
+    State(state): State<S>,
     jar: CookieJar,
     request: Request,
     next: Next,
 ) -> Result<Response, AuthError>
 where
+    S: HasTorii<R>,
     R: RepositoryProvider,
 {
     // Try Bearer token first, then fall back to cookie
@@ -96,7 +131,7 @@ where
     };
 
     let _session = state
-        .torii
+        .torii()
         .get_session(&session_token)
         .await
         .map_err(|_| AuthError::InvalidSession)?;

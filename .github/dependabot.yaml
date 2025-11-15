@@ -9,7 +9,7 @@ updates:
       all-dependencies:
         patterns:
           - "*"
-          
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
