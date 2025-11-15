@@ -304,7 +304,7 @@ pub struct Torii<R: RepositoryProvider> {
 impl<R: RepositoryProvider> Torii<R> {
     /// Access password-based authentication methods
     #[cfg(feature = "password")]
-    pub fn password(&self) -> PasswordAuth<R> {
+    pub fn password(&self) -> PasswordAuth<'_, R> {
         PasswordAuth { torii: self }
     }
 

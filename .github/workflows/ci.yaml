@@ -13,7 +13,7 @@ jobs:
   build:
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -33,7 +33,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.88
+          toolchain: 1.91.1
           components: llvm-tools-preview, rustfmt, clippy
 
       - uses: taiki-e/install-action@cargo-llvm-cov
