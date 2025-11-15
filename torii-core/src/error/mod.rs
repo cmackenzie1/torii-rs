@@ -21,6 +21,9 @@ pub enum Error {
 
     #[error("Cryptographic error: {0}")]
     Crypto(#[from] CryptoError),
+
+    #[error("Tenant error: {0}")]
+    Tenant(#[from] crate::tenant::TenantError),
 }
 
 #[derive(Debug, Error)]
@@ -162,6 +165,10 @@ impl Error {
     pub fn is_crypto_error(&self) -> bool {
         matches!(self, Error::Crypto(_))
     }
+
+    pub fn is_tenant_error(&self) -> bool {
+        matches!(self, Error::Tenant(_))
+    }
 }
 
 #[cfg(test)]
@@ -289,5 +296,22 @@ mod tests {
             error,
             Error::Validation(ValidationError::WeakPassword)
         ));
+
+        let tenant_error = crate::tenant::TenantError::InvalidTenantId {
+            id: "invalid".to_string(),
+            reason: "test".to_string(),
+        };
+        let error: Error = tenant_error.into();
+        assert!(matches!(error, Error::Tenant(_)));
+    }
+
+    #[test]
+    fn test_is_tenant_error() {
+        let tenant_error = Error::Tenant(crate::tenant::TenantError::InvalidTenantId {
+            id: "invalid".to_string(),
+            reason: "test".to_string(),
+        });
+        assert!(tenant_error.is_tenant_error());
+        assert!(!Error::Auth(AuthError::InvalidCredentials).is_tenant_error());
     }
 }

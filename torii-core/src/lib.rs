@@ -15,6 +15,7 @@ pub mod repositories;
 pub mod services;
 pub mod session;
 pub mod storage;
+pub mod tenant;
 pub mod user;
 pub mod validation;
 
@@ -31,4 +32,5 @@ pub use session::{
     Session, SessionProvider, SessionToken,
 };
 pub use storage::{NewUser, SessionStorage, UserStorage};
+pub use tenant::{TenantContext, TenantError, TenantId};
 pub use user::{DefaultUserManager, OAuthAccount, User, UserId, UserManager};
