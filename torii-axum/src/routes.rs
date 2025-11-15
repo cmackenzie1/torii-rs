@@ -17,7 +17,7 @@ use torii_core::RepositoryProvider;
 use crate::{
     error::{AuthError, Result},
     extractors::{AuthUser, OptionalAuthUser, SessionTokenFromCookie},
-    middleware::{AuthState, auth_middleware},
+    middleware::{HasTorii, auth_middleware},
     types::*,
 };
 
@@ -25,7 +25,7 @@ pub fn create_router<R>(torii: Arc<Torii<R>>, cookie_config: CookieConfig) -> Ro
 where
     R: RepositoryProvider + 'static,
 {
-    let state = AuthState { torii };
+    let state = torii;
 
     let public_routes = Router::new()
         .route("/health", get(health_handler))
@@ -38,7 +38,10 @@ where
 
     #[allow(unused_mut)]
     let mut router = Router::new().merge(public_routes).merge(auth_routes).layer(
-        axum::middleware::from_fn_with_state(state.clone(), auth_middleware::<R>),
+        axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware::<Arc<Torii<R>>, R>,
+        ),
     );
 
     #[cfg(feature = "password")]
@@ -61,12 +64,12 @@ where
         .layer(axum::Extension(cookie_config))
 }
 
-async fn health_handler<R>(State(state): State<AuthState<R>>) -> Result<impl IntoResponse>
+async fn health_handler<R>(State(state): State<Arc<Torii<R>>>) -> Result<impl IntoResponse>
 where
     R: RepositoryProvider,
 {
     state
-        .torii
+        .torii()
         .health_check()
         .await
         .map_err(|e| AuthError::InternalError(e.to_string()))?;
@@ -78,7 +81,7 @@ where
 }
 
 async fn get_session_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     SessionTokenFromCookie(session_token): SessionTokenFromCookie,
 ) -> Result<impl IntoResponse>
 where
@@ -87,7 +90,7 @@ where
     let session_token = session_token.ok_or(AuthError::Unauthorized)?;
 
     let session = state
-        .torii
+        .torii()
         .get_session(&session_token)
         .await
         .map_err(|_| AuthError::SessionNotFound)?;
@@ -103,7 +106,7 @@ async fn get_user_handler(OptionalAuthUser(user): OptionalAuthUser) -> Result<im
 }
 
 async fn logout_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     jar: CookieJar,
     SessionTokenFromCookie(session_token): SessionTokenFromCookie,
 ) -> Result<impl IntoResponse>
@@ -111,7 +114,7 @@ where
     R: RepositoryProvider,
 {
     if let Some(session_token) = session_token {
-        let _ = state.torii.delete_session(&session_token).await;
+        let _ = state.torii().delete_session(&session_token).await;
     }
 
     let jar = jar.remove(Cookie::from("session_id"));
@@ -125,7 +128,7 @@ where
 }
 
 #[cfg(feature = "password")]
-fn password_routes<R>() -> Router<AuthState<R>>
+fn password_routes<R>() -> Router<Arc<Torii<R>>>
 where
     R: RepositoryProvider + 'static,
 {
@@ -137,7 +140,7 @@ where
 
 #[cfg(feature = "password")]
 async fn register_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     axum::Extension(cookie_config): axum::Extension<CookieConfig>,
     connection_info: ConnectionInfo,
     Json(payload): Json<RegisterRequest>,
@@ -146,14 +149,14 @@ where
     R: RepositoryProvider,
 {
     let user = state
-        .torii
+        .torii()
         .password()
         .register(&payload.email, &payload.password)
         .await?;
 
     // Create a session for the newly registered user (auto-login)
     let session = state
-        .torii
+        .torii()
         .create_session(&user.id, connection_info.user_agent, connection_info.ip)
         .await?;
 
@@ -178,7 +181,7 @@ where
 
 #[cfg(feature = "password")]
 async fn login_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     axum::Extension(cookie_config): axum::Extension<CookieConfig>,
     connection_info: ConnectionInfo,
     Json(payload): Json<LoginRequest>,
@@ -187,7 +190,7 @@ where
     R: RepositoryProvider,
 {
     let (user, session) = state
-        .torii
+        .torii()
         .password()
         .authenticate(
             &payload.email,
@@ -217,7 +220,7 @@ where
 }
 
 #[cfg(any(feature = "password", feature = "magic-link"))]
-fn password_reset_routes<R>() -> Router<AuthState<R>>
+fn password_reset_routes<R>() -> Router<Arc<Torii<R>>>
 where
     R: RepositoryProvider + 'static,
 {
@@ -232,7 +235,7 @@ where
 
 #[cfg(any(feature = "password", feature = "magic-link"))]
 async fn request_password_reset_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     Json(payload): Json<PasswordResetRequest>,
 ) -> Result<impl IntoResponse>
 where
@@ -243,7 +246,7 @@ where
     let reset_url_base = "https://yourapp.com/reset";
 
     state
-        .torii
+        .torii()
         .password()
         .reset_password_initiate(&payload.email, reset_url_base)
         .await?;
@@ -256,14 +259,14 @@ where
 
 #[cfg(any(feature = "password", feature = "magic-link"))]
 async fn verify_reset_token_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     Json(payload): Json<VerifyResetTokenRequest>,
 ) -> Result<impl IntoResponse>
 where
     R: RepositoryProvider,
 {
     let valid = state
-        .torii
+        .torii()
         .password()
         .reset_password_verify_token(&payload.token)
         .await?;
@@ -273,14 +276,14 @@ where
 
 #[cfg(any(feature = "password", feature = "magic-link"))]
 async fn reset_password_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     Json(payload): Json<ResetPasswordRequest>,
 ) -> Result<impl IntoResponse>
 where
     R: RepositoryProvider,
 {
     let user = state
-        .torii
+        .torii()
         .password()
         .reset_password_complete(&payload.token, &payload.new_password)
         .await?;
@@ -290,7 +293,7 @@ where
 
 #[cfg(feature = "password")]
 async fn change_password_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     AuthUser(user): AuthUser,
     Json(payload): Json<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse>
@@ -298,7 +301,7 @@ where
     R: RepositoryProvider,
 {
     state
-        .torii
+        .torii()
         .password()
         .change_password(&user.id, &payload.old_password, &payload.new_password)
         .await?;
@@ -309,7 +312,7 @@ where
 }
 
 #[cfg(feature = "magic-link")]
-fn magic_link_routes<R>() -> Router<AuthState<R>>
+fn magic_link_routes<R>() -> Router<Arc<Torii<R>>>
 where
     R: RepositoryProvider + 'static,
 {
@@ -320,14 +323,14 @@ where
 
 #[cfg(feature = "magic-link")]
 async fn request_magic_link_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     Json(payload): Json<MagicLinkRequest>,
 ) -> Result<impl IntoResponse>
 where
     R: RepositoryProvider,
 {
     let token = state
-        .torii
+        .torii()
         .magic_link()
         .generate_token(&payload.email)
         .await?;
@@ -340,7 +343,7 @@ where
 
 #[cfg(feature = "magic-link")]
 async fn verify_magic_link_handler<R>(
-    State(state): State<AuthState<R>>,
+    State(state): State<Arc<Torii<R>>>,
     axum::Extension(cookie_config): axum::Extension<CookieConfig>,
     connection_info: ConnectionInfo,
     Json(payload): Json<VerifyMagicTokenRequest>,
@@ -349,7 +352,7 @@ where
     R: RepositoryProvider,
 {
     let (user, session) = state
-        .torii
+        .torii()
         .magic_link()
         .authenticate(
             &payload.token,

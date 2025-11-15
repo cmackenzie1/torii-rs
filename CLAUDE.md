@@ -1,5 +1,7 @@
 # Torii-rs Project Guidelines
 
+Torii is a Rust project that enables users to easily add authentication to their application. 
+
 ## Build and Test Commands
 - **Build:** `make build` or `cargo build --all-features`
 - **Format:** `make fmt` or `cargo fmt --all`

@@ -12,9 +12,23 @@ use serde_json::{json, Value};
 use torii::seaorm::SeaORMStorage;
 use torii::{MailerConfig, Torii};
 use torii_axum::{
-    AuthUser, CookieConfig, OptionalAuthUser, SessionTokenFromBearer, SessionTokenFromRequest,
+    AuthUser, CookieConfig, HasTorii, OptionalAuthUser, SessionTokenFromBearer,
+    SessionTokenFromRequest,
 };
 use tracing::{info, warn};
+
+// Define our application state with torii and any other state we need
+#[derive(Clone)]
+struct AppState {
+    torii: Arc<Torii<torii::seaorm::SeaORMRepositoryProvider>>,
+}
+
+// Implement HasTorii so our state can be used with torii_axum middleware
+impl HasTorii<torii::seaorm::SeaORMRepositoryProvider> for AppState {
+    fn torii(&self) -> &Torii<torii::seaorm::SeaORMRepositoryProvider> {
+        &self.torii
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,30 +61,24 @@ async fn main() -> anyhow::Result<()> {
         .with_cookie_config(cookie_config.clone())
         .build();
 
-    // Create auth state for middleware
-    let auth_state = torii_axum::AuthState {
-        torii: torii.clone(),
-    };
-
-    // Create additional routes that use Torii state
-    let additional_routes = Router::new()
-        .route("/magic-link", post(request_magic_link_handler))
-        .route("/magic-link/{token}", get(verify_magic_link_handler))
-        .with_state(torii.clone());
+    // Create our application state
+    let app_state = AppState { torii };
 
     // Create the main application
     let app = Router::new()
-        .nest("/auth", auth_routes)
         .route("/", get(index_handler))
         .route("/public", get(public_handler))
         .route("/protected", get(protected_handler))
         .route("/optional", get(optional_auth_handler))
         .route("/bearer-only", get(bearer_only_handler))
         .route("/token-info", get(token_info_handler))
-        .merge(additional_routes)
+        .route("/magic-link", post(request_magic_link_handler))
+        .route("/magic-link/{token}", get(verify_magic_link_handler))
+        .with_state(app_state.clone())
+        .nest("/auth", auth_routes)
         .layer(axum::middleware::from_fn_with_state(
-            auth_state,
-            torii_axum::auth_middleware,
+            app_state,
+            torii_axum::auth_middleware::<AppState, torii::seaorm::SeaORMRepositoryProvider>,
         ))
         .layer(axum::Extension(cookie_config));
 
@@ -800,9 +808,10 @@ struct ApiResponse {
 
 // Handler for requesting magic link
 async fn request_magic_link_handler(
-    State(torii): State<Arc<Torii<torii::seaorm::SeaORMRepositoryProvider>>>,
+    State(state): State<AppState>,
     Json(req): Json<MagicLinkRequest>,
 ) -> Result<Json<ApiResponse>, StatusCode> {
+    let torii = state.torii();
     // Example of how magic link would work when storage backend is implemented
     match torii
         .magic_link()
@@ -838,9 +847,10 @@ async fn request_magic_link_handler(
 
 // Handler for verifying magic link
 async fn verify_magic_link_handler(
-    State(torii): State<Arc<Torii<torii::seaorm::SeaORMRepositoryProvider>>>,
+    State(state): State<AppState>,
     Path(token): Path<String>,
 ) -> Result<Json<ApiResponse>, StatusCode> {
+    let torii = state.torii();
     // Note: Magic link functionality requires full implementation in storage backend
     info!("Magic link verification attempt for token: {}", token);
 
