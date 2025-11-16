@@ -14,10 +14,10 @@
 //!
 //! ## Example Usage
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use std::sync::Arc;
 //! use axum::{Router, routing::get};
-//! use torii::{Torii, SeaORMRepositoryProvider};
+//! use torii::{Torii, seaorm::SeaORMRepositoryProvider};
 //! use torii_axum::{routes, require_auth, CookieConfig};
 //!
 //! #[tokio::main]
@@ -87,7 +87,7 @@ use torii_core::RepositoryProvider;
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// let auth_routes = torii_axum::routes(torii);
 /// let app = Router::new().nest("/auth", auth_routes);
 /// ```

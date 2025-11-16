@@ -28,9 +28,9 @@
 //!     // Run migrations to set up the schema
 //!     storage.migrate().await?;
 //!     
-//!     // Use with Torii (PostgresRepositoryProvider not yet implemented)
-//!     // let repositories = std::sync::Arc::new(storage.into_repository_provider());
-//!     // let torii = torii::Torii::new(repositories);
+//!     // Use with Torii
+//!     let repositories = std::sync::Arc::new(storage.into_repository_provider());
+//!     let torii = torii::Torii::new(repositories);
 //!     
 //!     Ok(())
 //! }
@@ -38,8 +38,8 @@
 //!
 //! # Current Status
 //!
-//! This crate currently provides the base PostgreSQL storage implementation with user and session
-//! management. The full repository provider implementation is still in development.
+//! This crate provides both the base PostgreSQL storage implementation and a repository provider that
+//! can be used directly with the Torii coordinator.
 //!
 //! # Storage Implementations
 //!
@@ -66,6 +66,7 @@ mod migrations;
 mod oauth;
 mod passkey;
 mod password;
+mod repositories;
 mod session;
 
 use async_trait::async_trait;
@@ -86,6 +87,8 @@ use torii_core::{
 };
 use torii_migration::Migration;
 use torii_migration::MigrationManager;
+
+pub use repositories::PostgresRepositoryProvider;
 
 #[derive(Debug, Clone)]
 pub struct PostgresStorage {
@@ -125,6 +128,43 @@ impl PostgresStorage {
             tracing::error!(error = %e, "Failed to run migrations");
             StorageError::Migration("Failed to run migrations".to_string())
         })?;
+
+        Ok(())
+    }
+
+    /// Create a repository provider from this storage instance
+    pub fn into_repository_provider(self) -> PostgresRepositoryProvider {
+        PostgresRepositoryProvider::new(self.pool)
+    }
+
+    pub(crate) async fn remove_password_hash(
+        &self,
+        user_id: &UserId,
+    ) -> Result<(), torii_core::Error> {
+        sqlx::query("UPDATE users SET password_hash = NULL WHERE id = $1")
+            .bind(user_id.as_str())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to remove password hash");
+                StorageError::Database("Failed to remove password hash".to_string())
+            })?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn delete_pkce_verifier(
+        &self,
+        csrf_state: &str,
+    ) -> Result<(), torii_core::Error> {
+        sqlx::query("DELETE FROM oauth_state WHERE csrf_state = $1")
+            .bind(csrf_state)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to delete PKCE verifier");
+                StorageError::Database("Failed to delete PKCE verifier".to_string())
+            })?;
 
         Ok(())
     }

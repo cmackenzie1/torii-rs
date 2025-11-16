@@ -310,19 +310,19 @@ impl<R: RepositoryProvider> Torii<R> {
 
     /// Access magic link authentication methods
     #[cfg(feature = "magic-link")]
-    pub fn magic_link(&self) -> MagicLinkAuth<R> {
+    pub fn magic_link(&self) -> MagicLinkAuth<'_, R> {
         MagicLinkAuth { torii: self }
     }
 
     /// Access OAuth authentication methods
     #[cfg(feature = "oauth")]
-    pub fn oauth(&self) -> OAuthAuth<R> {
+    pub fn oauth(&self) -> OAuthAuth<'_, R> {
         OAuthAuth { torii: self }
     }
 
     /// Access passkey authentication methods
     #[cfg(feature = "passkey")]
-    pub fn passkey(&self) -> PasskeyAuth<R> {
+    pub fn passkey(&self) -> PasskeyAuth<'_, R> {
         PasskeyAuth { torii: self }
     }
 }
