@@ -1,14 +1,14 @@
 [package]
 name = "torii-axum"
-version = "0.5.1"
+version = "0.5.2"
 description = "Ready-to-use Axum routes and middleware for the Torii authentication framework"
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
-torii = { path = "../torii", version = "0.5.2", default-features = false }
-torii-core = { path = "../torii-core", version = "0.5.1" }
+torii = { path = "../torii", version = "0.5.3", default-features = false }
+torii-core = { path = "../torii-core", version = "0.5.2" }
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["cookie", "typed-header"] }
 tokio.workspace = true
