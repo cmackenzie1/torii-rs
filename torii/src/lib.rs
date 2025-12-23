@@ -758,7 +758,8 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// # Arguments
     ///
     /// * `email`: The email address to send the password reset to
-    /// * `reset_url_base`: The base URL for the password reset form (e.g., "https://yourapp.com/reset")
+    /// * `reset_url_base`: The base URL for the password reset form (e.g., "https://example.com/auth/password/reset").
+    ///   The token will be appended as a query parameter: `{reset_url_base}?token={token}`
     ///
     /// # Returns
     ///
@@ -780,7 +781,8 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
         #[cfg(feature = "mailer")]
         if let Some((user, token)) = result {
             if let Some(mailer) = &torii.mailer_service {
-                let reset_link = format!("{}/{}", reset_url_base.trim_end_matches('/'), token);
+                let reset_link =
+                    format!("{}?token={}", reset_url_base.trim_end_matches('/'), token);
                 if let Err(e) = mailer
                     .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
                     .await
@@ -800,7 +802,8 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// # Arguments
     ///
     /// * `email`: The email address to send the password reset to
-    /// * `reset_url_base`: The base URL for the password reset form
+    /// * `reset_url_base`: The base URL for the password reset form.
+    ///   The token will be appended as a query parameter: `{reset_url_base}?token={token}`
     /// * `expires_in`: How long the reset token should be valid
     #[cfg(any(feature = "password", feature = "magic-link"))]
     pub async fn reset_password_initiate_with_expiration(
@@ -820,7 +823,8 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
         #[cfg(feature = "mailer")]
         if let Some((user, token)) = result {
             if let Some(mailer) = &torii.mailer_service {
-                let reset_link = format!("{}/{}", reset_url_base.trim_end_matches('/'), token);
+                let reset_link =
+                    format!("{}?token={}", reset_url_base.trim_end_matches('/'), token);
                 if let Err(e) = mailer
                     .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
                     .await
@@ -935,7 +939,8 @@ impl<R: RepositoryProvider> MagicLinkAuth<'_, R> {
     /// # Arguments
     ///
     /// * `email`: The email of the user to send the magic link to
-    /// * `magic_link_url_base`: The base URL for the magic link (e.g., "https://yourapp.com/auth/magic")
+    /// * `magic_link_url_base`: The base URL for the magic link (e.g., "https://example.com/auth/magic-link/verify").
+    ///   The token will be appended as a query parameter: `{magic_link_url_base}?token={token}`
     ///
     /// # Returns
     ///
@@ -952,7 +957,7 @@ impl<R: RepositoryProvider> MagicLinkAuth<'_, R> {
         #[cfg(feature = "mailer")]
         if let Some(mailer) = &torii.mailer_service {
             let magic_link = format!(
-                "{}/{}",
+                "{}?token={}",
                 magic_link_url_base.trim_end_matches('/'),
                 token.token
             );

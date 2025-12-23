@@ -14,7 +14,7 @@ Add Torii to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii = { version = "0.4.0", features = ["password", "sqlite"] }
+torii = { version = "0.5", features = ["password", "sqlite"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -83,7 +83,7 @@ For quick web integration, use the `torii-axum` crate:
 
 ```toml
 [dependencies]
-torii-axum = { version = "0.4.0", features = ["password", "sqlite"] }
+torii-axum = { version = "0.5.0", features = ["password", "magic-link"] }
 ```
 
 ```rust,edition2024,ignore,ignore
@@ -93,8 +93,13 @@ torii-axum = { version = "0.4.0", features = ["password", "sqlite"] }
 This provides automatic endpoints:
 - `POST /auth/register` - User registration
 - `POST /auth/login` - User login
+- `POST /auth/magic-link` - Request magic link email
+- `POST /auth/magic-link/verify` - Verify magic link
+- `POST /auth/password/reset/request` - Request password reset
 - `GET /auth/user` - Get current user
 - `POST /auth/logout` - User logout
+
+For complete documentation on configuration options, middleware, and all available routes, see the [Axum Integration](./axum-integration.md) guide.
 
 ## Other Authentication Methods
 
@@ -116,12 +121,15 @@ Each namespace contains focused methods for that authentication type.
 ### Magic Link Authentication
 
 ```rust,edition2024,ignore,ignore
-// Generate magic token
-let token = torii.magic_link().generate_token("user@example.com").await?;
+// Send magic link email (requires mailer to be configured)
+let token = torii.magic_link().send_link(
+    "user@example.com",
+    "https://example.com/auth/magic-link/verify"
+).await?;
 
-// Verify magic token
+// Verify magic token (called when user clicks the link)
 let (user, session) = torii.magic_link().authenticate(
-    &token.token,
+    &token_from_url,
     Some("Browser".to_string()),
     Some("127.0.0.1".to_string())
 ).await?;

@@ -89,7 +89,7 @@ impl MailerConfig {
             from_name: std::env::var("MAILER_FROM_NAME").ok(),
             app_name: std::env::var("MAILER_APP_NAME").unwrap_or_else(|_| "Your App".to_string()),
             app_url: std::env::var("MAILER_APP_URL")
-                .unwrap_or_else(|_| "https://yourapp.com".to_string()),
+                .unwrap_or_else(|_| "https://example.com".to_string()),
         })
     }
 
@@ -147,7 +147,7 @@ impl Default for MailerConfig {
             from_address: "noreply@example.com".to_string(),
             from_name: None,
             app_name: "Your App".to_string(),
-            app_url: "https://yourapp.com".to_string(),
+            app_url: "https://example.com".to_string(),
         }
     }
 }
