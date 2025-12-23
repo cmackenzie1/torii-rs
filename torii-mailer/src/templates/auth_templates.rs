@@ -14,7 +14,7 @@ impl Default for TemplateContext {
     fn default() -> Self {
         Self {
             app_name: "Your App".to_string(),
-            app_url: "https://yourapp.com".to_string(),
+            app_url: "https://example.com".to_string(),
             user_email: None,
             user_name: None,
         }

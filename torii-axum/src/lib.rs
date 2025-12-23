@@ -84,10 +84,9 @@ pub use middleware::{HasTorii, auth_middleware, require_auth};
 pub use routes::create_router;
 pub use types::{
     AuthResponse, ChangePasswordRequest, ConnectionInfo, CookieConfig, CookieSameSite,
-    HealthResponse, LoginRequest, MagicLinkRequest, MagicLinkResponse, MessageResponse,
+    HealthResponse, LinkConfig, LoginRequest, MagicLinkRequest, MagicLinkResponse, MessageResponse,
     PasswordResetRequest, PasswordResetResponse, RegisterRequest, ResetPasswordRequest,
-    SessionResponse, UserResponse, VerifyMagicTokenRequest, VerifyResetTokenRequest,
-    VerifyResetTokenResponse,
+    SessionResponse, UserResponse, VerifyMagicTokenRequest, VerifyResetTokenResponse,
 };
 
 use axum::Router;
@@ -121,6 +120,7 @@ where
     AuthRouterBuilder {
         torii,
         cookie_config: CookieConfig::default(),
+        link_config: None,
     }
 }
 
@@ -128,6 +128,7 @@ where
 pub struct AuthRouterBuilder<R: RepositoryProvider> {
     torii: Arc<Torii<R>>,
     cookie_config: CookieConfig,
+    link_config: Option<LinkConfig>,
 }
 
 impl<R: RepositoryProvider + 'static> AuthRouterBuilder<R> {
@@ -137,9 +138,42 @@ impl<R: RepositoryProvider + 'static> AuthRouterBuilder<R> {
         self
     }
 
-    /// Build the router with the configured options
+    /// Set link configuration for email verification URLs.
+    ///
+    /// This is required when the `magic-link` or `password` features are enabled.
+    /// The configuration specifies the hostname and path prefix used to construct
+    /// verification URLs sent in emails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use torii_axum::{routes, LinkConfig};
+    ///
+    /// let auth_routes = routes(torii)
+    ///     .with_link_config(LinkConfig::new("https://example.com"))
+    ///     .build();
+    /// ```
+    pub fn with_link_config(mut self, config: LinkConfig) -> Self {
+        self.link_config = Some(config);
+        self
+    }
+
+    /// Build the router with the configured options.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `magic-link` or `password` features are enabled but `LinkConfig`
+    /// is not provided via `with_link_config()`.
     pub fn build(self) -> Router {
-        create_router(self.torii, self.cookie_config)
+        #[cfg(any(feature = "magic-link", feature = "password"))]
+        if self.link_config.is_none() {
+            panic!(
+                "LinkConfig is required when magic-link or password features are enabled. \
+                 Use .with_link_config(LinkConfig::new(\"https://example.com\"))"
+            );
+        }
+
+        create_router(self.torii, self.cookie_config, self.link_config)
     }
 }
 

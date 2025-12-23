@@ -1,18 +1,15 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
     response::{Html, Json},
-    routing::{get, post},
+    routing::get,
     Router,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use torii::seaorm::SeaORMStorage;
 use torii::{MailerConfig, Torii};
 use torii_axum::{
-    AuthUser, CookieConfig, HasTorii, OptionalAuthUser, SessionTokenFromBearer,
+    AuthUser, CookieConfig, HasTorii, LinkConfig, OptionalAuthUser, SessionTokenFromBearer,
     SessionTokenFromRequest,
 };
 use tracing::{info, warn};
@@ -56,9 +53,13 @@ async fn main() -> anyhow::Result<()> {
     // Configure session cookies for development
     let cookie_config = CookieConfig::development();
 
+    // Configure link URLs for email verification
+    let link_config = LinkConfig::new("http://localhost:3000");
+
     // Create authentication routes
     let auth_routes = torii_axum::routes(torii.clone())
         .with_cookie_config(cookie_config.clone())
+        .with_link_config(link_config)
         .build();
 
     // Create our application state
@@ -72,8 +73,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/optional", get(optional_auth_handler))
         .route("/bearer-only", get(bearer_only_handler))
         .route("/token-info", get(token_info_handler))
-        .route("/magic-link", post(request_magic_link_handler))
-        .route("/magic-link/{token}", get(verify_magic_link_handler))
         .with_state(app_state.clone())
         .nest("/auth", auth_routes)
         .layer(axum::middleware::from_fn_with_state(
@@ -85,26 +84,26 @@ async fn main() -> anyhow::Result<()> {
     info!("Server starting on http://localhost:3000");
     info!("📧 Emails will be saved to ./emails/ directory");
     info!("Available endpoints:");
-    info!("  GET  /                    - Index page");
-    info!("  GET  /public              - Public endpoint");
-    info!("  GET  /protected           - Protected endpoint (requires authentication)");
-    info!("  GET  /optional            - Optional authentication endpoint");
-    info!("  GET  /bearer-only         - Bearer token only endpoint");
-    info!("  GET  /token-info          - Token information endpoint");
+    info!("  GET  /                             - Index page");
+    info!("  GET  /public                       - Public endpoint");
+    info!("  GET  /protected                    - Protected endpoint (requires authentication)");
+    info!("  GET  /optional                     - Optional authentication endpoint");
+    info!("  GET  /bearer-only                  - Bearer token only endpoint");
+    info!("  GET  /token-info                   - Token information endpoint");
     info!(
         "  POST /auth/register                - Register new user (with automatic welcome email)"
     );
     info!("  POST /auth/login                   - Login user");
     info!("  POST /auth/password                - Change password (with automatic email notification)");
-    info!("  POST /auth/password/reset/request  - Request password reset");
+    info!("  POST /auth/password/reset/request  - Request password reset email");
     info!("  POST /auth/password/reset/verify   - Verify password reset token");
     info!("  POST /auth/password/reset/confirm  - Confirm password reset");
+    info!("  POST /auth/magic-link              - Request magic link email");
+    info!("  POST /auth/magic-link/verify       - Verify magic link token");
     info!("  GET  /auth/user                    - Get current user");
     info!("  GET  /auth/session                 - Get current session");
     info!("  POST /auth/logout                  - Logout user");
     info!("  GET  /auth/health                  - Health check");
-    info!("  POST /magic-link                   - Request magic link (placeholder)");
-    info!("  GET  /magic-link/{{token}}           - Verify magic link (placeholder)");
 
     // Start the server
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
@@ -308,12 +307,26 @@ async fn index_handler(
 
         <div class="section">
             <h2>🔗 Magic Link</h2>
-            <div class="form-group">
-                <label for="magic-email">Email:</label>
-                <input type="email" id="magic-email" placeholder="user@example.com">
+            <div style="display: flex; gap: 20px;">
+                <div style="flex: 1;">
+                    <h3>Request Magic Link</h3>
+                    <div class="form-group">
+                        <label for="magic-email">Email:</label>
+                        <input type="email" id="magic-email" placeholder="user@example.com">
+                    </div>
+                    <button onclick="requestMagicLink()">Request Magic Link</button>
+                    <div id="magic-status" class="status"></div>
+                </div>
+                <div style="flex: 1;">
+                    <h3>Verify Magic Link</h3>
+                    <div class="form-group">
+                        <label for="magic-token">Token (from email URL):</label>
+                        <input type="text" id="magic-token" placeholder="Enter token from email">
+                    </div>
+                    <button onclick="verifyMagicLink()">Verify Magic Link</button>
+                    <div id="magic-verify-status" class="status"></div>
+                </div>
             </div>
-            <button onclick="requestMagicLink()">Request Magic Link</button>
-            <div id="magic-status" class="status"></div>
         </div>
 
         <div class="section">
@@ -516,7 +529,7 @@ async fn index_handler(
             }
 
             try {
-                const response = await fetch('/magic-link', {
+                const response = await fetch('/auth/magic-link', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -527,13 +540,44 @@ async fn index_handler(
 
                 const data = await response.json();
 
-                if (data.success) {
-                    showStatus(statusDiv, data.message, 'success');
-                    if (data.magic_token) {
-                        showStatus(statusDiv, data.message + '\nMagic link: /magic-link/' + data.magic_token, 'success');
-                    }
+                if (response.ok) {
+                    showStatus(statusDiv, data.message + '\nCheck ./emails/ directory for the magic link email.', 'success');
+                    document.getElementById('magic-email').value = '';
                 } else {
-                    showStatus(statusDiv, data.message, 'error');
+                    showStatus(statusDiv, data.error || 'Failed to request magic link', 'error');
+                }
+            } catch (error) {
+                showStatus(statusDiv, 'Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function verifyMagicLink() {
+            const token = document.getElementById('magic-token').value;
+            const statusDiv = document.getElementById('magic-verify-status');
+
+            if (!token) {
+                showStatus(statusDiv, 'Please enter a magic link token', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/auth/magic-link/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token }),
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus(statusDiv, 'Magic link verified! You are now logged in.', 'success');
+                    document.getElementById('magic-token').value = '';
+                    checkUserStatus();
+                } else {
+                    showStatus(statusDiv, data.error || 'Failed to verify magic link', 'error');
                 }
             } catch (error) {
                 showStatus(statusDiv, 'Network error: ' + error.message, 'error');
@@ -783,93 +827,6 @@ async fn token_info_handler(token_from_request: SessionTokenFromRequest) -> Json
                 "note": "This endpoint accepts both Bearer tokens and cookies",
                 "error": "No token provided via Authorization header or cookie",
                 "timestamp": chrono::Utc::now().to_rfc3339()
-            }))
-        }
-    }
-}
-
-// Request/Response types for additional endpoints
-#[derive(Deserialize)]
-struct MagicLinkRequest {
-    email: String,
-}
-
-#[derive(Serialize)]
-struct ApiResponse {
-    success: bool,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    session_token: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    magic_token: Option<String>,
-}
-
-// Handler for requesting magic link
-async fn request_magic_link_handler(
-    State(state): State<AppState>,
-    Json(req): Json<MagicLinkRequest>,
-) -> Result<Json<ApiResponse>, StatusCode> {
-    let torii = state.torii();
-    // Example of how magic link would work when storage backend is implemented
-    match torii
-        .magic_link()
-        .send_link(&req.email, "http://localhost:3000/magic-link")
-        .await
-    {
-        Ok(token) => {
-            info!("Magic link generated for email: {}", req.email);
-            Ok(Json(ApiResponse {
-                success: true,
-                message:
-                    "Magic link sent! Check your email (or ./emails/ directory in this example)."
-                        .to_string(),
-                user_id: None,
-                session_token: None,
-                magic_token: Some(token.token), // In production, don't return the actual token
-            }))
-        }
-        Err(e) => {
-            warn!("Failed to generate magic link: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                message: format!(
-                    "Magic link functionality requires full implementation in storage backend: {e}"
-                ),
-                user_id: None,
-                session_token: None,
-                magic_token: None,
-            }))
-        }
-    }
-}
-
-// Handler for verifying magic link
-async fn verify_magic_link_handler(
-    State(state): State<AppState>,
-    Path(token): Path<String>,
-) -> Result<Json<ApiResponse>, StatusCode> {
-    let torii = state.torii();
-    // Note: Magic link functionality requires full implementation in storage backend
-    info!("Magic link verification attempt for token: {}", token);
-
-    match torii.magic_link().authenticate(&token, None, None).await {
-        Ok((user, session)) => Ok(Json(ApiResponse {
-            success: true,
-            message: "Magic link verified successfully.".to_string(),
-            user_id: Some(user.id.to_string()),
-            session_token: Some(session.token.to_string()),
-            magic_token: None,
-        })),
-        Err(e) => {
-            warn!("Failed to verify magic link: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                message: format!("Failed to verify magic link: {e}"),
-                user_id: None,
-                session_token: None,
-                magic_token: None,
             }))
         }
     }

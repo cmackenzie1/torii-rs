@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use axum::{response::Json, routing::get, Router};
 use torii::Torii;
-use torii_axum::{AuthUser, CookieConfig};
+use torii_axum::{AuthUser, CookieConfig, LinkConfig};
 use torii_storage_seaorm::SeaORMStorage;
 
 #[tokio::main]
@@ -12,9 +12,10 @@ async fn main() -> anyhow::Result<()> {
     let repositories = Arc::new(storage.into_repository_provider());
     let torii = Arc::new(Torii::new(repositories));
 
-    // Create authentication routes with cookie configuration
+    // Create authentication routes with configuration
     let auth_routes = torii_axum::routes(torii.clone())
         .with_cookie_config(CookieConfig::development())
+        .with_link_config(LinkConfig::new("http://localhost:3000"))
         .build();
 
     // Build your application with auth routes

@@ -21,7 +21,11 @@ use crate::{
     types::*,
 };
 
-pub fn create_router<R>(torii: Arc<Torii<R>>, cookie_config: CookieConfig) -> Router
+pub fn create_router<R>(
+    torii: Arc<Torii<R>>,
+    cookie_config: CookieConfig,
+    link_config: Option<LinkConfig>,
+) -> Router
 where
     R: RepositoryProvider + 'static,
 {
@@ -38,10 +42,7 @@ where
 
     #[allow(unused_mut)]
     let mut router = Router::new().merge(public_routes).merge(auth_routes).layer(
-        axum::middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware::<Arc<Torii<R>>, R>,
-        ),
+        axum::middleware::from_fn_with_state(state.clone(), auth_middleware::<Arc<Torii<R>>, R>),
     );
 
     #[cfg(feature = "password")]
@@ -59,9 +60,16 @@ where
         router = router.merge(password_reset_routes());
     }
 
-    router
+    let router = router
         .with_state(state)
-        .layer(axum::Extension(cookie_config))
+        .layer(axum::Extension(cookie_config));
+
+    // Add link_config extension if provided
+    if let Some(link_config) = link_config {
+        router.layer(axum::Extension(link_config))
+    } else {
+        router
+    }
 }
 
 async fn health_handler<R>(State(state): State<Arc<Torii<R>>>) -> Result<impl IntoResponse>
@@ -236,19 +244,24 @@ where
 #[cfg(any(feature = "password", feature = "magic-link"))]
 async fn request_password_reset_handler<R>(
     State(state): State<Arc<Torii<R>>>,
+    axum::Extension(link_config): axum::Extension<LinkConfig>,
     Json(payload): Json<PasswordResetRequest>,
 ) -> Result<impl IntoResponse>
 where
     R: RepositoryProvider,
 {
-    // For demonstration, we'll use a hardcoded base URL.
-    // In a real application, this should come from configuration.
-    let reset_url_base = "https://yourapp.com/reset";
+    // Generate a temporary token to build the URL
+    // The actual token will be generated and sent by reset_password_initiate
+    let reset_url_base = format!(
+        "{}{}/password/reset",
+        link_config.hostname.trim_end_matches('/'),
+        link_config.path_prefix
+    );
 
     state
         .torii()
         .password()
-        .reset_password_initiate(&payload.email, reset_url_base)
+        .reset_password_initiate(&payload.email, &reset_url_base)
         .await?;
 
     Ok(Json(PasswordResetResponse {
@@ -324,20 +337,28 @@ where
 #[cfg(feature = "magic-link")]
 async fn request_magic_link_handler<R>(
     State(state): State<Arc<Torii<R>>>,
+    axum::Extension(link_config): axum::Extension<LinkConfig>,
     Json(payload): Json<MagicLinkRequest>,
 ) -> Result<impl IntoResponse>
 where
     R: RepositoryProvider,
 {
-    let token = state
+    // Build the base URL for the magic link (without the token)
+    let magic_link_url_base = format!(
+        "{}{}/magic-link/verify",
+        link_config.hostname.trim_end_matches('/'),
+        link_config.path_prefix
+    );
+
+    // send_link generates the token and sends the email via the configured mailer
+    state
         .torii()
         .magic_link()
-        .generate_token(&payload.email)
+        .send_link(&payload.email, &magic_link_url_base)
         .await?;
 
     Ok(Json(MagicLinkResponse {
         message: "Magic link sent to your email".to_string(),
-        token: Some(token.token),
     }))
 }
 

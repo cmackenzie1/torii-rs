@@ -19,14 +19,12 @@ This example demonstrates a complete Axum web server with Torii authentication, 
 - `POST /auth/password/reset/request` - Request password reset via email
 - `POST /auth/password/reset/verify` - Verify password reset token
 - `POST /auth/password/reset/confirm` - Confirm password reset with new password
+- `POST /auth/magic-link` - Request magic link (sends email with authentication link)
+- `POST /auth/magic-link/verify` - Verify magic link token
 - `GET /auth/user` - Get current user
 - `GET /auth/session` - Get current session
 - `POST /auth/logout` - User logout
 - `GET /auth/health` - Health check
-
-### Additional Example Routes
-- `POST /magic-link` - Request magic link (sends email with authentication link)
-- `GET /magic-link/:token` - Verify magic link (authenticates user via token)
 
 ### Demo Routes
 - `GET /` - API documentation and examples
@@ -55,9 +53,9 @@ export MAILER_SMTP_HOST=smtp.gmail.com
 export MAILER_SMTP_PORT=587
 export MAILER_SMTP_USERNAME=your-email@gmail.com
 export MAILER_SMTP_PASSWORD=your-app-password
-export MAILER_FROM_ADDRESS=noreply@yourapp.com
+export MAILER_FROM_ADDRESS=noreply@example.com
 export MAILER_APP_NAME="Your App"
-export MAILER_APP_URL=https://yourapp.com
+export MAILER_APP_URL=https://example.com
 ```
 
 ## Example API Usage
@@ -101,7 +99,7 @@ curl -X POST http://localhost:3000/auth/password \
 
 ### Request Magic Link
 ```bash
-curl -X POST http://localhost:3000/magic-link \
+curl -X POST http://localhost:3000/auth/magic-link \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com"
@@ -109,8 +107,14 @@ curl -X POST http://localhost:3000/magic-link \
 ```
 
 ### Verify Magic Link (use token from email)
+The email will contain a link like `http://localhost:3000/auth/magic-link/verify?token=YOUR_TOKEN`.
+To verify programmatically:
 ```bash
-curl http://localhost:3000/magic-link/YOUR_MAGIC_TOKEN
+curl -X POST http://localhost:3000/auth/magic-link/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "YOUR_MAGIC_TOKEN"
+  }'
 ```
 
 ### Request Password Reset
