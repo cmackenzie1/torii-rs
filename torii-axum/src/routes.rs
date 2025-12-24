@@ -156,13 +156,15 @@ async fn register_handler<R>(
 where
     R: RepositoryProvider,
 {
+    // Register returns the user whether newly created or existing.
+    // This prevents user enumeration attacks.
     let user = state
         .torii()
         .password()
         .register(&payload.email, &payload.password)
         .await?;
 
-    // Create a session for the newly registered user (auto-login)
+    // Create a session for the user (works for both new and existing users)
     let session = state
         .torii()
         .create_session(&user.id, connection_info.user_agent, connection_info.ip)
@@ -180,10 +182,13 @@ where
         .secure(cookie_config.secure)
         .same_site(same_site);
 
+    // Return generic response to prevent user enumeration
     Ok((
-        StatusCode::CREATED,
+        StatusCode::OK,
         [(header::SET_COOKIE, cookie.to_string())],
-        Json(AuthResponse { user, session }),
+        Json(MessageResponse {
+            message: "If your email is valid, you will receive a confirmation shortly.".to_string(),
+        }),
     ))
 }
 

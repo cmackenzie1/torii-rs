@@ -38,6 +38,55 @@ async fn test_register_user_with_password() {
     assert!(user.is_email_verified());
 }
 
+/// Test that duplicate registration returns the existing user without error
+/// to prevent user enumeration attacks (fixes GitHub issue #88)
+#[cfg(all(feature = "password", feature = "sqlite"))]
+#[tokio::test]
+async fn test_duplicate_registration_returns_existing_user() {
+    // Set up SQLite storage
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
+
+    // Create Torii instance with repository provider
+    let torii = Torii::new(Arc::new(repositories));
+
+    // Register a user
+    let email = "duplicate@example.com";
+    let password = "original_password";
+    let original_user = torii.password().register(email, password).await.unwrap();
+
+    // Try to register the same email again with a different password
+    // This should succeed and return the existing user (not update password)
+    let duplicate_password = "new_password_attempt";
+    let duplicate_user = torii
+        .password()
+        .register(email, duplicate_password)
+        .await
+        .unwrap();
+
+    // Verify we got the same user back
+    assert_eq!(original_user.id, duplicate_user.id);
+    assert_eq!(original_user.email, duplicate_user.email);
+
+    // Verify the original password still works (password was NOT updated)
+    let auth_result = torii
+        .password()
+        .authenticate(email, password, None, None)
+        .await;
+    assert!(auth_result.is_ok(), "Original password should still work");
+
+    // Verify the new password does NOT work
+    let auth_result = torii
+        .password()
+        .authenticate(email, duplicate_password, None, None)
+        .await;
+    assert!(
+        auth_result.is_err(),
+        "New password should not work - password was not updated"
+    );
+}
+
 #[cfg(all(feature = "password", feature = "sqlite"))]
 #[tokio::test]
 async fn test_login_with_password() {

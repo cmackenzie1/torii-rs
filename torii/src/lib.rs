@@ -626,7 +626,9 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     ///
     /// # Returns
     ///
-    /// Returns the registered user
+    /// Returns the user whether newly created or already existing. This prevents
+    /// user enumeration attacks by not revealing whether an email is already in use.
+    /// Note: If the user already exists, their password is NOT updated.
     pub async fn register(&self, email: &str, password: &str) -> Result<User, ToriiError> {
         self.register_with_name(email, password, None).await
     }
@@ -641,7 +643,9 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     ///
     /// # Returns
     ///
-    /// Returns the registered user
+    /// Returns the user whether newly created or already existing. This prevents
+    /// user enumeration attacks by not revealing whether an email is already in use.
+    /// Note: If the user already exists, their password is NOT updated.
     pub async fn register_with_name(
         &self,
         email: &str,
