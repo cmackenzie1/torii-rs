@@ -23,15 +23,24 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     }
 
     /// Register a new user with a password
+    ///
+    /// Returns the user whether newly created or already existing. This prevents
+    /// user enumeration attacks by not revealing whether an email is already in use.
+    ///
+    /// **Security Note:** If the user already exists, their password is NOT updated.
+    /// This is intentional to prevent account takeover attacks where an attacker
+    /// could register with a victim's email and set their own password.
     pub async fn register_user(
         &self,
         email: &str,
         password: &str,
         name: Option<String>,
     ) -> Result<User, Error> {
-        // Check if user already exists
-        if (self.user_service.get_user_by_email(email).await?).is_some() {
-            return Err(Error::Auth(AuthError::UserAlreadyExists));
+        // Check if user already exists - return existing user to prevent enumeration
+        if let Some(existing_user) = self.user_service.get_user_by_email(email).await? {
+            // Return existing user without updating password to prevent enumeration
+            // and potential account takeover
+            return Ok(existing_user);
         }
 
         // Hash the password

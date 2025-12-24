@@ -24,9 +24,6 @@ pub enum AuthError {
     #[error("Invalid session token")]
     InvalidSession,
 
-    #[error("Email already registered")]
-    EmailAlreadyRegistered,
-
     #[error("Invalid request: {0}")]
     BadRequest(String),
 
@@ -44,9 +41,9 @@ impl From<ToriiError> for AuthError {
     fn from(err: ToriiError) -> Self {
         match err {
             ToriiError::AuthError(msg) => {
-                if msg.contains("already exists") || msg.contains("already registered") {
-                    AuthError::EmailAlreadyRegistered
-                } else if msg.contains("Invalid") || msg.contains("incorrect") {
+                // Use generic InvalidCredentials to prevent user enumeration attacks.
+                // Do not reveal whether a user exists or not through error messages.
+                if msg.contains("Invalid") || msg.contains("incorrect") {
                     AuthError::InvalidCredentials
                 } else {
                     AuthError::AuthenticationFailed(msg)
@@ -54,11 +51,10 @@ impl From<ToriiError> for AuthError {
             }
             ToriiError::StorageError(msg) => {
                 if msg.contains("not found") {
-                    if msg.contains("User") {
-                        AuthError::UserNotFound
-                    } else if msg.contains("Session") {
+                    if msg.contains("Session") {
                         AuthError::SessionNotFound
                     } else {
+                        // Use generic error to prevent user enumeration
                         AuthError::InternalError(msg)
                     }
                 } else {
@@ -77,7 +73,6 @@ impl IntoResponse for AuthError {
             AuthError::UserNotFound => (StatusCode::NOT_FOUND, "User not found"),
             AuthError::SessionNotFound => (StatusCode::NOT_FOUND, "Session not found"),
             AuthError::InvalidSession => (StatusCode::UNAUTHORIZED, "Invalid session"),
-            AuthError::EmailAlreadyRegistered => (StatusCode::CONFLICT, "Email already registered"),
             AuthError::BadRequest(ref msg) => (StatusCode::BAD_REQUEST, msg.as_str()),
             AuthError::InternalError(ref msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.as_str()),
             AuthError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized"),
