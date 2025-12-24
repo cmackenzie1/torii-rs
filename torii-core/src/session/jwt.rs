@@ -176,8 +176,8 @@ mod tests {
         let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
         let provider = JwtSessionProvider::new(config);
 
-        // Create an invalid token
-        let invalid_token = SessionToken::Jwt("invalid.jwt.token".to_string());
+        // Create an invalid token using the constructor
+        let invalid_token = SessionToken::new("invalid.jwt.token");
 
         let result = provider.get_session(&invalid_token).await;
 

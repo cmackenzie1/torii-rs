@@ -44,11 +44,6 @@ impl From<SqliteSession> for Session {
 #[async_trait]
 impl SessionRepository for SqliteSessionRepository {
     async fn create(&self, session: Session) -> Result<Session, Error> {
-        let token_str = match &session.token {
-            SessionToken::Opaque(t) => t,
-            SessionToken::Jwt(t) => t,
-        };
-
         let sqlite_session = sqlx::query_as::<_, SqliteSession>(
             r#"
             INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at)
@@ -56,7 +51,7 @@ impl SessionRepository for SqliteSessionRepository {
             RETURNING *
             "#,
         )
-        .bind(token_str)
+        .bind(session.token.expose_secret())
         .bind(session.user_id.as_str())
         .bind(&session.user_agent)
         .bind(&session.ip_address)
@@ -71,14 +66,9 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn find_by_token(&self, token: &SessionToken) -> Result<Option<Session>, Error> {
-        let token_str = match token {
-            SessionToken::Opaque(t) => t,
-            SessionToken::Jwt(t) => t,
-        };
-
         let sqlite_session =
             sqlx::query_as::<_, SqliteSession>("SELECT * FROM sessions WHERE token = ?1")
-                .bind(token_str)
+                .bind(token.expose_secret())
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
@@ -87,13 +77,8 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn delete(&self, token: &SessionToken) -> Result<(), Error> {
-        let token_str = match token {
-            SessionToken::Opaque(t) => t,
-            SessionToken::Jwt(t) => t,
-        };
-
         sqlx::query("DELETE FROM sessions WHERE token = ?1")
-            .bind(token_str)
+            .bind(token.expose_secret())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;

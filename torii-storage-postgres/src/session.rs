@@ -36,7 +36,7 @@ impl From<Session> for PostgresSession {
     fn from(session: Session) -> Self {
         PostgresSession {
             id: None,
-            token: session.token.into_inner(),
+            token: session.token.expose_secret().to_string(),
             user_id: session.user_id.into_inner(),
             user_agent: session.user_agent,
             ip_address: session.ip_address,
@@ -51,7 +51,7 @@ impl From<Session> for PostgresSession {
 impl SessionStorage for PostgresStorage {
     async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
         sqlx::query("INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-            .bind(session.token.as_str())
+            .bind(session.token.expose_secret())
             .bind(session.user_id.as_str())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
@@ -79,7 +79,7 @@ impl SessionStorage for PostgresStorage {
             WHERE token = $1
             "#,
         )
-        .bind(token.as_str())
+        .bind(token.expose_secret())
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -92,7 +92,7 @@ impl SessionStorage for PostgresStorage {
 
     async fn delete_session(&self, token: &SessionToken) -> Result<(), torii_core::Error> {
         sqlx::query("DELETE FROM sessions WHERE token = $1")
-            .bind(token.as_str())
+            .bind(token.expose_secret())
             .execute(&self.pool)
             .await
             .map_err(|e| {

@@ -26,7 +26,7 @@ impl SessionStorage for SeaORMStorage {
     async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
         let s = session::ActiveModel {
             user_id: Set(session.user_id.to_string()),
-            token: Set(session.token.as_str().to_owned()),
+            token: Set(session.token.expose_secret().to_owned()),
             ip_address: Set(session.ip_address.to_owned()),
             user_agent: Set(session.user_agent.to_owned()),
             expires_at: Set(session.expires_at.to_owned()),
@@ -43,7 +43,7 @@ impl SessionStorage for SeaORMStorage {
 
     async fn get_session(&self, id: &SessionToken) -> Result<Option<Session>, torii_core::Error> {
         let session = session::Entity::find()
-            .filter(session::Column::Token.eq(id.as_str()))
+            .filter(session::Column::Token.eq(id.expose_secret()))
             .one(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?
@@ -54,7 +54,7 @@ impl SessionStorage for SeaORMStorage {
 
     async fn delete_session(&self, id: &SessionToken) -> Result<(), torii_core::Error> {
         session::Entity::delete_many()
-            .filter(session::Column::Token.eq(id.as_str()))
+            .filter(session::Column::Token.eq(id.expose_secret()))
             .exec(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?;
