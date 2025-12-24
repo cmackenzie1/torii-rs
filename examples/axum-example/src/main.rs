@@ -777,15 +777,14 @@ async fn optional_auth_handler(user: OptionalAuthUser) -> Json<Value> {
 async fn bearer_only_handler(bearer_token: SessionTokenFromBearer) -> Json<Value> {
     match bearer_token.0 {
         Some(token) => {
-            info!(
-                "Bearer-only endpoint accessed with token: {}",
-                token.as_str()
-            );
+            // Note: In production, avoid logging tokens. Use token.to_string() for redacted output.
+            info!("Bearer-only endpoint accessed with token (redacted): {token}");
             Json(json!({
                 "message": "This endpoint accepts Bearer tokens only",
                 "authenticated": true,
                 "token_received": true,
-                "token": token.as_str(),
+                // Intentionally exposing for demo purposes only
+                "token": token.expose_secret(),
                 "timestamp": chrono::Utc::now().to_rfc3339()
             }))
         }
@@ -805,15 +804,14 @@ async fn bearer_only_handler(bearer_token: SessionTokenFromBearer) -> Json<Value
 async fn token_info_handler(token_from_request: SessionTokenFromRequest) -> Json<Value> {
     match token_from_request.0 {
         Some(token) => {
-            info!(
-                "Token info endpoint accessed with token: {}",
-                token.as_str()
-            );
+            // Note: In production, avoid logging tokens. Use token.to_string() for redacted output.
+            info!("Token info endpoint accessed with token (redacted): {token}");
             Json(json!({
                 "message": "Token information endpoint",
                 "authenticated": true,
                 "token_received": true,
-                "token": token.as_str(),
+                // Intentionally exposing for demo purposes only
+                "token": token.expose_secret(),
                 "note": "This endpoint accepts both Bearer tokens and cookies",
                 "timestamp": chrono::Utc::now().to_rfc3339()
             }))

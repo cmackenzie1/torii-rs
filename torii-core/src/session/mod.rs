@@ -24,6 +24,7 @@ use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use rand::{TryRngCore, rngs::OsRng};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -50,15 +51,19 @@ fn generate_random_string(length: usize) -> String {
 }
 
 /// Session token type enum - either a simple opaque token or a JWT
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(untagged)]
+///
+/// This type wraps token values in `SecretString` to prevent accidental
+/// exposure in logs or debug output. Use `expose_secret()` to access the
+/// underlying token value when intentionally needed (e.g., for storage or
+/// transmission to the client).
+#[derive(Clone)]
 pub enum SessionToken {
     /// Opaque token - a token with at least 128 bits of entropy
     /// used for performing lookups in the session storage
-    Opaque(String),
+    Opaque(SecretString),
     /// JWT token - contains the session data within the token without
     /// any additional lookup in the session storage
-    Jwt(String),
+    Jwt(SecretString),
 }
 
 impl SessionToken {
@@ -66,15 +71,15 @@ impl SessionToken {
     pub fn new(token: &str) -> Self {
         // If the token looks like a JWT (contains two '.' separators), use JWT variant
         if token.chars().filter(|&c| c == '.').count() == 2 {
-            SessionToken::Jwt(token.to_string())
+            SessionToken::Jwt(SecretString::from(token.to_string()))
         } else {
-            SessionToken::Opaque(token.to_string())
+            SessionToken::Opaque(SecretString::from(token.to_string()))
         }
     }
 
     /// Create a new random opaque session token
     pub fn new_random() -> Self {
-        SessionToken::Opaque(generate_random_string(32))
+        SessionToken::Opaque(SecretString::from(generate_random_string(32)))
     }
 
     /// Create a new JWT session token with the specified algorithm
@@ -86,7 +91,7 @@ impl SessionToken {
         let token = encode(&header, claims, &encoding_key)
             .map_err(|e| SessionError::InvalidToken(format!("Failed to encode JWT: {e}")))?;
 
-        Ok(SessionToken::Jwt(token))
+        Ok(SessionToken::Jwt(SecretString::from(token)))
     }
 
     /// Verify a JWT session token and return the claims
@@ -97,9 +102,10 @@ impl SessionToken {
                 let validation = config.get_validation();
 
                 let token_data =
-                    decode::<JwtClaims>(token, &decoding_key, &validation).map_err(|e| {
-                        SessionError::InvalidToken(format!("JWT validation failed: {e}"))
-                    })?;
+                    decode::<JwtClaims>(token.expose_secret(), &decoding_key, &validation)
+                        .map_err(|e| {
+                            SessionError::InvalidToken(format!("JWT validation failed: {e}"))
+                        })?;
 
                 Ok(token_data.claims)
             }
@@ -133,20 +139,53 @@ impl SessionToken {
         self.verify_jwt(&config)
     }
 
-    /// Get the inner token string
-    pub fn into_inner(self) -> String {
+    /// Explicitly expose the secret token value.
+    ///
+    /// Use this method when you intentionally need to access the underlying
+    /// token string (e.g., for storage, transmission to client, or comparison).
+    /// This makes the intent explicit in the code and prevents accidental exposure.
+    pub fn expose_secret(&self) -> &str {
         match self {
-            SessionToken::Opaque(token) => token,
-            SessionToken::Jwt(token) => token,
+            SessionToken::Opaque(token) => token.expose_secret(),
+            SessionToken::Jwt(token) => token.expose_secret(),
         }
     }
 
-    /// Get a reference to the token string
-    pub fn as_str(&self) -> &str {
+    /// Get the inner token string, consuming the token.
+    ///
+    /// This explicitly exposes the secret value. Use when you need ownership
+    /// of the underlying string (e.g., for serialization to a response).
+    #[deprecated(
+        since = "0.6.0",
+        note = "Use `expose_secret()` instead for explicit secret access"
+    )]
+    pub fn into_inner(self) -> String {
         match self {
-            SessionToken::Opaque(token) => token,
-            SessionToken::Jwt(token) => token,
+            SessionToken::Opaque(token) => token.expose_secret().to_string(),
+            SessionToken::Jwt(token) => token.expose_secret().to_string(),
         }
+    }
+
+    /// Get a reference to the token string.
+    ///
+    /// This explicitly exposes the secret value. Use when you need to pass
+    /// the token value to storage or comparison operations.
+    #[deprecated(
+        since = "0.6.0",
+        note = "Use `expose_secret()` instead for explicit secret access"
+    )]
+    pub fn as_str(&self) -> &str {
+        self.expose_secret()
+    }
+
+    /// Check if this is a JWT token
+    pub fn is_jwt(&self) -> bool {
+        matches!(self, SessionToken::Jwt(_))
+    }
+
+    /// Check if this is an opaque token
+    pub fn is_opaque(&self) -> bool {
+        matches!(self, SessionToken::Opaque(_))
     }
 }
 
@@ -168,13 +207,74 @@ impl From<&str> for SessionToken {
     }
 }
 
-// TODO: wrap in secrecy string to prevent accidental leaks?
+/// Display implementation that redacts the token value to prevent accidental
+/// exposure in logs. Use `expose_secret()` to get the actual value.
 impl std::fmt::Display for SessionToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[REDACTED]")
+    }
+}
+
+/// Debug implementation that redacts the token value to prevent accidental
+/// exposure in logs. Use `expose_secret()` to get the actual value.
+impl std::fmt::Debug for SessionToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SessionToken::Opaque(token) => write!(f, "{token}"),
-            SessionToken::Jwt(token) => write!(f, "{token}"),
+            SessionToken::Opaque(_) => write!(f, "SessionToken::Opaque([REDACTED])"),
+            SessionToken::Jwt(_) => write!(f, "SessionToken::Jwt([REDACTED])"),
         }
+    }
+}
+
+/// PartialEq compares the underlying secret values
+impl PartialEq for SessionToken {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SessionToken::Opaque(a), SessionToken::Opaque(b)) => {
+                a.expose_secret() == b.expose_secret()
+            }
+            (SessionToken::Jwt(a), SessionToken::Jwt(b)) => a.expose_secret() == b.expose_secret(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for SessionToken {}
+
+impl std::hash::Hash for SessionToken {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            SessionToken::Opaque(token) => {
+                std::mem::discriminant(self).hash(state);
+                token.expose_secret().hash(state);
+            }
+            SessionToken::Jwt(token) => {
+                std::mem::discriminant(self).hash(state);
+                token.expose_secret().hash(state);
+            }
+        }
+    }
+}
+
+/// Custom serialization that exposes the secret value.
+/// This is intentional as tokens need to be serialized for storage/transmission.
+impl Serialize for SessionToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.expose_secret())
+    }
+}
+
+/// Custom deserialization that wraps the value in Secret.
+impl<'de> Deserialize<'de> for SessionToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(SessionToken::new(&s))
     }
 }
 
@@ -556,10 +656,34 @@ IwIDAQAB
         let id = SessionToken::new_random();
         match &id {
             SessionToken::Opaque(token) => {
-                assert_eq!(id.to_string(), token.to_string());
+                // Verify the token contains actual secret data via expose_secret
+                assert_eq!(id.expose_secret(), token.expose_secret());
+                // Verify Display returns redacted output
+                assert_eq!(id.to_string(), "[REDACTED]");
             }
             _ => panic!("Expected simple token"),
         }
+    }
+
+    #[test]
+    fn test_session_token_debug_redacted() {
+        let opaque = SessionToken::new_random();
+        let debug_str = format!("{:?}", opaque);
+        assert!(debug_str.contains("[REDACTED]"));
+        assert!(!debug_str.contains(opaque.expose_secret()));
+
+        let jwt = SessionToken::new("header.payload.signature");
+        let debug_str = format!("{:?}", jwt);
+        assert!(debug_str.contains("[REDACTED]"));
+        assert!(!debug_str.contains("header.payload.signature"));
+    }
+
+    #[test]
+    fn test_session_token_display_redacted() {
+        let token = SessionToken::new_random();
+        let display_str = format!("{}", token);
+        assert_eq!(display_str, "[REDACTED]");
+        assert!(!display_str.contains(token.expose_secret()));
     }
 
     #[test]

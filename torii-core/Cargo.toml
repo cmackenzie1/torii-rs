@@ -26,6 +26,7 @@ b58 = "0.1.2"
 
 # Optional mailer integration
 torii-mailer = { path = "../torii-mailer", version = "0.5.2", optional = true }
+secrecy = "0.10.3"
 
 [dev-dependencies]
 tokio.workspace = true
