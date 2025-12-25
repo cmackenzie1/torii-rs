@@ -100,6 +100,9 @@ pub struct CookieConfig {
     pub secure: bool,
     pub same_site: CookieSameSite,
     pub path: String,
+    /// Optional max age for the cookie. If set, the cookie will expire after this duration.
+    /// If not set, cookies will use the session's `expires_at` field to calculate the max age.
+    pub max_age: Option<chrono::Duration>,
 }
 
 impl Default for CookieConfig {
@@ -110,6 +113,7 @@ impl Default for CookieConfig {
             secure: true,
             same_site: CookieSameSite::Lax,
             path: "/".to_string(),
+            max_age: None,
         }
     }
 }
@@ -207,6 +211,7 @@ impl CookieConfig {
             secure: true,
             same_site: CookieSameSite::Lax,
             path: "/".to_string(),
+            max_age: None,
         }
     }
 
@@ -217,6 +222,15 @@ impl CookieConfig {
             secure: false,
             same_site: CookieSameSite::Lax,
             path: "/".to_string(),
+            max_age: None,
         }
+    }
+
+    /// Set a custom max age for the cookie.
+    ///
+    /// If not set, the cookie will use the session's `expires_at` field to calculate the max age.
+    pub fn with_max_age(mut self, max_age: chrono::Duration) -> Self {
+        self.max_age = Some(max_age);
+        self
     }
 }

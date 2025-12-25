@@ -11,6 +11,8 @@ use axum_extra::extract::{
     CookieJar,
     cookie::{Cookie, SameSite},
 };
+use chrono::{DateTime, Utc};
+use cookie::time::Duration;
 use torii::Torii;
 use torii_core::RepositoryProvider;
 
@@ -20,6 +22,34 @@ use crate::{
     middleware::{HasTorii, auth_middleware},
     types::*,
 };
+
+/// Build a session cookie with proper expiration based on the session's expires_at
+fn build_session_cookie(
+    cookie_config: &CookieConfig,
+    token: &str,
+    expires_at: DateTime<Utc>,
+) -> Cookie<'static> {
+    let same_site = match cookie_config.same_site {
+        CookieSameSite::Strict => SameSite::Strict,
+        CookieSameSite::Lax => SameSite::Lax,
+        CookieSameSite::None => SameSite::None,
+    };
+
+    // Calculate max_age from session expiration or use configured max_age
+    let duration_seconds = cookie_config
+        .max_age
+        .map(|d| d.num_seconds())
+        .unwrap_or_else(|| (expires_at - Utc::now()).num_seconds())
+        .max(0);
+
+    Cookie::build((cookie_config.name.clone(), token.to_string()))
+        .path(cookie_config.path.clone())
+        .http_only(cookie_config.http_only)
+        .secure(cookie_config.secure)
+        .same_site(same_site)
+        .max_age(Duration::seconds(duration_seconds))
+        .build()
+}
 
 pub fn create_router<R>(
     torii: Arc<Torii<R>>,
@@ -170,17 +200,11 @@ where
         .create_session(&user.id, connection_info.user_agent, connection_info.ip)
         .await?;
 
-    let same_site = match cookie_config.same_site {
-        CookieSameSite::Strict => SameSite::Strict,
-        CookieSameSite::Lax => SameSite::Lax,
-        CookieSameSite::None => SameSite::None,
-    };
-
-    let cookie = Cookie::build((cookie_config.name, session.token.to_string()))
-        .path(cookie_config.path)
-        .http_only(cookie_config.http_only)
-        .secure(cookie_config.secure)
-        .same_site(same_site);
+    let cookie = build_session_cookie(
+        &cookie_config,
+        &session.token.to_string(),
+        session.expires_at,
+    );
 
     // Return generic response to prevent user enumeration
     Ok((
@@ -213,17 +237,11 @@ where
         )
         .await?;
 
-    let same_site = match cookie_config.same_site {
-        CookieSameSite::Strict => SameSite::Strict,
-        CookieSameSite::Lax => SameSite::Lax,
-        CookieSameSite::None => SameSite::None,
-    };
-
-    let cookie = Cookie::build((cookie_config.name, session.token.to_string()))
-        .path(cookie_config.path)
-        .http_only(cookie_config.http_only)
-        .secure(cookie_config.secure)
-        .same_site(same_site);
+    let cookie = build_session_cookie(
+        &cookie_config,
+        &session.token.to_string(),
+        session.expires_at,
+    );
 
     Ok((
         StatusCode::OK,
@@ -387,17 +405,11 @@ where
         )
         .await?;
 
-    let same_site = match cookie_config.same_site {
-        CookieSameSite::Strict => SameSite::Strict,
-        CookieSameSite::Lax => SameSite::Lax,
-        CookieSameSite::None => SameSite::None,
-    };
-
-    let cookie = Cookie::build((cookie_config.name, session.token.to_string()))
-        .path(cookie_config.path)
-        .http_only(cookie_config.http_only)
-        .secure(cookie_config.secure)
-        .same_site(same_site);
+    let cookie = build_session_cookie(
+        &cookie_config,
+        &session.token.to_string(),
+        session.expires_at,
+    );
 
     Ok((
         StatusCode::OK,
