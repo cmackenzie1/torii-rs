@@ -119,6 +119,7 @@ mod tests {
     #[tokio::test]
     async fn test_jwt_session_provider_create_and_get() {
         let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
+            .unwrap()
             .with_issuer("test-issuer")
             .with_metadata(true);
 
@@ -149,7 +150,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_jwt_session_provider_expired_session() {
-        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
+        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec()).unwrap();
         let provider = JwtSessionProvider::new(config.clone());
 
         let user_id = UserId::new_random();
@@ -173,7 +174,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_jwt_session_provider_invalid_token() {
-        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
+        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec()).unwrap();
         let provider = JwtSessionProvider::new(config);
 
         // Create an invalid token using the constructor

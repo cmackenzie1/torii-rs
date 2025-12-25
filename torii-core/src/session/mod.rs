@@ -127,15 +127,33 @@ impl SessionToken {
         self.verify_jwt(&config)
     }
 
-    /// Create a new JWT session token using HS256 algorithm
+    /// Create a new JWT session token using HS256 algorithm.
+    ///
+    /// # Security Requirements
+    ///
+    /// The secret key must be at least 32 bytes (256 bits) long. See
+    /// [`JwtConfig::new_hs256`] for details on security requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key is too short or if JWT encoding fails.
     pub fn new_jwt_hs256(claims: &JwtClaims, secret_key: &[u8]) -> Result<Self, Error> {
-        let config = JwtConfig::new_hs256(secret_key.to_vec());
+        let config = JwtConfig::new_hs256(secret_key.to_vec())?;
         Self::new_jwt(claims, &config)
     }
 
-    /// Verify a JWT session token using HS256 algorithm and return the claims
+    /// Verify a JWT session token using HS256 algorithm and return the claims.
+    ///
+    /// # Security Requirements
+    ///
+    /// The secret key must be at least 32 bytes (256 bits) long. See
+    /// [`JwtConfig::new_hs256`] for details on security requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret key is too short or if JWT verification fails.
     pub fn verify_jwt_hs256(&self, secret_key: &[u8]) -> Result<JwtClaims, Error> {
-        let config = JwtConfig::new_hs256(secret_key.to_vec());
+        let config = JwtConfig::new_hs256(secret_key.to_vec())?;
         self.verify_jwt(&config)
     }
 
@@ -347,13 +365,58 @@ impl JwtConfig {
         }
     }
 
-    /// Create a new JWT configuration with HS256 algorithm
-    pub fn new_hs256(secret_key: Vec<u8>) -> Self {
-        Self {
+    /// Minimum secret key length in bytes for HS256 (256 bits)
+    ///
+    /// HS256 requires at least 256 bits (32 bytes) of key material to be secure
+    /// against brute force attacks. Using shorter keys significantly reduces
+    /// the security of the JWT signature.
+    pub const HS256_MIN_KEY_LENGTH: usize = 32;
+
+    /// Create a new JWT configuration with HS256 algorithm.
+    ///
+    /// # Security Requirements
+    ///
+    /// The secret key must be at least 32 bytes (256 bits) long. This is required
+    /// because HS256 uses HMAC-SHA256, which needs sufficient key material to
+    /// resist brute force attacks. Using a weak or short secret key compromises
+    /// the security of all signed JWTs.
+    ///
+    /// The secret key should also be cryptographically random. Do not use
+    /// human-readable passwords or predictable values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationError::InvalidField`] if the secret key is shorter
+    /// than 32 bytes (256 bits).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use torii_core::session::JwtConfig;
+    ///
+    /// // Generate a 32-byte random key (recommended)
+    /// let secret_key = vec![0u8; 32]; // In production, use cryptographically random bytes
+    /// let config = JwtConfig::new_hs256(secret_key).expect("key is long enough");
+    ///
+    /// // This will fail - key is too short
+    /// let weak_key = b"short".to_vec();
+    /// assert!(JwtConfig::new_hs256(weak_key).is_err());
+    /// ```
+    pub fn new_hs256(secret_key: Vec<u8>) -> Result<Self, Error> {
+        if secret_key.len() < Self::HS256_MIN_KEY_LENGTH {
+            return Err(ValidationError::InvalidField(format!(
+                "HS256 secret key must be at least {} bytes ({} bits), got {} bytes",
+                Self::HS256_MIN_KEY_LENGTH,
+                Self::HS256_MIN_KEY_LENGTH * 8,
+                secret_key.len()
+            ))
+            .into());
+        }
+        Ok(Self {
             algorithm: JwtAlgorithm::HS256 { secret_key },
             issuer: None,
             include_metadata: false,
-        }
+        })
     }
 
     /// Create a new JWT configuration from RSA key files (PEM format)
@@ -374,14 +437,18 @@ impl JwtConfig {
         Ok(Self::new_rs256(private_key, public_key))
     }
 
-    /// Create a JWT configuration with a random HS256 secret key (for testing)
+    /// Create a JWT configuration with a random HS256 secret key (for testing).
+    ///
+    /// This generates a cryptographically random 32-byte key that meets the
+    /// minimum security requirements for HS256.
     #[cfg(test)]
     pub fn new_random_hs256() -> Self {
         use rand::TryRngCore;
 
         let mut secret_key = vec![0u8; 32];
         rand::rng().try_fill_bytes(&mut secret_key).unwrap();
-        Self::new_hs256(secret_key)
+        // This unwrap is safe because we generate exactly 32 bytes
+        Self::new_hs256(secret_key).expect("random 32-byte key should be valid")
     }
 
     /// Set the issuer claim
@@ -701,7 +768,7 @@ IwIDAQAB
 
     #[test]
     fn test_jwt_config_hs256() {
-        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
+        let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec()).unwrap();
 
         match &config.algorithm {
             JwtAlgorithm::HS256 { secret_key } => {
@@ -726,8 +793,92 @@ IwIDAQAB
     }
 
     #[test]
+    fn test_jwt_config_hs256_rejects_short_key() {
+        // Test keys that are too short
+        let short_keys: Vec<Vec<u8>> = vec![
+            vec![],             // Empty key
+            b"short".to_vec(),  // 5 bytes
+            b"secret".to_vec(), // 6 bytes
+            vec![0u8; 31],      // 31 bytes (just under minimum)
+        ];
+
+        for key in short_keys {
+            let key_len = key.len();
+            let result = JwtConfig::new_hs256(key);
+            assert!(
+                result.is_err(),
+                "Key with {} bytes should be rejected",
+                key_len
+            );
+
+            // Verify the error message is descriptive
+            if let Err(crate::Error::Validation(ValidationError::InvalidField(msg))) = result {
+                assert!(
+                    msg.contains("32 bytes"),
+                    "Error message should mention minimum key size: {}",
+                    msg
+                );
+                assert!(
+                    msg.contains("256 bits"),
+                    "Error message should mention bits: {}",
+                    msg
+                );
+            } else {
+                panic!("Expected ValidationError::InvalidField");
+            }
+        }
+    }
+
+    #[test]
+    fn test_jwt_config_hs256_accepts_valid_keys() {
+        // Test keys that meet the minimum requirement
+        let valid_keys: Vec<Vec<u8>> = vec![
+            vec![0u8; 32],              // Exactly 32 bytes
+            vec![0u8; 33],              // 33 bytes
+            vec![0u8; 64],              // 64 bytes
+            TEST_HS256_SECRET.to_vec(), // Our test key
+        ];
+
+        for key in valid_keys {
+            let key_len = key.len();
+            let result = JwtConfig::new_hs256(key);
+            assert!(
+                result.is_ok(),
+                "Key with {} bytes should be accepted",
+                key_len
+            );
+        }
+    }
+
+    #[test]
+    fn test_session_token_hs256_helpers_reject_short_key() {
+        // Test that SessionToken helper methods also reject short keys
+        let short_key = b"short".to_vec();
+        let user_id = UserId::new_random();
+        let session = Session::builder()
+            .user_id(user_id.clone())
+            .expires_at(Utc::now() + Duration::days(1))
+            .build()
+            .unwrap();
+        let claims = session.to_jwt_claims(None, false);
+
+        // new_jwt_hs256 should reject short key
+        let result = SessionToken::new_jwt_hs256(&claims, &short_key);
+        assert!(result.is_err(), "new_jwt_hs256 should reject short key");
+
+        // verify_jwt_hs256 should also reject short key (even before verification)
+        let valid_key = vec![0u8; 32];
+        let config = JwtConfig::new_hs256(valid_key.clone()).unwrap();
+        let token = SessionToken::new_jwt(&claims, &config).unwrap();
+
+        let result = token.verify_jwt_hs256(&short_key);
+        assert!(result.is_err(), "verify_jwt_hs256 should reject short key");
+    }
+
+    #[test]
     fn test_jwt_token_creation_and_verification_hs256() {
         let config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
+            .unwrap()
             .with_issuer("test-issuer-hs256")
             .with_metadata(true);
 

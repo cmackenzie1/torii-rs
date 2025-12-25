@@ -20,6 +20,7 @@ async fn test_jwt_session_manager() {
 
     // Create a JWT config with HS256
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
+        .unwrap()
         .with_issuer("torii-test-hs256")
         .with_metadata(true);
 
@@ -64,7 +65,7 @@ async fn test_jwt_expiration() {
     repositories.migrate().await.unwrap();
 
     // Create a JWT config with HS256
-    let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec());
+    let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec()).unwrap();
 
     // Create Torii with a JWT session manager and short expiration
     let session_config = SessionConfig::default()
@@ -103,6 +104,7 @@ async fn test_password_auth_with_jwt() {
 
     // Create a JWT config with HS256
     let jwt_config = JwtConfig::new_hs256(TEST_HS256_SECRET.to_vec())
+        .unwrap()
         .with_issuer("torii-test-hs256")
         .with_metadata(true);
 
