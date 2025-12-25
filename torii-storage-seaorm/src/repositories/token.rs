@@ -1,6 +1,8 @@
 use crate::SeaORMStorage;
 use async_trait::async_trait;
+use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
+use rand::{TryRngCore, rngs::OsRng};
 use sea_orm::DatabaseConnection;
 use torii_core::{
     Error, UserId,
@@ -20,10 +22,13 @@ impl SeaORMTokenRepository {
         }
     }
 
-    /// Generate a cryptographically secure random token
+    /// Generate a cryptographically secure random token with 256 bits of entropy
     fn generate_token() -> String {
-        use uuid::Uuid;
-        Uuid::new_v4().to_string()
+        let mut bytes = [0u8; 32]; // 256 bits of entropy
+        OsRng
+            .try_fill_bytes(&mut bytes)
+            .expect("Failed to generate random bytes - system RNG unavailable");
+        BASE64_URL_SAFE_NO_PAD.encode(bytes)
     }
 }
 
