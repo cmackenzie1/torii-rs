@@ -8,6 +8,7 @@
 //!
 //! See [`User`] for the core user struct, [`Session`] for the core session struct, and [`RepositoryProvider`] for the storage abstraction.
 //!
+pub mod crypto;
 pub mod error;
 pub mod events;
 pub mod id;

@@ -7,10 +7,19 @@ use torii_core::{Session, SessionStorage, UserId};
 use crate::entities::session;
 use crate::{SeaORMStorage, SeaORMStorageError};
 
+/// Convert a database session model to a Session.
+///
+/// Note: The token field in the database stores the hash, not the plaintext.
+/// When loading from storage, we create a "placeholder" token that contains the hash.
+/// This allows verification via constant-time comparison, but the original
+/// plaintext token is not recoverable (by design).
 impl From<session::Model> for Session {
     fn from(value: session::Model) -> Self {
+        // The database stores the hash in the 'token' column
+        // We create a placeholder token - actual verification should use verify_hash
         Self {
             token: SessionToken::new(&value.token),
+            token_hash: value.token.clone(),
             user_id: UserId::new(&value.user_id),
             user_agent: value.user_agent.to_owned(),
             ip_address: value.ip_address.to_owned(),
@@ -24,9 +33,10 @@ impl From<session::Model> for Session {
 #[async_trait::async_trait]
 impl SessionStorage for SeaORMStorage {
     async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
+        // Store the hash, not the plaintext token
         let s = session::ActiveModel {
             user_id: Set(session.user_id.to_string()),
-            token: Set(session.token.expose_secret().to_owned()),
+            token: Set(session.token_hash.clone()), // Store hash, not plaintext
             ip_address: Set(session.ip_address.to_owned()),
             user_agent: Set(session.user_agent.to_owned()),
             expires_at: Set(session.expires_at.to_owned()),
@@ -38,23 +48,58 @@ impl SessionStorage for SeaORMStorage {
             .await
             .map_err(SeaORMStorageError::Database)?;
 
-        Ok(result.into())
+        // Return the original session with its plaintext token
+        // (the caller already has it)
+        Ok(Session {
+            token: session.token.clone(),
+            token_hash: session.token_hash.clone(),
+            user_id: session.user_id.clone(),
+            user_agent: result.user_agent,
+            ip_address: result.ip_address,
+            created_at: result.created_at,
+            updated_at: result.updated_at,
+            expires_at: result.expires_at,
+        })
     }
 
-    async fn get_session(&self, id: &SessionToken) -> Result<Option<Session>, torii_core::Error> {
+    async fn get_session(
+        &self,
+        token: &SessionToken,
+    ) -> Result<Option<Session>, torii_core::Error> {
+        // Compute the hash of the provided token for lookup
+        let token_hash = token.token_hash();
+
         let session = session::Entity::find()
-            .filter(session::Column::Token.eq(id.expose_secret()))
+            .filter(session::Column::Token.eq(&token_hash))
             .one(&self.pool)
             .await
-            .map_err(SeaORMStorageError::Database)?
-            .map(|s| s.into());
+            .map_err(SeaORMStorageError::Database)?;
 
-        Ok(session)
+        if let Some(s) = session {
+            // Verify using constant-time comparison
+            if token.verify_hash(&s.token) {
+                return Ok(Some(Session {
+                    token: token.clone(),
+                    token_hash: s.token,
+                    user_id: UserId::new(&s.user_id),
+                    user_agent: s.user_agent,
+                    ip_address: s.ip_address,
+                    created_at: s.created_at,
+                    updated_at: s.updated_at,
+                    expires_at: s.expires_at,
+                }));
+            }
+        }
+
+        Ok(None)
     }
 
-    async fn delete_session(&self, id: &SessionToken) -> Result<(), torii_core::Error> {
+    async fn delete_session(&self, token: &SessionToken) -> Result<(), torii_core::Error> {
+        // Compute the hash of the provided token for deletion
+        let token_hash = token.token_hash();
+
         session::Entity::delete_many()
-            .filter(session::Column::Token.eq(id.expose_secret()))
+            .filter(session::Column::Token.eq(&token_hash))
             .exec(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?;

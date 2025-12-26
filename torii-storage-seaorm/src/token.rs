@@ -14,12 +14,13 @@ impl TokenStorage for SeaORMStorage {
         // Get the database backend dynamically
         let backend = self.pool.get_database_backend();
 
+        // Store the token_hash in the 'token' column (never store plaintext)
         let query = Statement::from_sql_and_values(
             backend,
             "INSERT INTO secure_tokens (user_id, token, purpose, used_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             vec![
                 token.user_id.to_string().into(),
-                token.token.clone().into(),
+                token.token_hash.clone().into(), // Store hash, not plaintext
                 token.purpose.as_str().to_string().into(),
                 token.used_at.into(),
                 token.expires_at.into(),
@@ -35,16 +36,16 @@ impl TokenStorage for SeaORMStorage {
         Ok(())
     }
 
-    async fn get_secure_token(
+    async fn get_token_by_hash(
         &self,
-        token: &str,
+        token_hash: &str,
         purpose: TokenPurpose,
     ) -> Result<Option<SecureToken>, Error> {
         // Custom struct to match our query results
         #[derive(Debug, FromQueryResult)]
         struct SecureTokenResult {
             user_id: String,
-            token: String,
+            token: String, // This is actually the hash
             purpose: String,
             used_at: Option<chrono::DateTime<Utc>>,
             expires_at: chrono::DateTime<Utc>,
@@ -55,10 +56,11 @@ impl TokenStorage for SeaORMStorage {
         let now = Utc::now();
         let backend = self.pool.get_database_backend();
 
+        // Query the specific token by its hash
         let query = Statement::from_sql_and_values(
             backend,
             "SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at FROM secure_tokens WHERE token = ? AND purpose = ? AND expires_at > ? AND used_at IS NULL",
-            vec![token.into(), purpose.as_str().into(), now.into()],
+            vec![token_hash.into(), purpose.as_str().into(), now.into()],
         );
 
         let result: Option<SecureTokenResult> = SecureTokenResult::find_by_statement(query)
@@ -68,27 +70,29 @@ impl TokenStorage for SeaORMStorage {
                 Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
             })?;
 
-        match result {
-            Some(row) => {
-                let user_id = UserId::new(&row.user_id);
+        Ok(result.map(|row| {
+            let user_id = UserId::new(&row.user_id);
+            let purpose =
+                TokenPurpose::from_str(&row.purpose).expect("Invalid purpose in database");
 
-                let purpose = TokenPurpose::from_str(&row.purpose)?;
-
-                Ok(Some(SecureToken::new(
-                    user_id,
-                    row.token,
-                    purpose,
-                    row.used_at,
-                    row.expires_at,
-                    row.created_at,
-                    row.updated_at,
-                )))
-            }
-            None => Ok(None),
-        }
+            // Use from_storage since we only have the hash, not the plaintext
+            SecureToken::from_storage(
+                user_id,
+                row.token, // This is the hash stored in the 'token' column
+                purpose,
+                row.used_at,
+                row.expires_at,
+                row.created_at,
+                row.updated_at,
+            )
+        }))
     }
 
-    async fn set_secure_token_used(&self, token: &str, purpose: TokenPurpose) -> Result<(), Error> {
+    async fn set_secure_token_used_by_hash(
+        &self,
+        token_hash: &str,
+        purpose: TokenPurpose,
+    ) -> Result<(), Error> {
         let now = Utc::now();
         let backend = self.pool.get_database_backend();
 
@@ -98,7 +102,7 @@ impl TokenStorage for SeaORMStorage {
             vec![
                 now.into(),
                 now.into(),
-                token.into(),
+                token_hash.into(),
                 purpose.as_str().into(),
             ],
         );

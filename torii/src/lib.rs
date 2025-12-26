@@ -310,19 +310,19 @@ impl<R: RepositoryProvider> Torii<R> {
 
     /// Access magic link authentication methods
     #[cfg(feature = "magic-link")]
-    pub fn magic_link(&self) -> MagicLinkAuth<R> {
+    pub fn magic_link(&self) -> MagicLinkAuth<'_, R> {
         MagicLinkAuth { torii: self }
     }
 
     /// Access OAuth authentication methods
     #[cfg(feature = "oauth")]
-    pub fn oauth(&self) -> OAuthAuth<R> {
+    pub fn oauth(&self) -> OAuthAuth<'_, R> {
         OAuthAuth { torii: self }
     }
 
     /// Access passkey authentication methods
     #[cfg(feature = "passkey")]
-    pub fn passkey(&self) -> PasskeyAuth<R> {
+    pub fn passkey(&self) -> PasskeyAuth<'_, R> {
         PasskeyAuth { torii: self }
     }
 }
@@ -783,17 +783,16 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
 
         // Send password reset email if mailer is configured and user exists
         #[cfg(feature = "mailer")]
-        if let Some((user, token)) = result {
-            if let Some(mailer) = &torii.mailer_service {
-                let reset_link =
-                    format!("{}?token={}", reset_url_base.trim_end_matches('/'), token);
-                if let Err(e) = mailer
-                    .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
-                    .await
-                {
-                    tracing::warn!("Failed to send password reset email: {}", e);
-                    // Don't fail the password reset request if email sending fails
-                }
+        if let Some((user, token)) = result
+            && let Some(mailer) = &torii.mailer_service
+        {
+            let reset_link = format!("{}?token={}", reset_url_base.trim_end_matches('/'), token);
+            if let Err(e) = mailer
+                .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
+                .await
+            {
+                tracing::warn!("Failed to send password reset email: {}", e);
+                // Don't fail the password reset request if email sending fails
             }
         }
 
@@ -825,17 +824,16 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
 
         // Send password reset email if mailer is configured and user exists
         #[cfg(feature = "mailer")]
-        if let Some((user, token)) = result {
-            if let Some(mailer) = &torii.mailer_service {
-                let reset_link =
-                    format!("{}?token={}", reset_url_base.trim_end_matches('/'), token);
-                if let Err(e) = mailer
-                    .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
-                    .await
-                {
-                    tracing::warn!("Failed to send password reset email: {}", e);
-                    // Don't fail the password reset request if email sending fails
-                }
+        if let Some((user, token)) = result
+            && let Some(mailer) = &torii.mailer_service
+        {
+            let reset_link = format!("{}?token={}", reset_url_base.trim_end_matches('/'), token);
+            if let Err(e) = mailer
+                .send_password_reset_email(&user.email, &reset_link, user.name.as_deref())
+                .await
+            {
+                tracing::warn!("Failed to send password reset email: {}", e);
+                // Don't fail the password reset request if email sending fails
             }
         }
 
@@ -963,7 +961,9 @@ impl<R: RepositoryProvider> MagicLinkAuth<'_, R> {
             let magic_link = format!(
                 "{}?token={}",
                 magic_link_url_base.trim_end_matches('/'),
-                token.token
+                token
+                    .token()
+                    .expect("Token should be available after creation")
             );
 
             // Get user name if the user exists

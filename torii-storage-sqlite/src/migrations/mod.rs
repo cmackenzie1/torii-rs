@@ -439,6 +439,7 @@ impl Migration<Sqlite> for CreateIndexes {
     }
 }
 
+#[allow(dead_code)]
 pub struct CreateMagicLinksTable;
 
 #[async_trait::async_trait]

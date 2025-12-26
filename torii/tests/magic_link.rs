@@ -23,15 +23,16 @@ async fn test_magic_link_auth() {
     let magic_token = torii.magic_link().generate_token(email).await.unwrap();
 
     // Verify the token contains expected data
-    assert!(!magic_token.token.is_empty());
-    assert!(magic_token.token.len() > 32); // Should be a reasonably long token
+    let token_value = magic_token.token().expect("Token should be available");
+    assert!(!token_value.is_empty());
+    assert!(token_value.len() > 32); // Should be a reasonably long token
     assert!(!magic_token.used()); // Token should not be used yet
     assert!(magic_token.expires_at > chrono::Utc::now()); // Should expire in the future
 
     // Verify the magic token
     let (user, session) = torii
         .magic_link()
-        .authenticate(&magic_token.token, None, None)
+        .authenticate(token_value, None, None)
         .await
         .unwrap();
 
@@ -45,7 +46,7 @@ async fn test_magic_link_auth() {
     // Trying to verify the same token again should fail (one-time use)
     let result = torii
         .magic_link()
-        .authenticate(&magic_token.token, None, None)
+        .authenticate(token_value, None, None)
         .await;
     assert!(result.is_err());
 }
@@ -88,7 +89,11 @@ async fn test_magic_link_expired_token() {
     // Verify the token first
     let (_, session) = torii
         .magic_link()
-        .authenticate(&magic_token.token, None, None)
+        .authenticate(
+            magic_token.token().expect("Token should be available"),
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -122,7 +127,11 @@ async fn test_magic_link_connection_info() {
 
     let (_, session) = torii
         .magic_link()
-        .authenticate(&magic_token.token, user_agent.clone(), ip_address.clone())
+        .authenticate(
+            magic_token.token().expect("Token should be available"),
+            user_agent.clone(),
+            ip_address.clone(),
+        )
         .await
         .unwrap();
 

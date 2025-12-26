@@ -176,6 +176,7 @@ mod tests {
 
     #[derive(Default)]
     struct MockTokenRepository {
+        // Store tokens by hash for O(1) lookup
         tokens: Arc<Mutex<HashMap<String, SecureToken>>>,
     }
 
@@ -187,12 +188,16 @@ mod tests {
             purpose: TokenPurpose,
             expires_in: Duration,
         ) -> Result<SecureToken, Error> {
+            use crate::crypto::hash_token;
+
             let token_str = "test_token_123".to_string();
+            let token_hash = hash_token(&token_str);
             let expires_at = Utc::now() + expires_in;
 
             let secure_token = SecureToken::new(
                 user_id.clone(),
-                token_str.clone(),
+                token_str,
+                token_hash.clone(),
                 purpose,
                 None,
                 expires_at,
@@ -200,10 +205,11 @@ mod tests {
                 Utc::now(),
             );
 
+            // Store by hash for O(1) lookup
             self.tokens
                 .lock()
                 .await
-                .insert(token_str, secure_token.clone());
+                .insert(token_hash, secure_token.clone());
 
             Ok(secure_token)
         }
@@ -213,34 +219,47 @@ mod tests {
             token: &str,
             purpose: TokenPurpose,
         ) -> Result<Option<SecureToken>, Error> {
+            use crate::crypto::hash_token;
+
             let mut tokens = self.tokens.lock().await;
-            if let Some(secure_token) = tokens.get(token) {
-                if secure_token.purpose == purpose
+            let token_hash = hash_token(token);
+
+            // O(1) lookup by hash
+            if let Some(secure_token) = tokens.get(&token_hash) {
+                if secure_token.verify(token)
+                    && secure_token.purpose == purpose
                     && secure_token.expires_at > Utc::now()
                     && secure_token.used_at.is_none()
                 {
                     let mut verified_token = secure_token.clone();
                     verified_token.used_at = Some(Utc::now());
                     verified_token.updated_at = Utc::now();
-                    tokens.insert(token.to_string(), verified_token.clone());
-                    Ok(Some(verified_token))
-                } else {
-                    Ok(None)
+                    tokens.insert(token_hash, verified_token.clone());
+                    return Ok(Some(verified_token));
                 }
-            } else {
-                Ok(None)
             }
+
+            Ok(None)
         }
 
         async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
+            use crate::crypto::hash_token;
+
             let tokens = self.tokens.lock().await;
-            if let Some(secure_token) = tokens.get(token) {
-                Ok(secure_token.purpose == purpose
+            let token_hash = hash_token(token);
+
+            // O(1) lookup by hash
+            if let Some(secure_token) = tokens.get(&token_hash) {
+                if secure_token.verify(token)
+                    && secure_token.purpose == purpose
                     && secure_token.expires_at > Utc::now()
-                    && secure_token.used_at.is_none())
-            } else {
-                Ok(false)
+                    && secure_token.used_at.is_none()
+                {
+                    return Ok(true);
+                }
             }
+
+            Ok(false)
         }
 
         async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
@@ -261,7 +280,7 @@ mod tests {
         assert!(result.is_ok());
 
         let token = result.unwrap();
-        assert_eq!(token.token, "test_token_123");
+        assert_eq!(token.token(), Some("test_token_123"));
         assert_eq!(token.purpose, TokenPurpose::MagicLink);
     }
 
@@ -291,7 +310,7 @@ mod tests {
         let token = service.generate_token("test@example.com").await.unwrap();
 
         // Then verify it
-        let result = service.verify_token(&token.token).await;
+        let result = service.verify_token(token.token().unwrap()).await;
         assert!(result.is_ok());
 
         let user = result.unwrap();

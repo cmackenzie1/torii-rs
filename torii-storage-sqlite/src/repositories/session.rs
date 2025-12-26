@@ -17,7 +17,7 @@ impl SqliteSessionRepository {
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct SqliteSession {
-    token: String,
+    token: String, // This stores the hash, not plaintext
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -26,59 +26,73 @@ struct SqliteSession {
     expires_at: i64,
 }
 
-impl From<SqliteSession> for Session {
-    fn from(session: SqliteSession) -> Self {
-        use chrono::DateTime;
-        Session {
-            token: SessionToken::new(&session.token),
-            user_id: UserId::new(&session.user_id),
-            user_agent: session.user_agent,
-            ip_address: session.ip_address,
-            created_at: DateTime::from_timestamp(session.created_at, 0).expect("Invalid timestamp"),
-            updated_at: DateTime::from_timestamp(session.updated_at, 0).expect("Invalid timestamp"),
-            expires_at: DateTime::from_timestamp(session.expires_at, 0).expect("Invalid timestamp"),
-        }
-    }
-}
-
 #[async_trait]
 impl SessionRepository for SqliteSessionRepository {
     async fn create(&self, session: Session) -> Result<Session, Error> {
-        let sqlite_session = sqlx::query_as::<_, SqliteSession>(
+        // Store the hash, not the plaintext token
+        sqlx::query(
             r#"
             INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-            RETURNING *
             "#,
         )
-        .bind(session.token.expose_secret())
+        .bind(&session.token_hash) // Store hash, not plaintext
         .bind(session.user_id.as_str())
         .bind(&session.user_agent)
         .bind(&session.ip_address)
         .bind(session.created_at.timestamp())
         .bind(session.updated_at.timestamp())
         .bind(session.expires_at.timestamp())
-        .fetch_one(&self.pool)
+        .execute(&self.pool)
         .await
         .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
-        Ok(sqlite_session.into())
+        // Return the original session (caller already has plaintext token)
+        Ok(session)
     }
 
     async fn find_by_token(&self, token: &SessionToken) -> Result<Option<Session>, Error> {
+        // Compute hash for lookup
+        let token_hash = token.token_hash();
+
         let sqlite_session =
             sqlx::query_as::<_, SqliteSession>("SELECT * FROM sessions WHERE token = ?1")
-                .bind(token.expose_secret())
+                .bind(&token_hash)
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
-        Ok(sqlite_session.map(|s| s.into()))
+        match sqlite_session {
+            Some(s) => {
+                // Verify using constant-time comparison
+                if token.verify_hash(&s.token) {
+                    use chrono::DateTime;
+                    Ok(Some(Session {
+                        token: token.clone(),
+                        token_hash: s.token,
+                        user_id: UserId::new(&s.user_id),
+                        user_agent: s.user_agent,
+                        ip_address: s.ip_address,
+                        created_at: DateTime::from_timestamp(s.created_at, 0)
+                            .expect("Invalid timestamp"),
+                        updated_at: DateTime::from_timestamp(s.updated_at, 0)
+                            .expect("Invalid timestamp"),
+                        expires_at: DateTime::from_timestamp(s.expires_at, 0)
+                            .expect("Invalid timestamp"),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Ok(None),
+        }
     }
 
     async fn delete(&self, token: &SessionToken) -> Result<(), Error> {
+        let token_hash = token.token_hash();
+
         sqlx::query("DELETE FROM sessions WHERE token = ?1")
-            .bind(token.expose_secret())
+            .bind(&token_hash)
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
