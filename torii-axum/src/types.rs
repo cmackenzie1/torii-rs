@@ -118,9 +118,10 @@ impl Default for CookieConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum CookieSameSite {
     Strict,
+    #[default]
     Lax,
     None,
 }
@@ -194,12 +195,6 @@ impl LinkConfig {
             self.path_prefix,
             token
         )
-    }
-}
-
-impl Default for CookieSameSite {
-    fn default() -> Self {
-        Self::Lax
     }
 }
 

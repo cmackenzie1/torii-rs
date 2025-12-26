@@ -9,7 +9,7 @@ use torii_core::{Session, SessionStorage, UserId};
 pub struct SqliteSession {
     #[allow(dead_code)]
     id: Option<i64>,
-    token: String,
+    token: String, // This stores the hash, not plaintext
     user_id: String,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -18,67 +18,41 @@ pub struct SqliteSession {
     expires_at: i64,
 }
 
-impl From<SqliteSession> for Session {
-    fn from(session: SqliteSession) -> Self {
-        Session::builder()
-            .token(SessionToken::new(&session.token))
-            .user_id(UserId::new(&session.user_id))
-            .user_agent(session.user_agent)
-            .ip_address(session.ip_address)
-            .created_at(DateTime::from_timestamp(session.created_at, 0).expect("Invalid timestamp"))
-            .updated_at(DateTime::from_timestamp(session.updated_at, 0).expect("Invalid timestamp"))
-            .expires_at(DateTime::from_timestamp(session.expires_at, 0).expect("Invalid timestamp"))
-            .build()
-            .unwrap()
-    }
-}
-
-impl From<Session> for SqliteSession {
-    fn from(session: Session) -> Self {
-        SqliteSession {
-            id: None,
-            token: session.token.expose_secret().to_string(),
-            user_id: session.user_id.into_inner(),
-            user_agent: session.user_agent,
-            ip_address: session.ip_address,
-            created_at: session.created_at.timestamp(),
-            updated_at: session.updated_at.timestamp(),
-            expires_at: session.expires_at.timestamp(),
-        }
-    }
-}
-
 #[async_trait]
 impl SessionStorage for SqliteStorage {
     async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
-        let session = sqlx::query_as::<_, SqliteSession>(
+        // Store the hash, not the plaintext token
+        let _result = sqlx::query(
             r#"
             INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            RETURNING id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
             "#,
         )
-            .bind(session.token.expose_secret())
-            .bind(session.user_id.as_str())
-            .bind(&session.user_agent)
-            .bind(&session.ip_address)
-            .bind(session.created_at.timestamp())
-            .bind(session.updated_at.timestamp())
-            .bind(session.expires_at.timestamp())
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to create session");
-                StorageError::Database("Failed to create session".to_string())
-            })?;
+        .bind(&session.token_hash) // Store hash, not plaintext
+        .bind(session.user_id.as_str())
+        .bind(&session.user_agent)
+        .bind(&session.ip_address)
+        .bind(session.created_at.timestamp())
+        .bind(session.updated_at.timestamp())
+        .bind(session.expires_at.timestamp())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to create session");
+            StorageError::Database("Failed to create session".to_string())
+        })?;
 
-        Ok(session.into())
+        // Return the original session (caller already has plaintext token)
+        Ok(session.clone())
     }
 
     async fn get_session(
         &self,
         token: &SessionToken,
     ) -> Result<Option<Session>, torii_core::Error> {
+        // Compute hash for lookup
+        let token_hash = token.token_hash();
+
         let session = sqlx::query_as::<_, SqliteSession>(
             r#"
             SELECT id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
@@ -86,20 +60,44 @@ impl SessionStorage for SqliteStorage {
             WHERE token = ?
             "#,
         )
-        .bind(token.expose_secret())
-        .fetch_one(&self.pool)
+        .bind(&token_hash)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get session");
             StorageError::Database("Failed to get session".to_string())
         })?;
 
-        Ok(Some(session.into()))
+        match session {
+            Some(s) => {
+                // Verify using constant-time comparison
+                if token.verify_hash(&s.token) {
+                    Ok(Some(Session {
+                        token: token.clone(),
+                        token_hash: s.token,
+                        user_id: UserId::new(&s.user_id),
+                        user_agent: s.user_agent,
+                        ip_address: s.ip_address,
+                        created_at: DateTime::from_timestamp(s.created_at, 0)
+                            .expect("Invalid timestamp"),
+                        updated_at: DateTime::from_timestamp(s.updated_at, 0)
+                            .expect("Invalid timestamp"),
+                        expires_at: DateTime::from_timestamp(s.expires_at, 0)
+                            .expect("Invalid timestamp"),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Ok(None),
+        }
     }
 
     async fn delete_session(&self, token: &SessionToken) -> Result<(), torii_core::Error> {
+        let token_hash = token.token_hash();
+
         sqlx::query("DELETE FROM sessions WHERE token = ?")
-            .bind(token.expose_secret())
+            .bind(&token_hash)
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -145,7 +143,7 @@ pub(crate) mod test {
 
     pub(crate) async fn create_test_session(
         storage: &SqliteStorage,
-        session_id: &str,
+        token: &SessionToken,
         user_id: &str,
         expires_in: Duration,
     ) -> Result<Session, torii_core::Error> {
@@ -153,7 +151,7 @@ pub(crate) mod test {
         storage
             .create_session(
                 &Session::builder()
-                    .token(SessionToken::new(session_id))
+                    .token(token.clone())
                     .user_id(UserId::new(user_id))
                     .user_agent(Some("test".to_string()))
                     .ip_address(Some("127.0.0.1".to_string()))
@@ -175,22 +173,27 @@ pub(crate) mod test {
             .await
             .expect("Failed to create user");
 
-        let _session = create_test_session(&storage, "1", "1", Duration::from_secs(1000))
+        let token = SessionToken::new_random();
+        let _session = create_test_session(&storage, &token, "1", Duration::from_secs(1000))
             .await
             .expect("Failed to create session");
 
         let fetched = storage
-            .get_session(&SessionToken::new("1"))
+            .get_session(&token)
             .await
             .expect("Failed to get session");
+        assert!(fetched.is_some());
         assert_eq!(fetched.unwrap().user_id, UserId::new("1"));
 
         storage
-            .delete_session(&SessionToken::new("1"))
+            .delete_session(&token)
             .await
             .expect("Failed to delete session");
-        let deleted = storage.get_session(&SessionToken::new("1")).await;
-        assert!(deleted.is_err());
+        let deleted = storage
+            .get_session(&token)
+            .await
+            .expect("Failed to get session");
+        assert!(deleted.is_none());
     }
 
     #[tokio::test]
@@ -203,22 +206,22 @@ pub(crate) mod test {
             .expect("Failed to create user");
 
         // Create an already expired session by setting expires_at in the past
-        let expired_session = Session {
-            token: SessionToken::new("expired"),
-            user_id: UserId::new("1"),
-            user_agent: None,
-            ip_address: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
-        };
+        let expired_token = SessionToken::new_random();
+        let expired_session = Session::builder()
+            .token(expired_token.clone())
+            .user_id(UserId::new("1"))
+            .expires_at(chrono::Utc::now() - chrono::Duration::seconds(1))
+            .build()
+            .unwrap();
+
         storage
             .create_session(&expired_session)
             .await
             .expect("Failed to create expired session");
 
         // Create valid session
-        create_test_session(&storage, "valid", "1", Duration::from_secs(3600))
+        let valid_token = SessionToken::new_random();
+        create_test_session(&storage, &valid_token, "1", Duration::from_secs(3600))
             .await
             .expect("Failed to create valid session");
 
@@ -229,14 +232,18 @@ pub(crate) mod test {
             .expect("Failed to cleanup sessions");
 
         // Verify expired session was removed
-        let expired_session = storage.get_session(&SessionToken::new("expired")).await;
-        assert!(expired_session.is_err());
+        let expired_result = storage
+            .get_session(&expired_token)
+            .await
+            .expect("Failed to get session");
+        assert!(expired_result.is_none());
 
         // Verify valid session remains
         let valid_session = storage
-            .get_session(&SessionToken::new("valid"))
+            .get_session(&valid_token)
             .await
             .expect("Failed to get valid session");
+        assert!(valid_session.is_some());
         assert_eq!(valid_session.unwrap().user_id, UserId::new("1"));
     }
 
@@ -255,15 +262,18 @@ pub(crate) mod test {
             .expect("Failed to create user 2");
 
         // Create sessions for user 1
-        create_test_session(&storage, "session1", "1", Duration::from_secs(3600))
+        let token1 = SessionToken::new_random();
+        create_test_session(&storage, &token1, "1", Duration::from_secs(3600))
             .await
             .expect("Failed to create session 1");
-        create_test_session(&storage, "session2", "1", Duration::from_secs(3600))
+        let token2 = SessionToken::new_random();
+        create_test_session(&storage, &token2, "1", Duration::from_secs(3600))
             .await
             .expect("Failed to create session 2");
 
         // Create session for user 2
-        create_test_session(&storage, "session3", "2", Duration::from_secs(3600))
+        let token3 = SessionToken::new_random();
+        create_test_session(&storage, &token3, "2", Duration::from_secs(3600))
             .await
             .expect("Failed to create session 3");
 
@@ -274,16 +284,23 @@ pub(crate) mod test {
             .expect("Failed to delete sessions for user");
 
         // Verify user 1's sessions are deleted
-        let session1 = storage.get_session(&SessionToken::new("session1")).await;
-        assert!(session1.is_err());
-        let session2 = storage.get_session(&SessionToken::new("session2")).await;
-        assert!(session2.is_err());
+        let session1 = storage
+            .get_session(&token1)
+            .await
+            .expect("Failed to get session");
+        assert!(session1.is_none());
+        let session2 = storage
+            .get_session(&token2)
+            .await
+            .expect("Failed to get session");
+        assert!(session2.is_none());
 
         // Verify user 2's session remains
         let session3 = storage
-            .get_session(&SessionToken::new("session3"))
+            .get_session(&token3)
             .await
             .expect("Failed to get session 3");
+        assert!(session3.is_some());
         assert_eq!(session3.unwrap().user_id, UserId::new("2"));
     }
 }

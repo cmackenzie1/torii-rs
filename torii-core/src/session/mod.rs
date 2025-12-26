@@ -205,6 +205,20 @@ impl SessionToken {
     pub fn is_opaque(&self) -> bool {
         matches!(self, SessionToken::Opaque(_))
     }
+
+    /// Compute the SHA256 hash of this token for storage.
+    ///
+    /// This is used for storing session tokens securely in the database.
+    /// The hash is deterministic so lookups can be performed by hashing
+    /// the provided token and querying by hash.
+    pub fn token_hash(&self) -> String {
+        crate::crypto::hash_token(self.expose_secret())
+    }
+
+    /// Verify this token against a stored hash using constant-time comparison.
+    pub fn verify_hash(&self, stored_hash: &str) -> bool {
+        crate::crypto::verify_token_hash(self.expose_secret(), stored_hash)
+    }
 }
 
 impl Default for SessionToken {
@@ -505,6 +519,11 @@ pub struct Session {
     /// The unique identifier for the session.
     pub token: SessionToken,
 
+    /// The SHA256 hash of the token (stored in database for secure lookups).
+    /// This field is computed from the token and should be used for database queries.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub token_hash: String,
+
     /// The unique identifier for the user.
     pub user_id: UserId,
 
@@ -565,8 +584,10 @@ impl Session {
             (None, None)
         };
 
+        let token_hash = token.token_hash();
         Self {
             token,
+            token_hash,
             user_id: UserId::new(&claims.sub),
             user_agent,
             ip_address,
@@ -626,8 +647,11 @@ impl SessionBuilder {
 
     pub fn build(self) -> Result<Session, Error> {
         let now = Utc::now();
+        let token = self.token.unwrap_or_default();
+        let token_hash = token.token_hash();
         Ok(Session {
-            token: self.token.unwrap_or_default(),
+            token,
+            token_hash,
             user_id: self.user_id.ok_or(ValidationError::MissingField(
                 "User ID is required".to_string(),
             ))?,

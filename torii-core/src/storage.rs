@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+use secrecy::{ExposeSecret, SecretString};
+
 use crate::{
     Error, OAuthAccount, Session, User, UserId, error::utilities::RequiredFieldExt,
     session::SessionToken,
@@ -245,10 +247,27 @@ impl FromStr for TokenPurpose {
 }
 
 /// Generic secure token for various authentication purposes
-#[derive(Debug, Clone)]
+///
+/// # Security
+///
+/// This struct separates the plaintext token (sent to the user) from the token hash
+/// (stored in the database) to prevent timing attacks during token verification.
+/// The `token_hash` field contains a SHA256 hash that should be stored in the database,
+/// while `token` contains the plaintext value that is only returned to the user.
+///
+/// The plaintext token is wrapped in `SecretString` to prevent accidental exposure
+/// in logs or debug output. Use `expose_secret()` to access the value when needed.
+///
+/// When loading tokens from storage, the `token` field will be `None` since only
+/// the hash is stored. Verification should be done using [`crate::crypto::verify_token_hash`].
+#[derive(Clone)]
 pub struct SecureToken {
     pub user_id: UserId,
-    pub token: String,
+    /// The plaintext token value (only set when creating a new token, not when loading from storage)
+    /// Wrapped in SecretString to prevent accidental logging
+    token: Option<SecretString>,
+    /// The SHA256 hash of the token (stored in database for secure verification)
+    pub token_hash: String,
     pub purpose: TokenPurpose,
     pub used_at: Option<DateTime<Utc>>,
     pub expires_at: DateTime<Utc>,
@@ -257,9 +276,15 @@ pub struct SecureToken {
 }
 
 impl SecureToken {
+    /// Create a new SecureToken with both plaintext and hash
+    ///
+    /// This constructor is used when creating a new token where both
+    /// the plaintext (to return to user) and hash (to store) are available.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         user_id: UserId,
         token: String,
+        token_hash: String,
         purpose: TokenPurpose,
         used_at: Option<DateTime<Utc>>,
         expires_at: DateTime<Utc>,
@@ -268,7 +293,33 @@ impl SecureToken {
     ) -> Self {
         Self {
             user_id,
-            token,
+            token: Some(SecretString::from(token)),
+            token_hash,
+            purpose,
+            used_at,
+            expires_at,
+            created_at,
+            updated_at,
+        }
+    }
+
+    /// Create a SecureToken from stored data (hash only, no plaintext)
+    ///
+    /// This constructor is used when loading a token from storage where
+    /// only the hash is available (plaintext is never stored).
+    pub fn from_storage(
+        user_id: UserId,
+        token_hash: String,
+        purpose: TokenPurpose,
+        used_at: Option<DateTime<Utc>>,
+        expires_at: DateTime<Utc>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            user_id,
+            token: None, // Plaintext not available from storage
+            token_hash,
             purpose,
             used_at,
             expires_at,
@@ -280,12 +331,42 @@ impl SecureToken {
     pub fn used(&self) -> bool {
         self.used_at.is_some()
     }
+
+    /// Get the plaintext token value.
+    ///
+    /// This is only available when the token was just created.
+    /// Returns `None` when the token was loaded from storage.
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_ref().map(|s| s.expose_secret())
+    }
+
+    /// Verify a plaintext token against this token's hash using constant-time comparison
+    ///
+    /// This method uses SHA256 and constant-time comparison to prevent timing attacks.
+    pub fn verify(&self, token: &str) -> bool {
+        crate::crypto::verify_token_hash(token, &self.token_hash)
+    }
+}
+
+impl std::fmt::Debug for SecureToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecureToken")
+            .field("user_id", &self.user_id)
+            .field("token", &"[REDACTED]")
+            .field("token_hash", &self.token_hash)
+            .field("purpose", &self.purpose)
+            .field("used_at", &self.used_at)
+            .field("expires_at", &self.expires_at)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
 }
 
 impl PartialEq for SecureToken {
     fn eq(&self, other: &Self) -> bool {
         self.user_id == other.user_id
-            && self.token == other.token
+            && self.token_hash == other.token_hash
             && self.purpose == other.purpose
             && self.used_at == other.used_at
             // Some databases may not store the timestamp with more precision than seconds, so we compare the timestamps as integers
@@ -299,20 +380,39 @@ impl PartialEq for SecureToken {
 ///
 /// This trait provides storage for generic secure tokens that can be used
 /// for various authentication purposes like magic links, password resets, and email verification.
+///
+/// # Security
+///
+/// Token storage uses SHA256 hashed tokens. Since tokens are generated with
+/// 256 bits of entropy, SHA256 provides sufficient security for storage.
+/// Verification is done using constant-time comparison via [`crate::crypto::verify_token_hash`].
+///
+/// Lookups are performed by hash, avoiding the need to iterate over all tokens.
 #[async_trait]
 pub trait TokenStorage: UserStorage {
     /// Save a secure token to storage
+    ///
+    /// The token's `token_hash` field should be stored (not the plaintext token).
     async fn save_secure_token(&self, token: &SecureToken) -> Result<(), Error>;
 
-    /// Get a secure token by its string value and purpose
-    async fn get_secure_token(
+    /// Get a token by its hash
+    ///
+    /// Returns the token if found and valid (unexpired, unused), None otherwise.
+    /// The caller should use constant-time comparison to verify the token.
+    async fn get_token_by_hash(
         &self,
-        token: &str,
+        token_hash: &str,
         purpose: TokenPurpose,
     ) -> Result<Option<SecureToken>, Error>;
 
-    /// Mark a secure token as used
-    async fn set_secure_token_used(&self, token: &str, purpose: TokenPurpose) -> Result<(), Error>;
+    /// Mark a secure token as used by its hash
+    ///
+    /// After successful verification, call this to mark the token as consumed.
+    async fn set_secure_token_used_by_hash(
+        &self,
+        token_hash: &str,
+        purpose: TokenPurpose,
+    ) -> Result<(), Error>;
 
     /// Clean up expired tokens for all purposes
     async fn cleanup_expired_secure_tokens(&self) -> Result<(), Error>;
