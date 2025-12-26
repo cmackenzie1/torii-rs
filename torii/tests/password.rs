@@ -329,6 +329,80 @@ async fn test_password_auth_with_jwt() {
     assert!(result.is_err());
 }
 
+/// Test that registration rejects weak passwords (fixes GitHub issue #84)
+#[cfg(all(feature = "password", feature = "sqlite"))]
+#[tokio::test]
+async fn test_register_rejects_weak_password() {
+    // Set up SQLite storage
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
+
+    // Create Torii instance with repository provider
+    let torii = Torii::new(Arc::new(repositories));
+
+    // Try to register with a weak password (less than 8 characters)
+    let email = "weak@example.com";
+    let weak_password = "weak";
+    let result = torii.password().register(email, weak_password).await;
+
+    // Should fail with a validation error
+    assert!(
+        result.is_err(),
+        "Registration with weak password should fail"
+    );
+}
+
+/// Test that registration rejects empty passwords (fixes GitHub issue #84)
+#[cfg(all(feature = "password", feature = "sqlite"))]
+#[tokio::test]
+async fn test_register_rejects_empty_password() {
+    // Set up SQLite storage
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
+
+    // Create Torii instance with repository provider
+    let torii = Torii::new(Arc::new(repositories));
+
+    // Try to register with an empty password
+    let email = "empty@example.com";
+    let empty_password = "";
+    let result = torii.password().register(email, empty_password).await;
+
+    // Should fail with a validation error
+    assert!(
+        result.is_err(),
+        "Registration with empty password should fail"
+    );
+}
+
+/// Test that registration accepts valid passwords (fixes GitHub issue #84)
+#[cfg(all(feature = "password", feature = "sqlite"))]
+#[tokio::test]
+async fn test_register_accepts_valid_password() {
+    // Set up SQLite storage
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let repositories = SqliteRepositoryProvider::new(pool);
+    repositories.migrate().await.unwrap();
+
+    // Create Torii instance with repository provider
+    let torii = Torii::new(Arc::new(repositories));
+
+    // Register with a valid password (8+ characters)
+    let email = "valid@example.com";
+    let valid_password = "validpassword123";
+    let result = torii.password().register(email, valid_password).await;
+
+    // Should succeed
+    assert!(
+        result.is_ok(),
+        "Registration with valid password should succeed"
+    );
+    let user = result.unwrap();
+    assert_eq!(user.email, email);
+}
+
 #[cfg(all(feature = "password", feature = "sqlite"))]
 #[tokio::test]
 async fn test_delete_user() {

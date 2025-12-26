@@ -4,6 +4,7 @@ use crate::{
     repositories::{PasswordRepository, TokenRepository, UserRepository},
     services::{PasswordService, UserService},
     storage::TokenPurpose,
+    validation::validate_password,
 };
 use chrono::Duration;
 use std::sync::Arc;
@@ -93,11 +94,16 @@ impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordReset
     /// Complete the password reset process
     ///
     /// This will:
-    /// 1. Verify and consume the reset token
-    /// 2. Update the user's password
+    /// 1. Validate the new password strength
+    /// 2. Verify and consume the reset token
+    /// 3. Update the user's password
     ///
     /// Returns the user whose password was reset
     pub async fn reset_password(&self, token: &str, new_password: &str) -> Result<User, Error> {
+        // Validate password strength before consuming the token
+        // This prevents wasting the token on an invalid password
+        validate_password(new_password)?;
+
         // Verify and consume the token
         let secure_token = self
             .token_repository
@@ -498,5 +504,88 @@ mod tests {
             .reset_password(&token.token, "another_password")
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_reset_password_rejects_weak_password() {
+        let user_repo = Arc::new(MockUserRepository::default());
+        let password_repo = Arc::new(MockPasswordRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
+
+        // Create a user first
+        let user = user_repo
+            .create(
+                NewUser::builder()
+                    .email("test@example.com".to_string())
+                    .build()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let service =
+            PasswordResetService::new(user_repo, password_repo.clone(), token_repo.clone());
+
+        // Create a token directly for testing
+        let token = token_repo
+            .create_token(&user.id, TokenPurpose::PasswordReset, Duration::minutes(15))
+            .await
+            .unwrap();
+
+        // Try to reset with a weak password (too short)
+        let result = service.reset_password(&token.token, "weak").await;
+        assert!(result.is_err());
+
+        // Verify the token was NOT consumed (password validation happens before token consumption)
+        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        assert!(
+            is_valid,
+            "Token should still be valid after weak password rejection"
+        );
+
+        // Verify password was NOT set
+        let passwords = password_repo.passwords.lock().await;
+        assert!(
+            !passwords.contains_key(&user.id),
+            "Password should not be set after weak password rejection"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reset_password_rejects_empty_password() {
+        let user_repo = Arc::new(MockUserRepository::default());
+        let password_repo = Arc::new(MockPasswordRepository::default());
+        let token_repo = Arc::new(MockTokenRepository::default());
+
+        // Create a user first
+        let user = user_repo
+            .create(
+                NewUser::builder()
+                    .email("test@example.com".to_string())
+                    .build()
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let service =
+            PasswordResetService::new(user_repo, password_repo.clone(), token_repo.clone());
+
+        // Create a token
+        let token = token_repo
+            .create_token(&user.id, TokenPurpose::PasswordReset, Duration::minutes(15))
+            .await
+            .unwrap();
+
+        // Try to reset with an empty password
+        let result = service.reset_password(&token.token, "").await;
+        assert!(result.is_err());
+
+        // Verify the token was NOT consumed
+        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        assert!(
+            is_valid,
+            "Token should still be valid after empty password rejection"
+        );
     }
 }
