@@ -336,6 +336,7 @@ mod tests {
     use std::time::Duration;
 
     use sqlx::{Sqlite, types::chrono::Utc};
+    use torii_core::SessionToken;
     use torii_migration::{Migration, MigrationManager};
 
     use super::*;
@@ -428,7 +429,8 @@ mod tests {
         assert_eq!(user.created_at, user.updated_at);
 
         // Create test session
-        let session = create_test_session(&storage, "session1", "1", Duration::from_secs(3600))
+        let session_token = SessionToken::new_random();
+        let session = create_test_session(&storage, &session_token, "1", Duration::from_secs(3600))
             .await
             .expect("Failed to create session");
 

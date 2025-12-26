@@ -7,9 +7,10 @@ use torii_core::{Session, SessionStorage, UserId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PostgresSession {
+    #[allow(dead_code)]
     pub id: Option<i64>,
     pub user_id: String,
-    pub token: String,
+    pub token: String, // This stores the hash, not plaintext
     pub user_agent: Option<String>,
     pub ip_address: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -17,41 +18,12 @@ pub struct PostgresSession {
     pub expires_at: DateTime<Utc>,
 }
 
-impl From<PostgresSession> for Session {
-    fn from(session: PostgresSession) -> Self {
-        Session::builder()
-            .token(SessionToken::new(&session.token))
-            .user_id(UserId::new(&session.user_id))
-            .user_agent(session.user_agent)
-            .ip_address(session.ip_address)
-            .created_at(session.created_at)
-            .updated_at(session.updated_at)
-            .expires_at(session.expires_at)
-            .build()
-            .unwrap()
-    }
-}
-
-impl From<Session> for PostgresSession {
-    fn from(session: Session) -> Self {
-        PostgresSession {
-            id: None,
-            token: session.token.expose_secret().to_string(),
-            user_id: session.user_id.into_inner(),
-            user_agent: session.user_agent,
-            ip_address: session.ip_address,
-            created_at: session.created_at,
-            updated_at: session.updated_at,
-            expires_at: session.expires_at,
-        }
-    }
-}
-
 #[async_trait]
 impl SessionStorage for PostgresStorage {
     async fn create_session(&self, session: &Session) -> Result<Session, torii_core::Error> {
+        // Store the hash, not the plaintext token
         sqlx::query("INSERT INTO sessions (token, user_id, user_agent, ip_address, created_at, updated_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-            .bind(session.token.expose_secret())
+            .bind(&session.token_hash) // Store hash, not plaintext
             .bind(session.user_id.as_str())
             .bind(&session.user_agent)
             .bind(&session.ip_address)
@@ -65,13 +37,17 @@ impl SessionStorage for PostgresStorage {
                 StorageError::Database("Failed to create session".to_string())
             })?;
 
-        Ok(self.get_session(&session.token).await?.unwrap())
+        // Return the original session (caller already has plaintext token)
+        Ok(session.clone())
     }
 
     async fn get_session(
         &self,
         token: &SessionToken,
     ) -> Result<Option<Session>, torii_core::Error> {
+        // Compute hash for lookup
+        let token_hash = token.token_hash();
+
         let session = sqlx::query_as::<_, PostgresSession>(
             r#"
             SELECT id, token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
@@ -79,20 +55,41 @@ impl SessionStorage for PostgresStorage {
             WHERE token = $1
             "#,
         )
-        .bind(token.expose_secret())
-        .fetch_one(&self.pool)
+        .bind(&token_hash)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to get session");
             StorageError::Database("Failed to get session".to_string())
         })?;
 
-        Ok(Some(session.into()))
+        match session {
+            Some(s) => {
+                // Verify using constant-time comparison
+                if token.verify_hash(&s.token) {
+                    Ok(Some(Session {
+                        token: token.clone(),
+                        token_hash: s.token,
+                        user_id: UserId::new(&s.user_id),
+                        user_agent: s.user_agent,
+                        ip_address: s.ip_address,
+                        created_at: s.created_at,
+                        updated_at: s.updated_at,
+                        expires_at: s.expires_at,
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Ok(None),
+        }
     }
 
     async fn delete_session(&self, token: &SessionToken) -> Result<(), torii_core::Error> {
+        let token_hash = token.token_hash();
+
         sqlx::query("DELETE FROM sessions WHERE token = $1")
-            .bind(token.expose_secret())
+            .bind(&token_hash)
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -170,14 +167,14 @@ mod test {
     async fn test_postgres_session_storage() {
         let storage = crate::tests::setup_test_db().await;
         let user_id = UserId::new_random();
-        let session_id = SessionToken::new_random();
+        let session_token = SessionToken::new_random();
         crate::tests::create_test_user(&storage, &user_id)
             .await
             .expect("Failed to create user");
 
         let _session = crate::tests::create_test_session(
             &storage,
-            &session_id,
+            &session_token,
             &user_id,
             Duration::from_secs(1000),
         )
@@ -185,17 +182,21 @@ mod test {
         .expect("Failed to create session");
 
         let fetched = storage
-            .get_session(&session_id)
+            .get_session(&session_token)
             .await
             .expect("Failed to get session");
+        assert!(fetched.is_some());
         assert_eq!(fetched.unwrap().user_id, user_id);
 
         storage
-            .delete_session(&session_id)
+            .delete_session(&session_token)
             .await
             .expect("Failed to delete session");
-        let deleted = storage.get_session(&session_id).await;
-        assert!(deleted.is_err());
+        let deleted = storage
+            .get_session(&session_token)
+            .await
+            .expect("Failed to get session");
+        assert!(deleted.is_none());
     }
 
     #[tokio::test]
@@ -207,16 +208,14 @@ mod test {
             .expect("Failed to create user");
 
         // Create an already expired session by setting expires_at in the past
-        let session_id = SessionToken::new_random();
-        let expired_session = Session {
-            token: SessionToken::new_random(),
-            user_id: user_id.clone(),
-            user_agent: None,
-            ip_address: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
-        };
+        let session_token = SessionToken::new_random();
+        let expired_session = Session::builder()
+            .token(SessionToken::new_random())
+            .user_id(user_id.clone())
+            .expires_at(chrono::Utc::now() - chrono::Duration::seconds(1))
+            .build()
+            .unwrap();
+
         storage
             .create_session(&expired_session)
             .await
@@ -225,7 +224,7 @@ mod test {
         // Create valid session
         crate::tests::create_test_session(
             &storage,
-            &session_id,
+            &session_token,
             &user_id,
             Duration::from_secs(3600),
         )
@@ -239,14 +238,18 @@ mod test {
             .expect("Failed to cleanup sessions");
 
         // Verify expired session was removed
-        let expired_session = storage.get_session(&expired_session.token).await;
-        assert!(expired_session.is_err());
+        let expired_result = storage
+            .get_session(&expired_session.token)
+            .await
+            .expect("Failed to get session");
+        assert!(expired_result.is_none());
 
         // Verify valid session remains
         let valid_session = storage
-            .get_session(&session_id)
+            .get_session(&session_token)
             .await
             .expect("Failed to get valid session");
+        assert!(valid_session.is_some());
         assert_eq!(valid_session.unwrap().user_id, user_id);
     }
 
@@ -265,19 +268,19 @@ mod test {
             .expect("Failed to create user 2");
 
         // Create sessions for user 1
-        let session_id1 = SessionToken::new_random();
+        let session_token1 = SessionToken::new_random();
         crate::tests::create_test_session(
             &storage,
-            &session_id1,
+            &session_token1,
             &user_id1,
             Duration::from_secs(3600),
         )
         .await
         .expect("Failed to create session 1");
-        let session_id2 = SessionToken::new_random();
+        let session_token2 = SessionToken::new_random();
         crate::tests::create_test_session(
             &storage,
-            &session_id2,
+            &session_token2,
             &user_id1,
             Duration::from_secs(3600),
         )
@@ -285,10 +288,10 @@ mod test {
         .expect("Failed to create session 2");
 
         // Create session for user 2
-        let session_id3 = SessionToken::new_random();
+        let session_token3 = SessionToken::new_random();
         crate::tests::create_test_session(
             &storage,
-            &session_id3,
+            &session_token3,
             &user_id2,
             Duration::from_secs(3600),
         )
@@ -302,16 +305,23 @@ mod test {
             .expect("Failed to delete sessions for user");
 
         // Verify user 1's sessions are deleted
-        let session1 = storage.get_session(&session_id1).await;
-        assert!(session1.is_err());
-        let session2 = storage.get_session(&session_id2).await;
-        assert!(session2.is_err());
+        let session1 = storage
+            .get_session(&session_token1)
+            .await
+            .expect("Failed to get session");
+        assert!(session1.is_none());
+        let session2 = storage
+            .get_session(&session_token2)
+            .await
+            .expect("Failed to get session");
+        assert!(session2.is_none());
 
         // Verify user 2's session remains
         let session3 = storage
-            .get_session(&session_id3)
+            .get_session(&session_token3)
             .await
             .expect("Failed to get session 3");
+        assert!(session3.is_some());
         assert_eq!(session3.unwrap().user_id, user_id2);
     }
 }

@@ -87,15 +87,12 @@ mod tests {
     fn create_test_session(user_id: &UserId) -> Session {
         let expires_at = Utc::now() + Duration::hours(1);
 
-        Session {
-            token: SessionToken::new_random(),
-            user_id: user_id.clone(),
-            expires_at,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            ip_address: None,
-            user_agent: None,
-        }
+        Session::builder()
+            .token(SessionToken::new_random())
+            .user_id(user_id.clone())
+            .expires_at(expires_at)
+            .build()
+            .unwrap()
     }
 
     #[tokio::test]
@@ -193,15 +190,12 @@ mod tests {
         let repo = SeaORMSessionRepository::new(pool.clone());
         let user_id = create_test_user(&pool).await;
 
-        let expired_session = Session {
-            token: SessionToken::new_random(),
-            user_id: user_id.clone(),
-            expires_at: Utc::now() - Duration::hours(1),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            ip_address: None,
-            user_agent: None,
-        };
+        let expired_session = Session::builder()
+            .token(SessionToken::new_random())
+            .user_id(user_id.clone())
+            .expires_at(Utc::now() - Duration::hours(1))
+            .build()
+            .unwrap();
 
         let valid_session = create_test_session(&user_id);
         let expired_token = expired_session.token.clone();

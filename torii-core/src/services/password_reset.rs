@@ -56,7 +56,13 @@ impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordReset
                 .create_token(&user.id, TokenPurpose::PasswordReset, expires_in)
                 .await?;
 
-            Ok(Some((user, reset_token.token)))
+            // Extract the plaintext token to return to the caller
+            let token_value = reset_token
+                .token()
+                .expect("Token should be available after creation")
+                .to_string();
+
+            Ok(Some((user, token_value)))
         } else {
             Ok(None)
         }
@@ -76,7 +82,13 @@ impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordReset
                 .create_token(&user.id, TokenPurpose::PasswordReset, expires_in)
                 .await?;
 
-            Ok(Some((user, reset_token.token)))
+            // Extract the plaintext token to return to the caller
+            let token_value = reset_token
+                .token()
+                .expect("Token should be available after creation")
+                .to_string();
+
+            Ok(Some((user, token_value)))
         } else {
             Ok(None)
         }
@@ -259,6 +271,7 @@ mod tests {
 
     #[derive(Default)]
     struct MockTokenRepository {
+        // Store tokens by hash for O(1) lookup
         tokens: Arc<Mutex<HashMap<String, SecureToken>>>,
     }
 
@@ -270,23 +283,28 @@ mod tests {
             purpose: TokenPurpose,
             expires_in: Duration,
         ) -> Result<SecureToken, Error> {
+            use crate::crypto::hash_token;
+
             let token_str = format!("token_{}", uuid::Uuid::new_v4());
+            let token_hash = hash_token(&token_str);
             let expires_at = Utc::now() + expires_in;
 
-            let secure_token = SecureToken {
-                user_id: user_id.clone(),
-                token: token_str.clone(),
+            let secure_token = SecureToken::new(
+                user_id.clone(),
+                token_str,
+                token_hash.clone(),
                 purpose,
-                used_at: None,
+                None,
                 expires_at,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            };
+                Utc::now(),
+                Utc::now(),
+            );
 
+            // Store by hash for O(1) lookup
             self.tokens
                 .lock()
                 .await
-                .insert(token_str, secure_token.clone());
+                .insert(token_hash, secure_token.clone());
             Ok(secure_token)
         }
 
@@ -295,34 +313,47 @@ mod tests {
             token: &str,
             purpose: TokenPurpose,
         ) -> Result<Option<SecureToken>, Error> {
+            use crate::crypto::hash_token;
+
             let mut tokens = self.tokens.lock().await;
-            if let Some(secure_token) = tokens.get(token) {
-                if secure_token.expires_at > Utc::now()
+            let token_hash = hash_token(token);
+
+            // O(1) lookup by hash
+            if let Some(secure_token) = tokens.get(&token_hash) {
+                if secure_token.verify(token)
+                    && secure_token.expires_at > Utc::now()
                     && secure_token.used_at.is_none()
                     && secure_token.purpose == purpose
                 {
                     let mut verified_token = secure_token.clone();
                     verified_token.used_at = Some(Utc::now());
                     verified_token.updated_at = Utc::now();
-                    tokens.insert(token.to_string(), verified_token.clone());
-                    Ok(Some(verified_token))
-                } else {
-                    Ok(None)
+                    tokens.insert(token_hash, verified_token.clone());
+                    return Ok(Some(verified_token));
                 }
-            } else {
-                Ok(None)
             }
+
+            Ok(None)
         }
 
         async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
+            use crate::crypto::hash_token;
+
             let tokens = self.tokens.lock().await;
-            if let Some(secure_token) = tokens.get(token) {
-                Ok(secure_token.expires_at > Utc::now()
+            let token_hash = hash_token(token);
+
+            // O(1) lookup by hash
+            if let Some(secure_token) = tokens.get(&token_hash) {
+                if secure_token.verify(token)
+                    && secure_token.expires_at > Utc::now()
                     && secure_token.used_at.is_none()
-                    && secure_token.purpose == purpose)
-            } else {
-                Ok(false)
+                    && secure_token.purpose == purpose
+                {
+                    return Ok(true);
+                }
             }
+
+            Ok(false)
         }
 
         async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
@@ -409,7 +440,7 @@ mod tests {
 
         // Reset the password
         let result = service
-            .reset_password(&token.token, "new_password123")
+            .reset_password(token.token().unwrap(), "new_password123")
             .await;
         assert!(result.is_ok());
 
@@ -446,12 +477,14 @@ mod tests {
             .await
             .unwrap();
 
+        let token_value = token.token().unwrap();
+
         // Verify token (should not consume it)
-        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        let is_valid = service.verify_reset_token(token_value).await.unwrap();
         assert!(is_valid);
 
         // Verify token again (should still be valid since check_token doesn't consume it)
-        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        let is_valid = service.verify_reset_token(token_value).await.unwrap();
         assert!(is_valid);
 
         // Test invalid token
@@ -485,23 +518,25 @@ mod tests {
             .await
             .unwrap();
 
+        let token_value = token.token().unwrap().to_string();
+
         // Verify token first (should not consume it)
-        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        let is_valid = service.verify_reset_token(&token_value).await.unwrap();
         assert!(is_valid);
 
         // Now reset the password (should consume the token)
         let result = service
-            .reset_password(&token.token, "new_password123")
+            .reset_password(&token_value, "new_password123")
             .await;
         assert!(result.is_ok());
 
         // Verify token should now be false since it was consumed
-        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        let is_valid = service.verify_reset_token(&token_value).await.unwrap();
         assert!(!is_valid);
 
         // Attempting to reset again should fail
         let result = service
-            .reset_password(&token.token, "another_password")
+            .reset_password(&token_value, "another_password")
             .await;
         assert!(result.is_err());
     }
