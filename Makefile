@@ -17,9 +17,9 @@ setup:
 fmt:
 	@cargo fmt --all
 
-# Run clippy with all features
+# Run clippy with all features and all targets
 lint:
-	@cargo clippy --all-features -- -D warnings
+	@cargo clippy --all-features --all-targets -- -D warnings
 
 # Run tests using nextest
 test:
@@ -35,7 +35,7 @@ clean:
 
 # Build with all features
 build:
-	@cargo build --all-features
+	@cargo build --all-features --all-targets
 
 # Build for release
 release:
