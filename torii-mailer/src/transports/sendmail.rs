@@ -95,15 +95,13 @@ mod tests {
 
     #[test]
     fn test_sendmail_transport_creation() {
-        let transport = SendmailTransport::new();
-        // Just test that it can be created
-        assert!(true);
+        let _transport = SendmailTransport::new();
+        // Just test that it can be created without panicking
     }
 
     #[test]
     fn test_sendmail_with_command() {
-        let transport = SendmailTransport::with_command("/usr/sbin/sendmail");
-        // Just test that it can be created
-        assert!(true);
+        let _transport = SendmailTransport::with_command("/usr/sbin/sendmail");
+        // Just test that it can be created without panicking
     }
 }

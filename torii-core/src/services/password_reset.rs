@@ -319,18 +319,17 @@ mod tests {
             let token_hash = hash_token(token);
 
             // O(1) lookup by hash
-            if let Some(secure_token) = tokens.get(&token_hash) {
-                if secure_token.verify(token)
-                    && secure_token.expires_at > Utc::now()
-                    && secure_token.used_at.is_none()
-                    && secure_token.purpose == purpose
-                {
-                    let mut verified_token = secure_token.clone();
-                    verified_token.used_at = Some(Utc::now());
-                    verified_token.updated_at = Utc::now();
-                    tokens.insert(token_hash, verified_token.clone());
-                    return Ok(Some(verified_token));
-                }
+            if let Some(secure_token) = tokens.get(&token_hash)
+                && secure_token.verify(token)
+                && secure_token.expires_at > Utc::now()
+                && secure_token.used_at.is_none()
+                && secure_token.purpose == purpose
+            {
+                let mut verified_token = secure_token.clone();
+                verified_token.used_at = Some(Utc::now());
+                verified_token.updated_at = Utc::now();
+                tokens.insert(token_hash, verified_token.clone());
+                return Ok(Some(verified_token));
             }
 
             Ok(None)
@@ -343,14 +342,13 @@ mod tests {
             let token_hash = hash_token(token);
 
             // O(1) lookup by hash
-            if let Some(secure_token) = tokens.get(&token_hash) {
-                if secure_token.verify(token)
-                    && secure_token.expires_at > Utc::now()
-                    && secure_token.used_at.is_none()
-                    && secure_token.purpose == purpose
-                {
-                    return Ok(true);
-                }
+            if let Some(secure_token) = tokens.get(&token_hash)
+                && secure_token.verify(token)
+                && secure_token.expires_at > Utc::now()
+                && secure_token.used_at.is_none()
+                && secure_token.purpose == purpose
+            {
+                return Ok(true);
             }
 
             Ok(false)

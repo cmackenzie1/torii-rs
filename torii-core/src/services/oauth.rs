@@ -223,11 +223,13 @@ mod tests {
         }
     }
 
+    type PkceVerifierStore = Arc<Mutex<HashMap<String, (String, DateTime<Utc>)>>>;
+
     #[derive(Default)]
     struct MockOAuthRepository {
         accounts: Arc<Mutex<HashMap<(String, String), OAuthAccount>>>,
         user_links: Arc<Mutex<HashMap<(String, String), UserId>>>,
-        pkce_verifiers: Arc<Mutex<HashMap<String, (String, DateTime<Utc>)>>>,
+        pkce_verifiers: PkceVerifierStore,
     }
 
     #[async_trait]
