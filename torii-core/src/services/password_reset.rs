@@ -566,11 +566,11 @@ mod tests {
             .unwrap();
 
         // Try to reset with a weak password (too short)
-        let result = service.reset_password(&token.token, "weak").await;
+        let result = service.reset_password(&token.token(), "weak").await;
         assert!(result.is_err());
 
         // Verify the token was NOT consumed (password validation happens before token consumption)
-        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        let is_valid = service.verify_reset_token(&token.token()).await.unwrap();
         assert!(
             is_valid,
             "Token should still be valid after weak password rejection"
@@ -611,11 +611,11 @@ mod tests {
             .unwrap();
 
         // Try to reset with an empty password
-        let result = service.reset_password(&token.token, "").await;
+        let result = service.reset_password(&token.token(), "").await;
         assert!(result.is_err());
 
         // Verify the token was NOT consumed
-        let is_valid = service.verify_reset_token(&token.token).await.unwrap();
+        let is_valid = service.verify_reset_token(&token.token()).await.unwrap();
         assert!(
             is_valid,
             "Token should still be valid after empty password rejection"
