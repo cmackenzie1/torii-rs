@@ -171,7 +171,6 @@ mod mailer_impl {
         use super::*;
         use std::path::PathBuf;
         use torii_mailer::config::TransportConfig;
-        use torii_mailer::prelude::*;
 
         struct MockMailer {
             sent_emails: std::sync::Arc<std::sync::Mutex<Vec<Email>>>,
@@ -184,6 +183,7 @@ mod mailer_impl {
                 }
             }
 
+            #[allow(dead_code)]
             fn get_sent_emails(&self) -> Vec<Email> {
                 self.sent_emails.lock().unwrap().clone()
             }
