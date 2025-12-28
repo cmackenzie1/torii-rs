@@ -3,6 +3,7 @@
 //! This module contains concrete service implementations that encapsulate
 //! authentication and user management logic.
 
+pub mod brute_force;
 pub mod magic_link;
 pub mod mailer;
 pub mod oauth;
@@ -12,6 +13,7 @@ pub mod password_reset;
 pub mod session;
 pub mod user;
 
+pub use brute_force::BruteForceProtectionService;
 pub use magic_link::MagicLinkService;
 pub use oauth::OAuthService;
 pub use passkey::PasskeyService;

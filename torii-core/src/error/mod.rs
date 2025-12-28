@@ -1,5 +1,6 @@
 pub mod utilities;
 
+use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -45,6 +46,14 @@ pub enum AuthError {
 
     #[error("Password hash error: {0}")]
     PasswordHashError(String),
+
+    #[error("Account is temporarily locked")]
+    AccountLocked {
+        /// When the lockout expires (if known)
+        locked_until: Option<DateTime<Utc>>,
+        /// Seconds until the account can be accessed again
+        retry_after_seconds: Option<i64>,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -138,7 +147,13 @@ impl Error {
             Error::Auth(AuthError::InvalidCredentials)
                 | Error::Auth(AuthError::UserNotFound)
                 | Error::Auth(AuthError::UserAlreadyExists)
+                | Error::Auth(AuthError::AccountLocked { .. })
         )
+    }
+
+    /// Check if the error is an account locked error
+    pub fn is_account_locked(&self) -> bool {
+        matches!(self, Error::Auth(AuthError::AccountLocked { .. }))
     }
 
     pub fn is_validation_error(&self) -> bool {

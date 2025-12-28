@@ -43,15 +43,19 @@
 //! ```
 use std::sync::Arc;
 
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use torii_core::{
-    JwtSessionProvider, OpaqueSessionProvider, RepositoryProvider, SessionProvider,
+    BruteForceProtectionService, JwtSessionProvider, OpaqueSessionProvider, RepositoryProvider,
+    SessionProvider,
     repositories::{
-        PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
-        UserRepositoryAdapter,
+        BruteForceProtectionRepositoryAdapter, PasswordRepositoryAdapter, SessionRepositoryAdapter,
+        TokenRepositoryAdapter, UserRepositoryAdapter,
     },
     services::{SessionService, UserService},
 };
+
+// Re-export brute force protection config for users to configure
+pub use torii_core::BruteForceProtectionConfig;
 
 #[cfg(feature = "oauth")]
 use torii_core::repositories::OAuthRepositoryAdapter;
@@ -81,7 +85,8 @@ use torii_core::services::{MailerService, ToriiMailerService};
 ///
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
-    JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, Session, SessionToken, User, UserId,
+    JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, LockoutStatus, Session, SessionToken, User,
+    UserId,
 };
 
 /// Re-export storage types
@@ -297,6 +302,9 @@ pub struct Torii<R: RepositoryProvider> {
     #[cfg(feature = "mailer")]
     mailer_service: Option<Arc<ToriiMailerService>>,
 
+    /// Brute force protection service for rate limiting login attempts
+    brute_force_service: Arc<BruteForceProtectionService<BruteForceProtectionRepositoryAdapter<R>>>,
+
     session_config: SessionConfig,
 }
 
@@ -344,6 +352,9 @@ impl<R: RepositoryProvider> Torii<R> {
         // Create repository adapters
         let user_repo = Arc::new(UserRepositoryAdapter::new(repositories.clone()));
         let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
+        let brute_force_repo = Arc::new(BruteForceProtectionRepositoryAdapter::new(
+            repositories.clone(),
+        ));
 
         let user_service = Arc::new(UserService::new(user_repo.clone()));
 
@@ -351,6 +362,12 @@ impl<R: RepositoryProvider> Torii<R> {
         let session_provider: Arc<Box<dyn SessionProvider>> =
             Arc::new(Box::new(OpaqueSessionProvider::new(session_repo)));
         let session_service = Arc::new(SessionService::new(session_provider.clone()));
+
+        // Initialize brute force protection with default config (enabled)
+        let brute_force_service = Arc::new(BruteForceProtectionService::new(
+            brute_force_repo,
+            BruteForceProtectionConfig::default(),
+        ));
 
         Self {
             repositories: repositories.clone(),
@@ -399,6 +416,8 @@ impl<R: RepositoryProvider> Torii<R> {
 
             #[cfg(feature = "mailer")]
             mailer_service: None,
+
+            brute_force_service,
 
             session_config: SessionConfig::default(),
         }
@@ -477,6 +496,62 @@ impl<R: RepositoryProvider> Torii<R> {
         })?;
         self.mailer_service = Some(Arc::new(mailer));
         Ok(self)
+    }
+
+    /// Configure brute force protection
+    ///
+    /// By default, brute force protection is enabled with sensible defaults
+    /// (5 attempts, 15 minute lockout). Use this method to customize the behavior
+    /// or disable it entirely.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The brute force protection configuration. Pass `None` or
+    ///   `BruteForceProtectionConfig::disabled()` to disable protection.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use torii::{Torii, BruteForceProtectionConfig};
+    /// use chrono::Duration;
+    ///
+    /// // Custom configuration
+    /// let torii = Torii::new(repositories)
+    ///     .with_brute_force_protection(BruteForceProtectionConfig {
+    ///         max_failed_attempts: 3,
+    ///         lockout_period: Duration::minutes(30),
+    ///         ..Default::default()
+    ///     });
+    ///
+    /// // Disable brute force protection
+    /// let torii = Torii::new(repositories)
+    ///     .with_brute_force_protection(BruteForceProtectionConfig::disabled());
+    /// ```
+    pub fn with_brute_force_protection(mut self, config: BruteForceProtectionConfig) -> Self {
+        let brute_force_repo = Arc::new(BruteForceProtectionRepositoryAdapter::new(
+            self.repositories.clone(),
+        ));
+        self.brute_force_service =
+            Arc::new(BruteForceProtectionService::new(brute_force_repo, config));
+        self
+    }
+
+    /// Get the current lockout status for an email address
+    ///
+    /// This can be used for security monitoring or to display lockout information.
+    ///
+    /// # Arguments
+    ///
+    /// * `email` - The email address to check
+    ///
+    /// # Returns
+    ///
+    /// Returns the lockout status including failed attempt count and lock state
+    pub async fn get_lockout_status(&self, email: &str) -> Result<LockoutStatus, ToriiError> {
+        self.brute_force_service
+            .get_lockout_status(email)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
 
     /// Run migrations for all repositories
@@ -674,6 +749,11 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
 
     /// Authenticate a user with email and password
     ///
+    /// This method includes brute force protection that:
+    /// - Checks if the account is locked before attempting authentication
+    /// - Records failed login attempts
+    /// - Locks the account after too many failed attempts
+    ///
     /// # Arguments
     ///
     /// * `email`: The email of the user to authenticate
@@ -684,6 +764,11 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// # Returns
     ///
     /// Returns the user and session if authentication is successful
+    ///
+    /// # Errors
+    ///
+    /// Returns `ToriiError::AuthError` with "Account is temporarily locked" if the
+    /// account is locked due to too many failed login attempts.
     pub async fn authenticate(
         &self,
         email: &str,
@@ -692,17 +777,63 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
         ip_address: Option<String>,
     ) -> Result<(User, Session), ToriiError> {
         let torii = self.torii();
-        let user = torii
-            .password_service
-            .authenticate(email, password)
+
+        // Check if account is locked before attempting authentication
+        let status = torii
+            .brute_force_service
+            .get_lockout_status(email)
             .await
-            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
 
-        let session = torii
-            .create_session(&user.id, user_agent, ip_address)
-            .await?;
+        if status.is_locked {
+            let retry_after = status
+                .locked_until
+                .map(|until| (until - Utc::now()).num_seconds().max(0));
+            return Err(ToriiError::AuthError(format!(
+                "Account is temporarily locked. Retry after {} seconds",
+                retry_after.unwrap_or(0)
+            )));
+        }
 
-        Ok((user, session))
+        // Attempt authentication
+        let auth_result = torii.password_service.authenticate(email, password).await;
+
+        match auth_result {
+            Ok(user) => {
+                // Clear failed attempts on successful login
+                let _ = torii.brute_force_service.reset_attempts(email).await;
+
+                let session = torii
+                    .create_session(&user.id, user_agent, ip_address)
+                    .await?;
+
+                Ok((user, session))
+            }
+            Err(e) => {
+                // Check if this was an invalid credentials error
+                if e.is_auth_error() {
+                    // Record failed attempt
+                    let status = torii
+                        .brute_force_service
+                        .record_failed_attempt(email, ip_address.as_deref())
+                        .await
+                        .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+                    // If now locked, return locked error
+                    if status.is_locked {
+                        let retry_after = status
+                            .locked_until
+                            .map(|until| (until - Utc::now()).num_seconds().max(0));
+                        return Err(ToriiError::AuthError(format!(
+                            "Account is temporarily locked. Retry after {} seconds",
+                            retry_after.unwrap_or(0)
+                        )));
+                    }
+                }
+
+                Err(ToriiError::AuthError(e.to_string()))
+            }
+        }
     }
 
     /// Change a user's password and invalidate all existing sessions
@@ -866,8 +997,9 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
     /// This will:
     /// 1. Verify and consume the reset token
     /// 2. Update the user's password
-    /// 3. Invalidate all existing sessions for security
-    /// 4. Send a password changed notification email if mailer is configured
+    /// 3. Unlock the account if it was locked due to failed login attempts
+    /// 4. Invalidate all existing sessions for security
+    /// 5. Send a password changed notification email if mailer is configured
     ///
     /// # Arguments
     ///
@@ -889,6 +1021,9 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
             .reset_password(token, new_password)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Unlock the account (clears failed login attempts)
+        let _ = torii.brute_force_service.unlock_account(&user.email).await;
 
         // Invalidate all existing sessions for security
         torii.delete_sessions_for_user(&user.id).await?;

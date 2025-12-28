@@ -70,7 +70,8 @@ impl MigrationManager<Sqlite> for SqliteMigrationManager {
     }
 
     async fn down(&self, migrations: &[Box<dyn Migration<Sqlite>>]) -> Result<(), MigrationError> {
-        for migration in migrations {
+        // Iterate in reverse order to properly rollback migrations
+        for migration in migrations.iter().rev() {
             if self.is_applied(migration.version()).await? {
                 let mut tx = self.pool.begin().await?;
 
@@ -503,6 +504,131 @@ impl Migration<Sqlite> for CreateMagicLinksTable {
     }
 }
 
+/// Migration to create the failed_login_attempts table for brute force protection.
+pub struct CreateFailedLoginAttemptsTable;
+
+#[async_trait]
+impl Migration<Sqlite> for CreateFailedLoginAttemptsTable {
+    fn version(&self) -> i64 {
+        8
+    }
+
+    fn name(&self) -> &str {
+        "CreateFailedLoginAttemptsTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS failed_login_attempts (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL,
+                ip_address TEXT,
+                attempted_at INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+
+            -- Index for counting attempts by email within a time window
+            CREATE INDEX IF NOT EXISTS idx_failed_login_attempts_email_time 
+                ON failed_login_attempts(email, attempted_at);
+
+            -- Index for cleanup of old records
+            CREATE INDEX IF NOT EXISTS idx_failed_login_attempts_attempted_at 
+                ON failed_login_attempts(attempted_at);
+            "#,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            DROP INDEX IF EXISTS idx_failed_login_attempts_email_time;
+            DROP INDEX IF EXISTS idx_failed_login_attempts_attempted_at;
+            DROP TABLE IF EXISTS failed_login_attempts;
+            "#,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+}
+
+/// Migration to add locked_at column to users table for brute force protection.
+pub struct AddLockedAtToUsers;
+
+#[async_trait]
+impl Migration<Sqlite> for AddLockedAtToUsers {
+    fn version(&self) -> i64 {
+        9
+    }
+
+    fn name(&self) -> &str {
+        "AddLockedAtToUsers"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            ALTER TABLE users ADD COLUMN locked_at INTEGER;
+            "#,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Sqlite as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        // SQLite doesn't support DROP COLUMN directly in older versions,
+        // so we need to recreate the table without the column
+        sqlx::query(
+            r#"
+            -- Create temporary table without locked_at
+            CREATE TABLE users_temp (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                email TEXT NOT NULL,
+                email_verified_at INTEGER,
+                password_hash TEXT,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch()),
+                UNIQUE(email),
+                UNIQUE(id)
+            );
+
+            -- Copy data from original table
+            INSERT INTO users_temp (id, name, email, email_verified_at, password_hash, created_at, updated_at)
+            SELECT id, name, email, email_verified_at, password_hash, created_at, updated_at FROM users;
+
+            -- Drop original table
+            DROP TABLE users;
+
+            -- Rename temp table to original name
+            ALTER TABLE users_temp RENAME TO users;
+
+            -- Recreate indexes
+            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+            "#,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,6 +636,21 @@ mod tests {
 
     fn setup_test() {
         let _ = tracing_subscriber::fmt().try_init();
+    }
+
+    /// Get all migrations in order
+    pub fn all_migrations() -> Vec<Box<dyn Migration<Sqlite>>> {
+        vec![
+            Box::new(CreateUsersTable),
+            Box::new(CreateSessionsTable),
+            Box::new(CreateOAuthAccountsTable),
+            Box::new(CreatePasskeysTable),
+            Box::new(CreatePasskeyChallengesTable),
+            Box::new(CreateIndexes),
+            Box::new(CreateMagicLinksTable),
+            Box::new(CreateFailedLoginAttemptsTable),
+            Box::new(AddLockedAtToUsers),
+        ]
     }
 
     #[tokio::test]
@@ -525,27 +666,19 @@ mod tests {
         manager.initialize().await?;
 
         // Test up migrations
-        let migrations: Vec<Box<dyn Migration<Sqlite>>> = vec![
-            Box::new(CreateUsersTable),
-            Box::new(CreateSessionsTable),
-            Box::new(CreateOAuthAccountsTable),
-            Box::new(CreatePasskeysTable),
-            Box::new(CreatePasskeyChallengesTable),
-            Box::new(CreateIndexes),
-            Box::new(CreateMagicLinksTable),
-        ];
+        let migrations = all_migrations();
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(7).await?;
-        assert!(applied, "Migration should be applied");
+        let applied = manager.is_applied(9).await?;
+        assert!(applied, "Migration 9 should be applied");
 
         // Test down migrations
         manager.down(&migrations).await?;
 
         // Verify migration was rolled back
-        let applied = manager.is_applied(7).await?;
-        assert!(!applied, "Migration should be rolled back");
+        let applied = manager.is_applied(9).await?;
+        assert!(!applied, "Migration 9 should be rolled back");
 
         Ok(())
     }
@@ -563,15 +696,7 @@ mod tests {
         manager.initialize().await?;
 
         // Test up migrations
-        let migrations: Vec<Box<dyn Migration<Sqlite>>> = vec![
-            Box::new(CreateUsersTable),
-            Box::new(CreateSessionsTable),
-            Box::new(CreateOAuthAccountsTable),
-            Box::new(CreatePasskeysTable),
-            Box::new(CreatePasskeyChallengesTable),
-            Box::new(CreateIndexes),
-            Box::new(CreateMagicLinksTable),
-        ];
+        let migrations = all_migrations();
         manager.up(&migrations).await?;
 
         // Test down migrations
@@ -581,8 +706,44 @@ mod tests {
         manager.up(&migrations).await?;
 
         // Verify migration was applied
-        let applied = manager.is_applied(7).await?;
-        assert!(applied, "Migration should be applied");
+        let applied = manager.is_applied(9).await?;
+        assert!(applied, "Migration 9 should be applied");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_brute_force_migrations() -> Result<(), MigrationError> {
+        setup_test();
+
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create pool");
+        let manager = SqliteMigrationManager::new(pool.clone());
+
+        // Initialize migrations table
+        manager.initialize().await?;
+
+        // Run all migrations
+        let migrations = all_migrations();
+        manager.up(&migrations).await?;
+
+        // Verify failed_login_attempts table exists and has correct schema
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='failed_login_attempts'",
+        )
+        .fetch_optional(&pool)
+        .await?;
+        assert!(result.is_some(), "failed_login_attempts table should exist");
+
+        // Verify locked_at column exists in users table
+        let result = sqlx::query("SELECT * FROM pragma_table_info('users') WHERE name='locked_at'")
+            .fetch_optional(&pool)
+            .await?;
+        assert!(
+            result.is_some(),
+            "locked_at column should exist in users table"
+        );
 
         Ok(())
     }

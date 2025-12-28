@@ -1,5 +1,6 @@
 //! Repository implementations for SQLite storage
 
+pub mod brute_force;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -7,6 +8,7 @@ pub mod session;
 pub mod token;
 pub mod user;
 
+pub use brute_force::SqliteBruteForceRepository;
 pub use oauth::SqliteOAuthRepository;
 pub use passkey::SqlitePasskeyRepository;
 pub use password::SqlitePasswordRepository;
@@ -28,6 +30,7 @@ pub struct SqliteRepositoryProvider {
     oauth: Arc<SqliteOAuthRepository>,
     passkey: Arc<SqlitePasskeyRepository>,
     token: Arc<SqliteTokenRepository>,
+    brute_force: Arc<SqliteBruteForceRepository>,
 }
 
 impl SqliteRepositoryProvider {
@@ -38,6 +41,7 @@ impl SqliteRepositoryProvider {
         let oauth = Arc::new(SqliteOAuthRepository::new(pool.clone()));
         let passkey = Arc::new(SqlitePasskeyRepository::new(pool.clone()));
         let token = Arc::new(SqliteTokenRepository::new(pool.clone()));
+        let brute_force = Arc::new(SqliteBruteForceRepository::new(pool.clone()));
 
         Self {
             pool,
@@ -47,6 +51,7 @@ impl SqliteRepositoryProvider {
             oauth,
             passkey,
             token,
+            brute_force,
         }
     }
 }
@@ -59,6 +64,7 @@ impl RepositoryProvider for SqliteRepositoryProvider {
     type OAuth = SqliteOAuthRepository;
     type Passkey = SqlitePasskeyRepository;
     type Token = SqliteTokenRepository;
+    type BruteForce = SqliteBruteForceRepository;
 
     fn user(&self) -> &Self::User {
         &self.user
@@ -84,10 +90,15 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         &self.token
     }
 
+    fn brute_force(&self) -> &Self::BruteForce {
+        &self.brute_force
+    }
+
     async fn migrate(&self) -> Result<(), torii_core::Error> {
         use crate::migrations::{
-            CreateIndexes, CreateOAuthAccountsTable, CreatePasskeyChallengesTable,
-            CreatePasskeysTable, CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
+            AddLockedAtToUsers, CreateFailedLoginAttemptsTable, CreateIndexes,
+            CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
+            CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
         };
         use torii_migration::{Migration, MigrationManager};
 
@@ -106,6 +117,8 @@ impl RepositoryProvider for SqliteRepositoryProvider {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateFailedLoginAttemptsTable),
+            Box::new(AddLockedAtToUsers),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");

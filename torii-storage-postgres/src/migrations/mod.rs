@@ -538,6 +538,103 @@ impl Migration<Postgres> for CreateMagicLinksTable {
     }
 }
 
+/// Migration to create the failed_login_attempts table for brute force protection.
+pub struct CreateFailedLoginAttemptsTable;
+
+#[async_trait]
+impl Migration<Postgres> for CreateFailedLoginAttemptsTable {
+    fn version(&self) -> i64 {
+        8
+    }
+
+    fn name(&self) -> &str {
+        "CreateFailedLoginAttemptsTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS failed_login_attempts (
+                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                email TEXT NOT NULL,
+                ip_address TEXT,
+                attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for counting attempts by email within a time window
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_failed_login_attempts_email_time ON failed_login_attempts(email, attempted_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for cleanup of old records
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_failed_login_attempts_attempted_at ON failed_login_attempts(attempted_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_failed_login_attempts_email_time")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_failed_login_attempts_attempted_at")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS failed_login_attempts")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
+/// Migration to add locked_at column to users table for brute force protection.
+pub struct AddLockedAtToUsers;
+
+#[async_trait]
+impl Migration<Postgres> for AddLockedAtToUsers {
+    fn version(&self) -> i64 {
+        9
+    }
+
+    fn name(&self) -> &str {
+        "AddLockedAtToUsers"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("ALTER TABLE users DROP COLUMN IF EXISTS locked_at")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

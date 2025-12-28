@@ -11,6 +11,8 @@ pub struct Model {
     pub name: Option<String>,
     pub password_hash: Option<String>,
     pub email_verified_at: Option<DateTime<Utc>>,
+    /// When the account was locked due to brute force protection.
+    pub locked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

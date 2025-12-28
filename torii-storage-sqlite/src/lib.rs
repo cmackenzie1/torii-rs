@@ -72,10 +72,10 @@ mod session;
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
-use migrations::CreateIndexes;
 use migrations::{
-    CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
-    CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
+    AddLockedAtToUsers, CreateFailedLoginAttemptsTable, CreateIndexes, CreateOAuthAccountsTable,
+    CreatePasskeyChallengesTable, CreatePasskeysTable, CreateSessionsTable, CreateUsersTable,
+    SqliteMigrationManager,
 };
 use sqlx::SqlitePool;
 use torii_core::error::StorageError;
@@ -120,6 +120,8 @@ impl SqliteStorage {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateFailedLoginAttemptsTable),
+            Box::new(AddLockedAtToUsers),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
@@ -141,6 +143,7 @@ pub struct SqliteUser {
     email: String,
     name: Option<String>,
     email_verified_at: Option<i64>,
+    locked_at: Option<i64>,
     created_at: i64,
     updated_at: i64,
 }
@@ -154,6 +157,10 @@ impl From<SqliteUser> for User {
             .email_verified_at(user.email_verified_at.map(|timestamp| {
                 DateTime::from_timestamp(timestamp, 0).expect("Invalid timestamp")
             }))
+            .locked_at(
+                user.locked_at
+                    .and_then(|timestamp| DateTime::from_timestamp(timestamp, 0)),
+            )
             .created_at(DateTime::from_timestamp(user.created_at, 0).expect("Invalid timestamp"))
             .updated_at(DateTime::from_timestamp(user.updated_at, 0).expect("Invalid timestamp"))
             .build()
@@ -170,6 +177,7 @@ impl From<User> for SqliteUser {
             email_verified_at: user
                 .email_verified_at
                 .map(|timestamp| timestamp.timestamp()),
+            locked_at: user.locked_at.map(|timestamp| timestamp.timestamp()),
             created_at: user.created_at.timestamp(),
             updated_at: user.updated_at.timestamp(),
         }
@@ -184,7 +192,7 @@ impl UserStorage for SqliteStorage {
             r#"
             INSERT INTO users (id, email, name, email_verified_at, created_at, updated_at) 
             VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING id, email, name, email_verified_at, created_at, updated_at
+            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
             "#,
         )
         .bind(user.id.as_str())
@@ -209,7 +217,7 @@ impl UserStorage for SqliteStorage {
     async fn get_user(&self, id: &UserId) -> Result<Option<User>, torii_core::Error> {
         let user = sqlx::query_as::<_, SqliteUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at 
+            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
             FROM users 
             WHERE id = ?
             "#,
@@ -232,7 +240,7 @@ impl UserStorage for SqliteStorage {
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, torii_core::Error> {
         let user = sqlx::query_as::<_, SqliteUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at 
+            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
             FROM users 
             WHERE email = ?
             "#,
@@ -280,9 +288,9 @@ impl UserStorage for SqliteStorage {
         let user = sqlx::query_as::<_, SqliteUser>(
             r#"
             UPDATE users 
-            SET email = ?, name = ?, email_verified_at = ?, updated_at = ? 
+            SET email = ?, name = ?, email_verified_at = ?, locked_at = ?, updated_at = ? 
             WHERE id = ?
-            RETURNING id, email, name, email_verified_at, created_at, updated_at
+            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
             "#,
         )
         .bind(&user.email)
@@ -291,6 +299,7 @@ impl UserStorage for SqliteStorage {
             user.email_verified_at
                 .map(|timestamp| timestamp.timestamp()),
         )
+        .bind(user.locked_at.map(|timestamp| timestamp.timestamp()))
         .bind(now.timestamp())
         .bind(user.id.as_str())
         .fetch_one(&self.pool)
@@ -341,7 +350,8 @@ mod tests {
 
     use super::*;
     use crate::migrations::{
-        CreateOAuthAccountsTable, CreateSessionsTable, CreateUsersTable, SqliteMigrationManager,
+        AddLockedAtToUsers, CreateOAuthAccountsTable, CreateSessionsTable, CreateUsersTable,
+        SqliteMigrationManager,
     };
     use crate::session::test::create_test_session;
 
@@ -358,6 +368,7 @@ mod tests {
             Box::new(CreateUsersTable),
             Box::new(CreateSessionsTable),
             Box::new(CreateOAuthAccountsTable),
+            Box::new(AddLockedAtToUsers),
         ];
         manager
             .up(&migrations)

@@ -14,6 +14,7 @@ impl From<user::Model> for ToriiUser {
             name: user.name.to_owned(),
             email: user.email.to_owned(),
             email_verified_at: user.email_verified_at.to_owned(),
+            locked_at: user.locked_at.to_owned(),
             created_at: user.created_at.to_owned(),
             updated_at: user.updated_at.to_owned(),
         }
