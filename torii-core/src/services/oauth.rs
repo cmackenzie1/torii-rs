@@ -150,6 +150,7 @@ mod tests {
                 email: user.email,
                 name: user.name,
                 email_verified_at: None,
+                locked_at: None,
                 created_at: user.created_at,
                 updated_at: user.updated_at,
             }
@@ -290,6 +291,7 @@ mod tests {
                     email: "test@example.com".to_string(),
                     name: None,
                     email_verified_at: None,
+                    locked_at: None,
                     created_at: Utc::now(),
                     updated_at: Utc::now(),
                 }))

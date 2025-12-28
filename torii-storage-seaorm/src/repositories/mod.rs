@@ -1,5 +1,6 @@
 //! Repository implementations for SeaORM storage
 
+pub mod brute_force;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -7,6 +8,7 @@ pub mod session;
 pub mod token;
 pub mod user;
 
+pub use brute_force::SeaORMBruteForceRepository;
 pub use oauth::SeaORMOAuthRepository;
 pub use passkey::SeaORMPasskeyRepository;
 pub use password::SeaORMPasswordRepository;
@@ -30,6 +32,7 @@ pub struct SeaORMRepositoryProvider {
     oauth: Arc<SeaORMOAuthRepository>,
     passkey: Arc<SeaORMPasskeyRepository>,
     token: Arc<SeaORMTokenRepository>,
+    brute_force: Arc<SeaORMBruteForceRepository>,
 }
 
 impl SeaORMRepositoryProvider {
@@ -40,6 +43,7 @@ impl SeaORMRepositoryProvider {
         let oauth = Arc::new(SeaORMOAuthRepository::new(pool.clone()));
         let passkey = Arc::new(SeaORMPasskeyRepository::new(pool.clone()));
         let token = Arc::new(SeaORMTokenRepository::new(pool.clone()));
+        let brute_force = Arc::new(SeaORMBruteForceRepository::new(pool.clone()));
 
         Self {
             pool,
@@ -49,6 +53,7 @@ impl SeaORMRepositoryProvider {
             oauth,
             passkey,
             token,
+            brute_force,
         }
     }
 }
@@ -61,6 +66,7 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
     type OAuth = SeaORMOAuthRepository;
     type Passkey = SeaORMPasskeyRepository;
     type Token = SeaORMTokenRepository;
+    type BruteForce = SeaORMBruteForceRepository;
 
     fn user(&self) -> &Self::User {
         &self.user
@@ -84,6 +90,10 @@ impl RepositoryProvider for SeaORMRepositoryProvider {
 
     fn token(&self) -> &Self::Token {
         &self.token
+    }
+
+    fn brute_force(&self) -> &Self::BruteForce {
+        &self.brute_force
     }
 
     async fn migrate(&self) -> Result<(), torii_core::Error> {

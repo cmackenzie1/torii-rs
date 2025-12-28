@@ -1,14 +1,14 @@
 use crate::{
     Error, OAuthAccount, Session, SessionStorage, User, UserId,
     repositories::{
-        OAuthRepository, PasskeyCredential, PasskeyRepository, PasswordRepository,
-        RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
+        BruteForceProtectionRepository, OAuthRepository, PasskeyCredential, PasskeyRepository,
+        PasswordRepository, RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
     },
     session::SessionToken,
-    storage::{NewUser, SecureToken, TokenPurpose},
+    storage::{AttemptStats, FailedLoginAttempt, NewUser, SecureToken, TokenPurpose},
 };
 use async_trait::async_trait;
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
 
 /// Adapter that wraps a RepositoryProvider and implements individual repository traits
@@ -318,5 +318,73 @@ impl<R: RepositoryProvider> TokenRepository for TokenRepositoryAdapter<R> {
 
     async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
         self.provider.token().cleanup_expired_tokens().await
+    }
+}
+
+/// Adapter that wraps a RepositoryProvider and implements BruteForceProtectionRepository.
+///
+/// This adapter delegates all operations to the underlying provider's brute force
+/// repository, allowing services to work with the trait-based interface.
+pub struct BruteForceProtectionRepositoryAdapter<R: RepositoryProvider> {
+    provider: Arc<R>,
+}
+
+impl<R: RepositoryProvider> BruteForceProtectionRepositoryAdapter<R> {
+    /// Create a new adapter wrapping the given repository provider.
+    pub fn new(provider: Arc<R>) -> Self {
+        Self { provider }
+    }
+}
+
+#[async_trait]
+impl<R: RepositoryProvider> BruteForceProtectionRepository
+    for BruteForceProtectionRepositoryAdapter<R>
+{
+    async fn record_failed_attempt(
+        &self,
+        email: &str,
+        ip_address: Option<&str>,
+    ) -> Result<FailedLoginAttempt, Error> {
+        self.provider
+            .brute_force()
+            .record_failed_attempt(email, ip_address)
+            .await
+    }
+
+    async fn get_attempt_stats(
+        &self,
+        email: &str,
+        since: DateTime<Utc>,
+    ) -> Result<AttemptStats, Error> {
+        self.provider
+            .brute_force()
+            .get_attempt_stats(email, since)
+            .await
+    }
+
+    async fn clear_attempts(&self, email: &str) -> Result<u64, Error> {
+        self.provider.brute_force().clear_attempts(email).await
+    }
+
+    async fn cleanup_old_attempts(&self, before: DateTime<Utc>) -> Result<u64, Error> {
+        self.provider
+            .brute_force()
+            .cleanup_old_attempts(before)
+            .await
+    }
+
+    async fn set_locked_at(
+        &self,
+        email: &str,
+        locked_at: Option<DateTime<Utc>>,
+    ) -> Result<(), Error> {
+        self.provider
+            .brute_force()
+            .set_locked_at(email, locked_at)
+            .await
+    }
+
+    async fn get_locked_at(&self, email: &str) -> Result<Option<DateTime<Utc>>, Error> {
+        self.provider.brute_force().get_locked_at(email).await
     }
 }

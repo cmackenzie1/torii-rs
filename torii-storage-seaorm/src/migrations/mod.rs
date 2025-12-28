@@ -11,6 +11,8 @@ use sea_orm_migration::{MigrationTrait, MigratorTrait};
 use crate::migrations::{
     m20250304_000004_create_passkeys_table::CreatePasskeys,
     m20250304_000006_create_secure_tokens::Migration as CreateSecureTokens,
+    m20250304_000007_create_failed_login_attempts::Migration as CreateFailedLoginAttempts,
+    m20250304_000008_add_locked_at_to_users::Migration as AddLockedAtToUsers,
 };
 
 mod m20250304_000001_create_user_table;
@@ -18,6 +20,8 @@ mod m20250304_000002_create_session_table;
 mod m20250304_000003_create_oauth_table;
 mod m20250304_000004_create_passkeys_table;
 mod m20250304_000006_create_secure_tokens;
+mod m20250304_000007_create_failed_login_attempts;
+mod m20250304_000008_add_locked_at_to_users;
 
 #[allow(dead_code)]
 pub struct Migrator;
@@ -36,6 +40,8 @@ impl MigratorTrait for Migrator {
             Box::new(CreateOAuthAccounts),
             Box::new(CreatePasskeys),
             Box::new(CreateSecureTokens),
+            Box::new(CreateFailedLoginAttempts),
+            Box::new(AddLockedAtToUsers),
         ]
     }
 }
@@ -48,6 +54,7 @@ pub enum Users {
     Name,
     PasswordHash,
     EmailVerifiedAt,
+    LockedAt,
     CreatedAt,
     UpdatedAt,
 }
@@ -121,4 +128,16 @@ pub enum SecureTokens {
     ExpiresAt,
     CreatedAt,
     UpdatedAt,
+}
+
+/// Identifier for failed_login_attempts table columns.
+/// Used by migrations for brute force protection.
+#[derive(DeriveIden)]
+#[allow(dead_code)]
+pub enum FailedLoginAttempts {
+    Table,
+    Id,
+    Email,
+    IpAddress,
+    AttemptedAt,
 }

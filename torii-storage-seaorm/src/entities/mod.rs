@@ -1,3 +1,4 @@
+pub(crate) mod failed_login_attempt;
 pub(crate) mod oauth;
 pub(crate) mod passkey;
 pub(crate) mod passkey_challenge;

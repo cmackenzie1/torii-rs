@@ -120,6 +120,14 @@ pub struct User {
     // The email verified at timestamp. If the user has not verified their email, this will be None.
     pub email_verified_at: Option<DateTime<Utc>>,
 
+    /// When the account was locked due to brute force protection.
+    ///
+    /// This field is set when an account becomes locked after too many failed
+    /// login attempts, and cleared when the account is unlocked (via password
+    /// reset or admin action). It protects against accidental cleanup of
+    /// attempt records while an account is locked.
+    pub locked_at: Option<DateTime<Utc>>,
+
     // The created at timestamp.
     pub created_at: DateTime<Utc>,
 
@@ -136,6 +144,15 @@ impl User {
     pub fn is_email_verified(&self) -> bool {
         self.email_verified_at.is_some()
     }
+
+    /// Check if the user account is currently locked.
+    ///
+    /// Note: This only checks if the `locked_at` timestamp is set. The actual
+    /// lockout status should be determined by the `BruteForceProtectionService`
+    /// which considers the lockout window and recent failed attempts.
+    pub fn is_locked(&self) -> bool {
+        self.locked_at.is_some()
+    }
 }
 
 #[derive(Default)]
@@ -144,6 +161,7 @@ pub struct UserBuilder {
     name: Option<String>,
     email: Option<String>,
     email_verified_at: Option<DateTime<Utc>>,
+    locked_at: Option<DateTime<Utc>>,
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
 }
@@ -169,6 +187,11 @@ impl UserBuilder {
         self
     }
 
+    pub fn locked_at(mut self, locked_at: Option<DateTime<Utc>>) -> Self {
+        self.locked_at = locked_at;
+        self
+    }
+
     pub fn created_at(mut self, created_at: DateTime<Utc>) -> Self {
         self.created_at = Some(created_at);
         self
@@ -188,6 +211,7 @@ impl UserBuilder {
                 "Email is required".to_string(),
             ))?,
             email_verified_at: self.email_verified_at,
+            locked_at: self.locked_at,
             created_at: self.created_at.unwrap_or(now),
             updated_at: self.updated_at.unwrap_or(now),
         })

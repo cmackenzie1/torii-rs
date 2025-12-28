@@ -62,15 +62,20 @@
 //!
 //! All tables include appropriate indexes and constraints for optimal query performance and data integrity.
 
+mod brute_force;
 mod migrations;
 mod oauth;
 mod passkey;
 mod password;
 mod session;
 
+pub use brute_force::PostgresBruteForceRepository;
+
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
+use migrations::AddLockedAtToUsers;
+use migrations::CreateFailedLoginAttemptsTable;
 use migrations::CreateIndexes;
 use migrations::CreateOAuthAccountsTable;
 use migrations::CreatePasskeyChallengesTable;
@@ -89,7 +94,7 @@ use torii_migration::MigrationManager;
 
 #[derive(Debug, Clone)]
 pub struct PostgresStorage {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
 }
 
 impl PostgresStorage {
@@ -120,6 +125,8 @@ impl PostgresStorage {
             Box::new(CreatePasskeysTable),
             Box::new(CreatePasskeyChallengesTable),
             Box::new(CreateIndexes),
+            Box::new(CreateFailedLoginAttemptsTable),
+            Box::new(AddLockedAtToUsers),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
@@ -136,6 +143,7 @@ pub struct PostgresUser {
     email: String,
     name: Option<String>,
     email_verified_at: Option<DateTime<Utc>>,
+    locked_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -147,6 +155,7 @@ impl From<PostgresUser> for User {
             .email(user.email)
             .name(user.name)
             .email_verified_at(user.email_verified_at)
+            .locked_at(user.locked_at)
             .created_at(user.created_at)
             .updated_at(user.updated_at)
             .build()
@@ -161,6 +170,7 @@ impl From<User> for PostgresUser {
             email: user.email,
             name: user.name,
             email_verified_at: user.email_verified_at,
+            locked_at: user.locked_at,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }
@@ -174,7 +184,7 @@ impl UserStorage for PostgresStorage {
             r#"
             INSERT INTO users (id, email) 
             VALUES ($1, $2) 
-            RETURNING id, email, name, email_verified_at, created_at, updated_at
+            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
             "#,
         )
         .bind(user.id.as_str())
@@ -192,7 +202,7 @@ impl UserStorage for PostgresStorage {
     async fn get_user(&self, id: &UserId) -> Result<Option<User>, torii_core::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at 
+            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
             FROM users 
             WHERE id = $1
             "#,
@@ -214,7 +224,7 @@ impl UserStorage for PostgresStorage {
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, torii_core::Error> {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at 
+            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
             FROM users 
             WHERE email = $1
             "#,
@@ -260,14 +270,15 @@ impl UserStorage for PostgresStorage {
         let user = sqlx::query_as::<_, PostgresUser>(
             r#"
             UPDATE users 
-            SET email = $1, name = $2, email_verified_at = $3, updated_at = $4 
-            WHERE id = $5
-            RETURNING id, email, name, email_verified_at, created_at, updated_at
+            SET email = $1, name = $2, email_verified_at = $3, locked_at = $4, updated_at = $5 
+            WHERE id = $6
+            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
             "#,
         )
         .bind(&user.email)
         .bind(&user.name)
         .bind(user.email_verified_at)
+        .bind(user.locked_at)
         .bind(user.updated_at)
         .bind(user.id.as_str())
         .fetch_one(&self.pool)

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -9,6 +9,144 @@ use crate::{
     Error, OAuthAccount, Session, User, UserId, error::utilities::RequiredFieldExt,
     session::SessionToken,
 };
+
+// ============================================================================
+// Brute Force Protection Types
+// ============================================================================
+
+/// A single failed login attempt record.
+///
+/// Each record represents one failed authentication attempt against an email address.
+/// These records are used to track brute force attacks and implement account lockout.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailedLoginAttempt {
+    /// Unique identifier for this attempt record
+    pub id: i64,
+    /// The email address that was attempted (may or may not exist in the system)
+    pub email: String,
+    /// IP address of the client that made the attempt (if available)
+    pub ip_address: Option<String>,
+    /// When the attempt occurred
+    pub attempted_at: DateTime<Utc>,
+}
+
+/// Current lockout status for an email address.
+///
+/// This struct represents the computed lockout state based on recent failed attempts.
+/// The lockout is calculated dynamically rather than stored, allowing for automatic
+/// expiry without background cleanup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockoutStatus {
+    /// The email address being checked
+    pub email: String,
+    /// Number of failed attempts within the lockout window
+    pub failed_attempts: u32,
+    /// Whether the account is currently locked
+    pub is_locked: bool,
+    /// When the lockout expires (if locked)
+    pub locked_until: Option<DateTime<Utc>>,
+}
+
+impl LockoutStatus {
+    /// Returns the number of seconds until the lockout expires.
+    ///
+    /// Returns `None` if the account is not locked, or `Some(0)` if the
+    /// lockout has already expired.
+    pub fn retry_after_seconds(&self) -> Option<i64> {
+        self.locked_until.map(|until| {
+            let seconds = (until - Utc::now()).num_seconds();
+            seconds.max(0)
+        })
+    }
+}
+
+/// Statistics about failed login attempts for an email address.
+///
+/// This struct is returned by the repository and contains the raw data
+/// needed to compute lockout status.
+#[derive(Debug, Clone, Default)]
+pub struct AttemptStats {
+    /// Number of failed attempts in the counting window
+    pub count: u32,
+    /// Timestamp of the most recent attempt (if any)
+    pub latest_at: Option<DateTime<Utc>>,
+}
+
+/// Configuration for brute force protection.
+///
+/// This configuration controls how account lockout behaves, including
+/// the threshold for lockout, duration, and retention of audit records.
+///
+/// # Example
+///
+/// ```
+/// use torii_core::storage::BruteForceProtectionConfig;
+/// use chrono::Duration;
+///
+/// // Default configuration (enabled with 5 attempts, 15 minute lockout)
+/// let config = BruteForceProtectionConfig::default();
+///
+/// // Custom configuration
+/// let config = BruteForceProtectionConfig {
+///     max_failed_attempts: 3,
+///     lockout_period: Duration::minutes(30),
+///     ..Default::default()
+/// };
+///
+/// // Disable brute force protection entirely
+/// let disabled = BruteForceProtectionConfig::disabled();
+/// ```
+#[derive(Debug, Clone)]
+pub struct BruteForceProtectionConfig {
+    /// Whether brute force protection is enabled.
+    ///
+    /// When disabled, no failed attempts are recorded and lockout checks
+    /// always return unlocked.
+    pub enabled: bool,
+
+    /// Maximum failed attempts before lockout.
+    ///
+    /// Once this threshold is reached within the lockout window,
+    /// the account becomes locked.
+    pub max_failed_attempts: u32,
+
+    /// Lockout duration and counting window.
+    ///
+    /// Failed attempts within this window count toward the lockout threshold.
+    /// Once locked, the account remains locked for this duration from the
+    /// last failed attempt.
+    pub lockout_period: Duration,
+
+    /// How long to retain attempt records for audit purposes.
+    ///
+    /// Records older than this are eligible for cleanup, but only if the
+    /// associated account is not currently locked.
+    pub retention_period: Duration,
+}
+
+impl Default for BruteForceProtectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_failed_attempts: 5,
+            lockout_period: Duration::minutes(15),
+            retention_period: Duration::days(7),
+        }
+    }
+}
+
+impl BruteForceProtectionConfig {
+    /// Create a disabled configuration (no brute force protection).
+    ///
+    /// Use this when deploying in environments where account lockout
+    /// is not desired or is handled by other means.
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            ..Default::default()
+        }
+    }
+}
 
 #[async_trait]
 pub trait StoragePlugin: Send + Sync + 'static {

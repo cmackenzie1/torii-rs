@@ -1,26 +1,86 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::{Session, User, UserId, error::EventError, session::SessionToken};
 
+/// Reason why an account was unlocked.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum UnlockReason {
+    /// Account was unlocked via password reset
+    PasswordReset,
+    /// Lockout period expired naturally
+    LockoutExpired,
+    /// Administrator manually unlocked the account
+    AdminAction,
+}
+
 /// Represents events that can be emitted by the event bus
 ///
 /// Events are used to notify interested parties about changes in the system state.
-/// This includes user-related events (creation, updates, deletion) and
-/// session-related events (creation, deletion).
+/// This includes user-related events (creation, updates, deletion),
+/// session-related events (creation, deletion), and security-related events
+/// (login failures, account lockouts).
 ///
 /// All events contain the relevant data needed to handle the event, such as
 /// the affected User or Session objects.
 #[derive(Debug, Clone)]
 pub enum Event {
+    // User events
     UserCreated(User),
     UserUpdated(User),
     UserDeleted(UserId),
+
+    // Session events
     SessionCreated(UserId, Session),
     SessionDeleted(UserId, SessionToken),
     SessionsCleared(UserId),
+
+    // Security events for brute force protection
+    /// Emitted when a login attempt fails.
+    ///
+    /// This event is useful for security monitoring and audit logging.
+    LoginFailed {
+        /// The email address that was attempted
+        email: String,
+        /// Number of failed attempts in the current lockout window
+        failed_attempts: u32,
+        /// IP address of the client (if available)
+        ip_address: Option<String>,
+        /// When the attempt occurred
+        timestamp: DateTime<Utc>,
+    },
+
+    /// Emitted when an account becomes locked due to too many failed attempts.
+    ///
+    /// This is a security-critical event that should trigger alerts.
+    AccountLocked {
+        /// The email address that was locked
+        email: String,
+        /// Number of failed attempts that triggered the lockout
+        failed_attempts: u32,
+        /// When the lockout will expire
+        locked_until: DateTime<Utc>,
+        /// IP address of the last failed attempt (if available)
+        ip_address: Option<String>,
+        /// When the lockout was triggered
+        timestamp: DateTime<Utc>,
+    },
+
+    /// Emitted when an account is unlocked.
+    ///
+    /// This can occur via password reset, lockout expiry, or admin action.
+    AccountUnlocked {
+        /// The email address that was unlocked
+        email: String,
+        /// Why the account was unlocked
+        reason: UnlockReason,
+        /// When the unlock occurred
+        timestamp: DateTime<Utc>,
+    },
 }
 
 /// A trait for handling events emitted by the event bus

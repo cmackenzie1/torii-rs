@@ -4,6 +4,7 @@
 //! These traits provide a clean abstraction over the underlying storage implementation.
 
 pub mod adapter;
+pub mod brute_force;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -12,9 +13,11 @@ pub mod token;
 pub mod user;
 
 pub use adapter::{
-    OAuthRepositoryAdapter, PasskeyRepositoryAdapter, PasswordRepositoryAdapter,
-    SessionRepositoryAdapter, TokenRepositoryAdapter, UserRepositoryAdapter,
+    BruteForceProtectionRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
+    PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
+    UserRepositoryAdapter,
 };
+pub use brute_force::BruteForceProtectionRepository;
 pub use oauth::OAuthRepository;
 pub use passkey::{PasskeyCredential, PasskeyRepository};
 pub use password::PasswordRepository;
@@ -26,7 +29,10 @@ use async_trait::async_trait;
 
 use crate::Error;
 
-/// Provider trait that storage implementations must implement to provide all repositories
+/// Provider trait that storage implementations must implement to provide all repositories.
+///
+/// This trait defines the contract for storage backends in Torii. Implementations
+/// must provide access to all repository types and support migrations and health checks.
 #[async_trait]
 pub trait RepositoryProvider: Send + Sync + 'static {
     type User: UserRepository;
@@ -35,6 +41,7 @@ pub trait RepositoryProvider: Send + Sync + 'static {
     type OAuth: OAuthRepository;
     type Passkey: PasskeyRepository;
     type Token: TokenRepository;
+    type BruteForce: BruteForceProtectionRepository;
 
     /// Get the user repository
     fn user(&self) -> &Self::User;
@@ -53,6 +60,9 @@ pub trait RepositoryProvider: Send + Sync + 'static {
 
     /// Get the token repository
     fn token(&self) -> &Self::Token;
+
+    /// Get the brute force protection repository
+    fn brute_force(&self) -> &Self::BruteForce;
 
     /// Run migrations for all repositories
     async fn migrate(&self) -> Result<(), Error>;
