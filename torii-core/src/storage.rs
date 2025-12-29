@@ -5,10 +5,7 @@ use std::str::FromStr;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::{
-    Error, OAuthAccount, Session, User, UserId, error::utilities::RequiredFieldExt,
-    session::SessionToken,
-};
+use crate::{Error, Session, UserId, error::utilities::RequiredFieldExt, session::SessionToken};
 
 // ============================================================================
 // Brute Force Protection Types
@@ -149,47 +146,17 @@ impl BruteForceProtectionConfig {
 }
 
 // ============================================================================
-// Legacy Storage Traits
+// Session Storage Trait
 // ============================================================================
-//
-// NOTE: These traits are maintained for compatibility with existing storage
-// backend implementations. New storage backends should implement the
-// Repository traits in `crate::repositories` instead.
-//
-// The Repository traits provide a cleaner, more composable API.
-
-#[async_trait]
-pub trait StoragePlugin: Send + Sync + 'static {
-    type Config;
-
-    /// Initialize storage with config
-    async fn initialize(&self, config: Self::Config) -> Result<(), Error>;
-
-    /// Storage health check
-    async fn health_check(&self) -> Result<(), Error>;
-
-    /// Clean up expired data
-    async fn cleanup(&self) -> Result<(), Error>;
-}
-
-/// User storage trait for legacy storage backends.
-///
-/// For new implementations, consider using [`crate::repositories::UserRepository`] instead.
-#[async_trait]
-pub trait UserStorage: Send + Sync + 'static {
-    async fn create_user(&self, user: &NewUser) -> Result<User, Error>;
-    async fn get_user(&self, id: &UserId) -> Result<Option<User>, Error>;
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, Error>;
-    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, Error>;
-    async fn update_user(&self, user: &User) -> Result<User, Error>;
-    async fn delete_user(&self, id: &UserId) -> Result<(), Error>;
-    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Error>;
-}
 
 /// Session storage trait used by [`crate::session::OpaqueSessionProvider`].
 ///
-/// This trait is implemented by the [`crate::repositories::adapter::SessionRepositoryAdapter`]
-/// to bridge between Repository-based storage backends and the session provider system.
+/// This trait is implemented by storage backends to provide session persistence
+/// for opaque token-based sessions. For JWT-based sessions, this trait is not needed.
+///
+/// Storage backends should implement this trait directly or use the
+/// [`crate::repositories::adapter::SessionRepositoryAdapter`] to bridge from
+/// the Repository pattern.
 #[async_trait]
 pub trait SessionStorage: Send + Sync + 'static {
     async fn create_session(&self, session: &Session) -> Result<Session, Error>;
@@ -199,65 +166,13 @@ pub trait SessionStorage: Send + Sync + 'static {
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
-/// Password storage trait for legacy storage backends.
+// ============================================================================
+// User Types
+// ============================================================================
+
+/// Data required to create a new user.
 ///
-/// For new implementations, consider using [`crate::repositories::PasswordRepository`] instead.
-#[async_trait]
-pub trait PasswordStorage: UserStorage {
-    /// Store a password hash for a user
-    async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error>;
-
-    /// Retrieve a user's password hash
-    async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error>;
-}
-
-/// OAuth storage trait for legacy storage backends.
-///
-/// For new implementations, consider using [`crate::repositories::OAuthRepository`] instead.
-#[async_trait]
-pub trait OAuthStorage: UserStorage {
-    /// Create a new OAuth account linked to a user
-    async fn create_oauth_account(
-        &self,
-        provider: &str,
-        subject: &str,
-        user_id: &UserId,
-    ) -> Result<OAuthAccount, Error>;
-
-    /// Find a user by their OAuth provider and subject
-    async fn get_user_by_provider_and_subject(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<User>, Error>;
-
-    /// Find an OAuth account by provider and subject
-    async fn get_oauth_account_by_provider_and_subject(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<OAuthAccount>, Error>;
-
-    /// Link an existing user to an OAuth account
-    async fn link_oauth_account(
-        &self,
-        user_id: &UserId,
-        provider: &str,
-        subject: &str,
-    ) -> Result<(), Error>;
-
-    /// Store a PKCE verifier with an expiration time
-    async fn store_pkce_verifier(
-        &self,
-        csrf_state: &str,
-        pkce_verifier: &str,
-        expires_in: chrono::Duration,
-    ) -> Result<(), Error>;
-
-    /// Retrieve a stored PKCE verifier by CSRF state
-    async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error>;
-}
-
+/// Use the builder pattern via [`NewUser::builder()`] for convenient construction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewUser {
     pub id: UserId,
@@ -326,40 +241,9 @@ impl NewUserBuilder {
     }
 }
 
-/// Storage methods specific to passkey authentication
-///
-/// This trait extends the base `UserStorage` trait with methods needed for
-/// storing and retrieving passkey credentials for a user.
-#[async_trait]
-pub trait PasskeyStorage: UserStorage {
-    /// Add a passkey credential for a user
-    async fn add_passkey(
-        &self,
-        user_id: &UserId,
-        credential_id: &str,
-        passkey_json: &str,
-    ) -> Result<(), Error>;
-
-    /// Get a passkey by credential ID
-    async fn get_passkey_by_credential_id(
-        &self,
-        credential_id: &str,
-    ) -> Result<Option<String>, Error>;
-
-    /// Get all passkeys for a user
-    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, Error>;
-
-    /// Set a passkey challenge for a user
-    async fn set_passkey_challenge(
-        &self,
-        challenge_id: &str,
-        challenge: &str,
-        expires_in: chrono::Duration,
-    ) -> Result<(), Error>;
-
-    /// Get a passkey challenge
-    async fn get_passkey_challenge(&self, challenge_id: &str) -> Result<Option<String>, Error>;
-}
+// ============================================================================
+// Token Types
+// ============================================================================
 
 /// Purpose enumeration for secure tokens to ensure type safety
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -527,46 +411,4 @@ impl PartialEq for SecureToken {
             && self.created_at.timestamp() == other.created_at.timestamp()
             && self.updated_at.timestamp() == other.updated_at.timestamp()
     }
-}
-
-/// Storage methods for secure tokens
-///
-/// This trait provides storage for generic secure tokens that can be used
-/// for various authentication purposes like magic links, password resets, and email verification.
-///
-/// # Security
-///
-/// Token storage uses SHA256 hashed tokens. Since tokens are generated with
-/// 256 bits of entropy, SHA256 provides sufficient security for storage.
-/// Verification is done using constant-time comparison via [`crate::crypto::verify_token_hash`].
-///
-/// Lookups are performed by hash, avoiding the need to iterate over all tokens.
-#[async_trait]
-pub trait TokenStorage: UserStorage {
-    /// Save a secure token to storage
-    ///
-    /// The token's `token_hash` field should be stored (not the plaintext token).
-    async fn save_secure_token(&self, token: &SecureToken) -> Result<(), Error>;
-
-    /// Get a token by its hash
-    ///
-    /// Returns the token if found and valid (unexpired, unused), None otherwise.
-    /// The caller should use constant-time comparison to verify the token.
-    async fn get_token_by_hash(
-        &self,
-        token_hash: &str,
-        purpose: TokenPurpose,
-    ) -> Result<Option<SecureToken>, Error>;
-
-    /// Mark a secure token as used by its hash
-    ///
-    /// After successful verification, call this to mark the token as consumed.
-    async fn set_secure_token_used_by_hash(
-        &self,
-        token_hash: &str,
-        purpose: TokenPurpose,
-    ) -> Result<(), Error>;
-
-    /// Clean up expired tokens for all purposes
-    async fn cleanup_expired_secure_tokens(&self) -> Result<(), Error>;
 }
