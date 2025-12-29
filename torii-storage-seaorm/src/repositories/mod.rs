@@ -20,9 +20,20 @@ use crate::SeaORMStorageError;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use torii_core::{Error, error::StorageError, repositories::RepositoryProvider};
+use torii_core::{
+    Error,
+    error::StorageError,
+    repositories::{
+        BruteForceRepositoryProvider, OAuthRepositoryProvider, PasskeyRepositoryProvider,
+        PasswordRepositoryProvider, RepositoryProvider, SessionRepositoryProvider,
+        TokenRepositoryProvider, UserRepositoryProvider,
+    },
+};
 
 /// Repository provider implementation for SeaORM
+///
+/// This struct implements all the individual repository provider traits
+/// as well as the unified `RepositoryProvider` trait.
 #[derive(Clone)]
 pub struct SeaORMRepositoryProvider {
     pool: DatabaseConnection,
@@ -58,44 +69,68 @@ impl SeaORMRepositoryProvider {
     }
 }
 
-#[async_trait]
-impl RepositoryProvider for SeaORMRepositoryProvider {
-    type User = SeaORMUserRepository;
-    type Session = SeaORMSessionRepository;
-    type Password = SeaORMPasswordRepository;
-    type OAuth = SeaORMOAuthRepository;
-    type Passkey = SeaORMPasskeyRepository;
-    type Token = SeaORMTokenRepository;
-    type BruteForce = SeaORMBruteForceRepository;
+// Implement individual provider traits
 
-    fn user(&self) -> &Self::User {
+impl UserRepositoryProvider for SeaORMRepositoryProvider {
+    type UserRepo = SeaORMUserRepository;
+
+    fn user(&self) -> &Self::UserRepo {
         &self.user
     }
+}
 
-    fn session(&self) -> &Self::Session {
+impl SessionRepositoryProvider for SeaORMRepositoryProvider {
+    type SessionRepo = SeaORMSessionRepository;
+
+    fn session(&self) -> &Self::SessionRepo {
         &self.session
     }
+}
 
-    fn password(&self) -> &Self::Password {
+impl PasswordRepositoryProvider for SeaORMRepositoryProvider {
+    type PasswordRepo = SeaORMPasswordRepository;
+
+    fn password(&self) -> &Self::PasswordRepo {
         &self.password
     }
+}
 
-    fn oauth(&self) -> &Self::OAuth {
+impl OAuthRepositoryProvider for SeaORMRepositoryProvider {
+    type OAuthRepo = SeaORMOAuthRepository;
+
+    fn oauth(&self) -> &Self::OAuthRepo {
         &self.oauth
     }
+}
 
-    fn passkey(&self) -> &Self::Passkey {
+impl PasskeyRepositoryProvider for SeaORMRepositoryProvider {
+    type PasskeyRepo = SeaORMPasskeyRepository;
+
+    fn passkey(&self) -> &Self::PasskeyRepo {
         &self.passkey
     }
+}
 
-    fn token(&self) -> &Self::Token {
+impl TokenRepositoryProvider for SeaORMRepositoryProvider {
+    type TokenRepo = SeaORMTokenRepository;
+
+    fn token(&self) -> &Self::TokenRepo {
         &self.token
     }
+}
 
-    fn brute_force(&self) -> &Self::BruteForce {
+impl BruteForceRepositoryProvider for SeaORMRepositoryProvider {
+    type BruteForceRepo = SeaORMBruteForceRepository;
+
+    fn brute_force(&self) -> &Self::BruteForceRepo {
         &self.brute_force
     }
+}
 
+// Implement the unified RepositoryProvider trait
+
+#[async_trait]
+impl RepositoryProvider for SeaORMRepositoryProvider {
     async fn migrate(&self) -> Result<(), torii_core::Error> {
         use crate::migrations::Migrator;
         use sea_orm_migration::MigratorTrait;

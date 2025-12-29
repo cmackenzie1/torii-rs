@@ -19,9 +19,20 @@ pub use user::SqliteUserRepository;
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::sync::Arc;
-use torii_core::{Error, error::StorageError, repositories::RepositoryProvider};
+use torii_core::{
+    Error,
+    error::StorageError,
+    repositories::{
+        BruteForceRepositoryProvider, OAuthRepositoryProvider, PasskeyRepositoryProvider,
+        PasswordRepositoryProvider, RepositoryProvider, SessionRepositoryProvider,
+        TokenRepositoryProvider, UserRepositoryProvider,
+    },
+};
 
 /// Repository provider implementation for SQLite
+///
+/// This struct implements all the individual repository provider traits
+/// as well as the unified `RepositoryProvider` trait.
 pub struct SqliteRepositoryProvider {
     pool: SqlitePool,
     user: Arc<SqliteUserRepository>,
@@ -56,44 +67,68 @@ impl SqliteRepositoryProvider {
     }
 }
 
-#[async_trait]
-impl RepositoryProvider for SqliteRepositoryProvider {
-    type User = SqliteUserRepository;
-    type Session = SqliteSessionRepository;
-    type Password = SqlitePasswordRepository;
-    type OAuth = SqliteOAuthRepository;
-    type Passkey = SqlitePasskeyRepository;
-    type Token = SqliteTokenRepository;
-    type BruteForce = SqliteBruteForceRepository;
+// Implement individual provider traits
 
-    fn user(&self) -> &Self::User {
+impl UserRepositoryProvider for SqliteRepositoryProvider {
+    type UserRepo = SqliteUserRepository;
+
+    fn user(&self) -> &Self::UserRepo {
         &self.user
     }
+}
 
-    fn session(&self) -> &Self::Session {
+impl SessionRepositoryProvider for SqliteRepositoryProvider {
+    type SessionRepo = SqliteSessionRepository;
+
+    fn session(&self) -> &Self::SessionRepo {
         &self.session
     }
+}
 
-    fn password(&self) -> &Self::Password {
+impl PasswordRepositoryProvider for SqliteRepositoryProvider {
+    type PasswordRepo = SqlitePasswordRepository;
+
+    fn password(&self) -> &Self::PasswordRepo {
         &self.password
     }
+}
 
-    fn oauth(&self) -> &Self::OAuth {
+impl OAuthRepositoryProvider for SqliteRepositoryProvider {
+    type OAuthRepo = SqliteOAuthRepository;
+
+    fn oauth(&self) -> &Self::OAuthRepo {
         &self.oauth
     }
+}
 
-    fn passkey(&self) -> &Self::Passkey {
+impl PasskeyRepositoryProvider for SqliteRepositoryProvider {
+    type PasskeyRepo = SqlitePasskeyRepository;
+
+    fn passkey(&self) -> &Self::PasskeyRepo {
         &self.passkey
     }
+}
 
-    fn token(&self) -> &Self::Token {
+impl TokenRepositoryProvider for SqliteRepositoryProvider {
+    type TokenRepo = SqliteTokenRepository;
+
+    fn token(&self) -> &Self::TokenRepo {
         &self.token
     }
+}
 
-    fn brute_force(&self) -> &Self::BruteForce {
+impl BruteForceRepositoryProvider for SqliteRepositoryProvider {
+    type BruteForceRepo = SqliteBruteForceRepository;
+
+    fn brute_force(&self) -> &Self::BruteForceRepo {
         &self.brute_force
     }
+}
 
+// Implement the unified RepositoryProvider trait
+
+#[async_trait]
+impl RepositoryProvider for SqliteRepositoryProvider {
     async fn migrate(&self) -> Result<(), torii_core::Error> {
         use crate::migrations::{
             AddLockedAtToUsers, CreateFailedLoginAttemptsTable, CreateIndexes,

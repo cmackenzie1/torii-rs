@@ -1,8 +1,16 @@
+//! Adapters that wrap RepositoryProvider implementations to implement individual repository traits.
+//!
+//! These adapters provide a way to use a RepositoryProvider implementation where individual
+//! repository traits are expected. This is useful for dependency injection in services.
+
 use crate::{
     Error, OAuthAccount, Session, SessionStorage, User, UserId,
     repositories::{
-        BruteForceProtectionRepository, OAuthRepository, PasskeyCredential, PasskeyRepository,
-        PasswordRepository, RepositoryProvider, SessionRepository, TokenRepository, UserRepository,
+        BruteForceProtectionRepository, BruteForceRepositoryProvider, OAuthRepository,
+        OAuthRepositoryProvider, PasskeyCredential, PasskeyRepository, PasskeyRepositoryProvider,
+        PasswordRepository, PasswordRepositoryProvider, SessionRepository,
+        SessionRepositoryProvider, TokenRepository, TokenRepositoryProvider, UserRepository,
+        UserRepositoryProvider,
     },
     session::SessionToken,
     storage::{AttemptStats, FailedLoginAttempt, NewUser, SecureToken, TokenPurpose},
@@ -11,19 +19,22 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
 
-/// Adapter that wraps a RepositoryProvider and implements individual repository traits
-pub struct UserRepositoryAdapter<R: RepositoryProvider> {
+/// Adapter that wraps a UserRepositoryProvider and implements UserRepository.
+///
+/// This adapter allows using a provider where a UserRepository is expected,
+/// delegating all operations to the underlying provider.
+pub struct UserRepositoryAdapter<R: UserRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> UserRepositoryAdapter<R> {
+impl<R: UserRepositoryProvider> UserRepositoryAdapter<R> {
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> UserRepository for UserRepositoryAdapter<R> {
+impl<R: UserRepositoryProvider> UserRepository for UserRepositoryAdapter<R> {
     async fn create(&self, user: NewUser) -> Result<User, Error> {
         self.provider.user().create(user).await
     }
@@ -53,18 +64,19 @@ impl<R: RepositoryProvider> UserRepository for UserRepositoryAdapter<R> {
     }
 }
 
-pub struct SessionRepositoryAdapter<R: RepositoryProvider> {
+/// Adapter that wraps a SessionRepositoryProvider and implements SessionRepository.
+pub struct SessionRepositoryAdapter<R: SessionRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> SessionRepositoryAdapter<R> {
+impl<R: SessionRepositoryProvider> SessionRepositoryAdapter<R> {
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> SessionRepository for SessionRepositoryAdapter<R> {
+impl<R: SessionRepositoryProvider> SessionRepository for SessionRepositoryAdapter<R> {
     async fn create(&self, session: Session) -> Result<Session, Error> {
         self.provider.session().create(session).await
     }
@@ -86,10 +98,10 @@ impl<R: RepositoryProvider> SessionRepository for SessionRepositoryAdapter<R> {
     }
 }
 
-/// Implementation of SessionStorage for SessionRepositoryAdapter
-/// This allows the adapter to be used with the OpaqueSessionProvider
+/// Implementation of SessionStorage for SessionRepositoryAdapter.
+/// This allows the adapter to be used with the OpaqueSessionProvider.
 #[async_trait]
-impl<R: RepositoryProvider> SessionStorage for SessionRepositoryAdapter<R> {
+impl<R: SessionRepositoryProvider> SessionStorage for SessionRepositoryAdapter<R> {
     async fn create_session(&self, session: &Session) -> Result<Session, Error> {
         self.create(session.clone()).await
     }
@@ -111,18 +123,19 @@ impl<R: RepositoryProvider> SessionStorage for SessionRepositoryAdapter<R> {
     }
 }
 
-pub struct PasswordRepositoryAdapter<R: RepositoryProvider> {
+/// Adapter that wraps a PasswordRepositoryProvider and implements PasswordRepository.
+pub struct PasswordRepositoryAdapter<R: PasswordRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> PasswordRepositoryAdapter<R> {
+impl<R: PasswordRepositoryProvider> PasswordRepositoryAdapter<R> {
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> PasswordRepository for PasswordRepositoryAdapter<R> {
+impl<R: PasswordRepositoryProvider> PasswordRepository for PasswordRepositoryAdapter<R> {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
         self.provider
             .password()
@@ -139,18 +152,19 @@ impl<R: RepositoryProvider> PasswordRepository for PasswordRepositoryAdapter<R> 
     }
 }
 
-pub struct OAuthRepositoryAdapter<R: RepositoryProvider> {
+/// Adapter that wraps an OAuthRepositoryProvider and implements OAuthRepository.
+pub struct OAuthRepositoryAdapter<R: OAuthRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> OAuthRepositoryAdapter<R> {
+impl<R: OAuthRepositoryProvider> OAuthRepositoryAdapter<R> {
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
+impl<R: OAuthRepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
     async fn create_account(
         &self,
         provider: &str,
@@ -218,18 +232,19 @@ impl<R: RepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
     }
 }
 
-pub struct PasskeyRepositoryAdapter<R: RepositoryProvider> {
+/// Adapter that wraps a PasskeyRepositoryProvider and implements PasskeyRepository.
+pub struct PasskeyRepositoryAdapter<R: PasskeyRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> PasskeyRepositoryAdapter<R> {
+impl<R: PasskeyRepositoryProvider> PasskeyRepositoryAdapter<R> {
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
+impl<R: PasskeyRepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
     async fn add_credential(
         &self,
         user_id: &UserId,
@@ -279,19 +294,19 @@ impl<R: RepositoryProvider> PasskeyRepository for PasskeyRepositoryAdapter<R> {
     }
 }
 
-/// Adapter that wraps a RepositoryProvider and implements TokenRepository
-pub struct TokenRepositoryAdapter<R: RepositoryProvider> {
+/// Adapter that wraps a TokenRepositoryProvider and implements TokenRepository.
+pub struct TokenRepositoryAdapter<R: TokenRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> TokenRepositoryAdapter<R> {
+impl<R: TokenRepositoryProvider> TokenRepositoryAdapter<R> {
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> TokenRepository for TokenRepositoryAdapter<R> {
+impl<R: TokenRepositoryProvider> TokenRepository for TokenRepositoryAdapter<R> {
     async fn create_token(
         &self,
         user_id: &UserId,
@@ -321,15 +336,15 @@ impl<R: RepositoryProvider> TokenRepository for TokenRepositoryAdapter<R> {
     }
 }
 
-/// Adapter that wraps a RepositoryProvider and implements BruteForceProtectionRepository.
+/// Adapter that wraps a BruteForceRepositoryProvider and implements BruteForceProtectionRepository.
 ///
 /// This adapter delegates all operations to the underlying provider's brute force
 /// repository, allowing services to work with the trait-based interface.
-pub struct BruteForceProtectionRepositoryAdapter<R: RepositoryProvider> {
+pub struct BruteForceProtectionRepositoryAdapter<R: BruteForceRepositoryProvider> {
     provider: Arc<R>,
 }
 
-impl<R: RepositoryProvider> BruteForceProtectionRepositoryAdapter<R> {
+impl<R: BruteForceRepositoryProvider> BruteForceProtectionRepositoryAdapter<R> {
     /// Create a new adapter wrapping the given repository provider.
     pub fn new(provider: Arc<R>) -> Self {
         Self { provider }
@@ -337,7 +352,7 @@ impl<R: RepositoryProvider> BruteForceProtectionRepositoryAdapter<R> {
 }
 
 #[async_trait]
-impl<R: RepositoryProvider> BruteForceProtectionRepository
+impl<R: BruteForceRepositoryProvider> BruteForceProtectionRepository
     for BruteForceProtectionRepositoryAdapter<R>
 {
     async fn record_failed_attempt(
