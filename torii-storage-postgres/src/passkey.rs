@@ -1,15 +1,29 @@
-use crate::PostgresStorage;
-use async_trait::async_trait;
-use chrono::Utc;
-use torii_core::UserId;
-use torii_core::error::StorageError;
-use torii_core::storage::PasskeyStorage;
+//! PostgreSQL passkey types and tests
 
-#[async_trait]
-impl PasskeyStorage for PostgresStorage {
+#[cfg(test)]
+mod tests {
+    use crate::PostgresStorage;
+    use crate::repositories::PostgresUserRepository;
+    use crate::tests::setup_test_db;
+    use chrono::Duration;
+    use chrono::Utc;
+    use torii_core::User;
+    use torii_core::error::StorageError;
+    use torii_core::repositories::UserRepository;
+    use torii_core::storage::NewUser;
+
+    async fn create_test_user(storage: &PostgresStorage) -> User {
+        let user_repo = PostgresUserRepository::new(storage.pool.clone());
+        let user = NewUser::builder()
+            .email("test@test.com".to_string())
+            .build()
+            .unwrap();
+        user_repo.create(user).await.unwrap()
+    }
+
     async fn add_passkey(
-        &self,
-        user_id: &UserId,
+        storage: &PostgresStorage,
+        user_id: &torii_core::UserId,
         credential_id: &str,
         passkey_json: &str,
     ) -> Result<(), torii_core::Error> {
@@ -22,31 +36,16 @@ impl PasskeyStorage for PostgresStorage {
         .bind(credential_id)
         .bind(user_id.as_str())
         .bind(passkey_json)
-        .execute(&self.pool)
+        .execute(&storage.pool)
         .await
-        .map_err(|e| StorageError::Database(e.to_string()))?;
+        .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(())
     }
 
-    async fn get_passkey_by_credential_id(
-        &self,
-        credential_id: &str,
-    ) -> Result<Option<String>, torii_core::Error> {
-        let passkey: Option<String> = sqlx::query_scalar(
-            r#"
-            SELECT public_key 
-            FROM passkeys 
-            WHERE credential_id = $1
-            "#,
-        )
-        .bind(credential_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| StorageError::Database(e.to_string()))?;
-        Ok(passkey)
-    }
-
-    async fn get_passkeys(&self, user_id: &UserId) -> Result<Vec<String>, torii_core::Error> {
+    async fn get_passkeys(
+        storage: &PostgresStorage,
+        user_id: &torii_core::UserId,
+    ) -> Result<Vec<String>, torii_core::Error> {
         let passkeys: Vec<String> = sqlx::query_scalar(
             r#"
             SELECT public_key 
@@ -55,17 +54,17 @@ impl PasskeyStorage for PostgresStorage {
             "#,
         )
         .bind(user_id.as_str())
-        .fetch_all(&self.pool)
+        .fetch_all(&storage.pool)
         .await
-        .map_err(|e| StorageError::Database(e.to_string()))?;
+        .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(passkeys)
     }
 
     async fn set_passkey_challenge(
-        &self,
+        storage: &PostgresStorage,
         challenge_id: &str,
         challenge: &str,
-        expires_in: chrono::Duration,
+        expires_in: Duration,
     ) -> Result<(), torii_core::Error> {
         sqlx::query(
             r#"
@@ -76,14 +75,14 @@ impl PasskeyStorage for PostgresStorage {
         .bind(challenge_id)
         .bind(challenge)
         .bind(Utc::now() + expires_in)
-        .execute(&self.pool)
+        .execute(&storage.pool)
         .await
-        .map_err(|e| StorageError::Database(e.to_string()))?;
+        .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(())
     }
 
     async fn get_passkey_challenge(
-        &self,
+        storage: &PostgresStorage,
         challenge_id: &str,
     ) -> Result<Option<String>, torii_core::Error> {
         let challenge: Option<String> = sqlx::query_scalar(
@@ -95,61 +94,44 @@ impl PasskeyStorage for PostgresStorage {
         )
         .bind(challenge_id)
         .bind(Utc::now())
-        .fetch_optional(&self.pool)
+        .fetch_optional(&storage.pool)
         .await
-        .map_err(|e| StorageError::Database(e.to_string()))?;
+        .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(challenge)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use chrono::Duration;
-    use torii_core::{NewUser, User, UserStorage, storage::PasskeyStorage};
-    use uuid::Uuid;
-
-    use crate::PostgresStorage;
-
-    async fn create_test_user(storage: &PostgresStorage) -> User {
-        let user = NewUser::builder()
-            .email("test@test.com".to_string())
-            .build()
-            .unwrap();
-        storage.create_user(&user).await.unwrap()
     }
 
     #[tokio::test]
     async fn test_add_and_get_passkey() {
-        let storage = crate::tests::setup_test_db().await;
+        let storage = setup_test_db().await;
 
         // Create a user
         let user = create_test_user(&storage).await;
 
-        let credential_id = Uuid::new_v4().to_string();
+        let credential_id = uuid::Uuid::new_v4().to_string();
         let passkey_json = "passkey_json";
-        storage
-            .add_passkey(&user.id, &credential_id, passkey_json)
+        add_passkey(&storage, &user.id, &credential_id, passkey_json)
             .await
             .unwrap();
 
-        let passkeys = storage.get_passkeys(&user.id).await.unwrap();
+        let passkeys = get_passkeys(&storage, &user.id).await.unwrap();
         assert_eq!(passkeys.len(), 1);
         assert_eq!(passkeys[0], passkey_json);
     }
 
     #[tokio::test]
     async fn test_set_and_get_passkey_challenge() {
-        let storage = crate::tests::setup_test_db().await;
+        let storage = setup_test_db().await;
 
-        let challenge_id = Uuid::new_v4().to_string();
+        let challenge_id = uuid::Uuid::new_v4().to_string();
         let challenge = "challenge";
         let expires_in = Duration::minutes(5);
-        storage
-            .set_passkey_challenge(&challenge_id, challenge, expires_in)
+        set_passkey_challenge(&storage, &challenge_id, challenge, expires_in)
             .await
             .unwrap();
 
-        let stored_challenge = storage.get_passkey_challenge(&challenge_id).await.unwrap();
+        let stored_challenge = get_passkey_challenge(&storage, &challenge_id)
+            .await
+            .unwrap();
         assert!(stored_challenge.is_some());
         assert_eq!(stored_challenge.unwrap(), challenge);
     }

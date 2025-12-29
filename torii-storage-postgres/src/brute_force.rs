@@ -182,17 +182,18 @@ mod tests {
     use torii_core::UserId;
 
     async fn create_test_user(storage: &crate::PostgresStorage, email: &str) {
-        use torii_core::storage::{NewUser, UserStorage};
-        storage
-            .create_user(
-                &NewUser::builder()
-                    .id(UserId::new_random())
-                    .email(email.to_string())
-                    .build()
-                    .expect("Failed to build user"),
-            )
-            .await
-            .expect("Failed to create test user");
+        use crate::repositories::PostgresUserRepository;
+        use torii_core::{repositories::UserRepository, storage::NewUser};
+        let repo = PostgresUserRepository::new(storage.pool.clone());
+        repo.create(
+            NewUser::builder()
+                .id(UserId::new_random())
+                .email(email.to_string())
+                .build()
+                .expect("Failed to build user"),
+        )
+        .await
+        .expect("Failed to create test user");
     }
 
     #[tokio::test]

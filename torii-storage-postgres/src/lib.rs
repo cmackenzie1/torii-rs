@@ -1,7 +1,7 @@
 //! PostgreSQL storage backend for Torii
 //!
 //! This crate provides a PostgreSQL-based storage implementation for the Torii authentication framework.
-//! It includes implementations for all core storage traits and provides a complete authentication
+//! It includes implementations for all repository traits and provides a complete authentication
 //! storage solution using PostgreSQL as the underlying database.
 //!
 //! # Features
@@ -17,48 +17,35 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use torii_storage_postgres::PostgresStorage;
-//! use torii_core::UserId;
+//! use torii_storage_postgres::PostgresRepositoryProvider;
+//! use sqlx::PgPool;
+//! use torii_core::repositories::RepositoryProvider;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Connect to PostgreSQL database
-//!     let storage = PostgresStorage::connect("postgresql://user:password@localhost/torii").await?;
+//!     let pool = PgPool::connect("postgresql://user:password@localhost/torii").await?;
+//!     let repositories = std::sync::Arc::new(PostgresRepositoryProvider::new(pool));
 //!     
 //!     // Run migrations to set up the schema
-//!     storage.migrate().await?;
+//!     repositories.migrate().await?;
 //!     
-//!     // Use with Torii (PostgresRepositoryProvider not yet implemented)
-//!     // let repositories = std::sync::Arc::new(storage.into_repository_provider());
-//!     // let torii = torii::Torii::new(repositories);
+//!     // Use with Torii
+//!     let torii = torii::Torii::new(repositories);
 //!     
 //!     Ok(())
 //! }
 //! ```
-//!
-//! # Current Status
-//!
-//! This crate currently provides the base PostgreSQL storage implementation with user and session
-//! management. The full repository provider implementation is still in development.
-//!
-//! # Storage Implementations
-//!
-//! This crate implements the following storage traits:
-//! - [`UserStorage`](torii_core::storage::UserStorage) - User account management
-//! - [`SessionStorage`](torii_core::storage::SessionStorage) - Session management
-//! - Password repository for secure password storage
-//! - OAuth repository for third-party authentication
-//! - Passkey repository for WebAuthn support
 //!
 //! # Database Schema
 //!
 //! The PostgreSQL schema includes tables for:
 //! - `users` - User accounts and profile information
 //! - `sessions` - Active user sessions
-//! - `passwords` - Hashed password credentials
 //! - `oauth_accounts` - Connected OAuth accounts
 //! - `passkeys` - WebAuthn passkey credentials
 //! - `passkey_challenges` - Temporary passkey challenges
+//! - `failed_login_attempts` - Brute force protection tracking
 //!
 //! All tables include appropriate indexes and constraints for optimal query performance and data integrity.
 
@@ -73,7 +60,6 @@ mod session;
 pub use brute_force::PostgresBruteForceRepository;
 pub use repositories::PostgresRepositoryProvider;
 
-use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 use migrations::AddLockedAtToUsers;
@@ -87,10 +73,7 @@ use migrations::CreateUsersTable;
 use migrations::PostgresMigrationManager;
 use sqlx::PgPool;
 use torii_core::error::StorageError;
-use torii_core::{
-    User, UserId,
-    storage::{NewUser, UserStorage},
-};
+use torii_core::{User, UserId};
 use torii_migration::Migration;
 use torii_migration::MigrationManager;
 
@@ -137,17 +120,22 @@ impl PostgresStorage {
 
         Ok(())
     }
+
+    /// Create a repository provider from this storage instance
+    pub fn into_repository_provider(self) -> PostgresRepositoryProvider {
+        PostgresRepositoryProvider::new(self.pool)
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PostgresUser {
-    id: String,
-    email: String,
-    name: Option<String>,
-    email_verified_at: Option<DateTime<Utc>>,
-    locked_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    pub id: String,
+    pub email: String,
+    pub name: Option<String>,
+    pub email_verified_at: Option<DateTime<Utc>>,
+    pub locked_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<PostgresUser> for User {
@@ -179,156 +167,17 @@ impl From<User> for PostgresUser {
     }
 }
 
-#[async_trait]
-impl UserStorage for PostgresStorage {
-    async fn create_user(&self, user: &NewUser) -> Result<User, torii_core::Error> {
-        let user = sqlx::query_as::<_, PostgresUser>(
-            r#"
-            INSERT INTO users (id, email) 
-            VALUES ($1, $2) 
-            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
-            "#,
-        )
-        .bind(user.id.as_str())
-        .bind(&user.email)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create user");
-            StorageError::Database("Failed to create user".to_string())
-        })?;
-
-        Ok(user.into())
-    }
-
-    async fn get_user(&self, id: &UserId) -> Result<Option<User>, torii_core::Error> {
-        let user = sqlx::query_as::<_, PostgresUser>(
-            r#"
-            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
-            FROM users 
-            WHERE id = $1
-            "#,
-        )
-        .bind(id.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get user");
-            StorageError::Database("Failed to get user".to_string())
-        })?;
-
-        match user {
-            Some(user) => Ok(Some(user.into())),
-            None => Ok(None),
-        }
-    }
-
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, torii_core::Error> {
-        let user = sqlx::query_as::<_, PostgresUser>(
-            r#"
-            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
-            FROM users 
-            WHERE email = $1
-            "#,
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get user by email");
-            StorageError::Database("Failed to get user by email".to_string())
-        })?;
-
-        match user {
-            Some(user) => Ok(Some(user.into())),
-            None => Ok(None),
-        }
-    }
-
-    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, torii_core::Error> {
-        let user = self.get_user_by_email(email).await?;
-        if let Some(user) = user {
-            return Ok(user);
-        }
-
-        let user = self
-            .create_user(
-                &NewUser::builder()
-                    .id(UserId::new_random())
-                    .email(email.to_string())
-                    .build()
-                    .unwrap(),
-            )
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get or create user by email");
-                StorageError::Database("Failed to get or create user by email".to_string())
-            })?;
-
-        Ok(user)
-    }
-
-    async fn update_user(&self, user: &User) -> Result<User, torii_core::Error> {
-        let user = sqlx::query_as::<_, PostgresUser>(
-            r#"
-            UPDATE users 
-            SET email = $1, name = $2, email_verified_at = $3, locked_at = $4, updated_at = $5 
-            WHERE id = $6
-            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
-            "#,
-        )
-        .bind(&user.email)
-        .bind(&user.name)
-        .bind(user.email_verified_at)
-        .bind(user.locked_at)
-        .bind(user.updated_at)
-        .bind(user.id.as_str())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to update user");
-            StorageError::Database("Failed to update user".to_string())
-        })?;
-
-        Ok(user.into())
-    }
-
-    async fn delete_user(&self, id: &UserId) -> Result<(), torii_core::Error> {
-        sqlx::query("DELETE FROM users WHERE id = $1")
-            .bind(id.as_str())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to delete user");
-                StorageError::Database("Failed to delete user".to_string())
-            })?;
-
-        Ok(())
-    }
-
-    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), torii_core::Error> {
-        sqlx::query("UPDATE users SET email_verified_at = $1 WHERE id = $2")
-            .bind(Utc::now())
-            .bind(user_id.as_str())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to set user email verified");
-                StorageError::Database("Failed to set user email verified".to_string())
-            })?;
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::repositories::{PostgresSessionRepository, PostgresUserRepository};
     use rand::Rng;
     use sqlx::types::chrono::Utc;
     use std::time::Duration;
+    use torii_core::Session;
+    use torii_core::repositories::{SessionRepository, UserRepository};
     use torii_core::session::SessionToken;
-    use torii_core::{Session, SessionStorage};
+    use torii_core::storage::NewUser;
 
     pub(crate) async fn setup_test_db() -> PostgresStorage {
         // TODO: this function is leaking postgres databases after the test is done.
@@ -369,9 +218,10 @@ mod tests {
         storage: &PostgresStorage,
         id: &UserId,
     ) -> Result<User, torii_core::Error> {
-        storage
-            .create_user(
-                &NewUser::builder()
+        let user_repo = PostgresUserRepository::new(storage.pool.clone());
+        user_repo
+            .create(
+                NewUser::builder()
                     .id(id.clone())
                     .email(format!("test{id}@example.com"))
                     .build()
@@ -386,10 +236,11 @@ mod tests {
         user_id: &UserId,
         expires_in: Duration,
     ) -> Result<Session, torii_core::Error> {
+        let session_repo = PostgresSessionRepository::new(storage.pool.clone());
         let now = Utc::now();
-        storage
-            .create_session(
-                &Session::builder()
+        session_repo
+            .create(
+                Session::builder()
                     .token(session_token.clone())
                     .user_id(user_id.clone())
                     .user_agent(Some("test".to_string()))

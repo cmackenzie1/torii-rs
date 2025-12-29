@@ -1,7 +1,7 @@
 //! SQLite storage backend for Torii
 //!
 //! This crate provides a SQLite-based storage implementation for the Torii authentication framework.
-//! It includes implementations for all core storage traits and provides a complete authentication
+//! It includes implementations for all repository traits and provides a complete authentication
 //! storage solution using SQLite as the underlying database.
 //!
 //! # Features
@@ -17,19 +17,20 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use torii_storage_sqlite::SqliteStorage;
-//! use torii_core::UserId;
+//! use torii_storage_sqlite::SqliteRepositoryProvider;
+//! use sqlx::SqlitePool;
+//! use torii_core::repositories::RepositoryProvider;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Connect to SQLite database
-//!     let storage = SqliteStorage::connect("sqlite://todos.db?mode=rwc").await?;
+//!     let pool = SqlitePool::connect("sqlite://todos.db?mode=rwc").await?;
+//!     let repositories = std::sync::Arc::new(SqliteRepositoryProvider::new(pool));
 //!     
 //!     // Run migrations to set up the schema
-//!     storage.migrate().await?;
+//!     repositories.migrate().await?;
 //!     
 //!     // Use with Torii
-//!     let repositories = std::sync::Arc::new(storage.into_repository_provider());
 //!     let torii = torii::Torii::new(repositories);
 //!     
 //!     Ok(())
@@ -41,24 +42,15 @@
 //! The crate provides [`SqliteRepositoryProvider`] which implements the [`RepositoryProvider`] trait
 //! from `torii-core`, allowing it to be used directly with the main Torii authentication coordinator.
 //!
-//! # Storage Implementations
-//!
-//! This crate implements the following storage traits:
-//! - [`UserStorage`](torii_core::storage::UserStorage) - User account management
-//! - [`SessionStorage`](torii_core::storage::SessionStorage) - Session management
-//! - Password repository for secure password storage
-//! - OAuth repository for third-party authentication
-//! - Passkey repository for WebAuthn support
-//!
 //! # Database Schema
 //!
 //! The SQLite schema includes tables for:
 //! - `users` - User accounts and profile information
 //! - `sessions` - Active user sessions
-//! - `passwords` - Hashed password credentials
 //! - `oauth_accounts` - Connected OAuth accounts
 //! - `passkeys` - WebAuthn passkey credentials
 //! - `passkey_challenges` - Temporary passkey challenges
+//! - `failed_login_attempts` - Brute force protection tracking
 //!
 //! All tables include appropriate indexes for optimal query performance.
 
@@ -69,9 +61,7 @@ mod password;
 mod repositories;
 mod session;
 
-use async_trait::async_trait;
 use chrono::DateTime;
-use chrono::Utc;
 use migrations::{
     AddLockedAtToUsers, CreateFailedLoginAttemptsTable, CreateIndexes, CreateOAuthAccountsTable,
     CreatePasskeyChallengesTable, CreatePasskeysTable, CreateSessionsTable, CreateUsersTable,
@@ -79,10 +69,7 @@ use migrations::{
 };
 use sqlx::SqlitePool;
 use torii_core::error::StorageError;
-use torii_core::{
-    User, UserId,
-    storage::{NewUser, UserStorage},
-};
+use torii_core::{User, UserId};
 use torii_migration::{Migration, MigrationManager};
 
 pub use repositories::SqliteRepositoryProvider;
@@ -184,168 +171,12 @@ impl From<User> for SqliteUser {
     }
 }
 
-#[async_trait]
-impl UserStorage for SqliteStorage {
-    async fn create_user(&self, user: &NewUser) -> Result<User, torii_core::Error> {
-        let now = Utc::now();
-        let user = sqlx::query_as::<_, SqliteUser>(
-            r#"
-            INSERT INTO users (id, email, name, email_verified_at, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
-            "#,
-        )
-        .bind(user.id.as_str())
-        .bind(&user.email)
-        .bind(&user.name)
-        .bind(
-            user.email_verified_at
-                .map(|timestamp| timestamp.timestamp()),
-        )
-        .bind(now.timestamp())
-        .bind(now.timestamp())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create user");
-            StorageError::Database("Failed to create user".to_string())
-        })?;
-
-        Ok(user.into())
-    }
-
-    async fn get_user(&self, id: &UserId) -> Result<Option<User>, torii_core::Error> {
-        let user = sqlx::query_as::<_, SqliteUser>(
-            r#"
-            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
-            FROM users 
-            WHERE id = ?
-            "#,
-        )
-        .bind(id.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get user");
-            StorageError::Database("Failed to get user".to_string())
-        })?;
-
-        if let Some(user) = user {
-            Ok(Some(user.into()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, torii_core::Error> {
-        let user = sqlx::query_as::<_, SqliteUser>(
-            r#"
-            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at 
-            FROM users 
-            WHERE email = ?
-            "#,
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get user by email");
-            StorageError::Database("Failed to get user by email".to_string())
-        })?;
-
-        if let Some(user) = user {
-            Ok(Some(user.into()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn get_or_create_user_by_email(&self, email: &str) -> Result<User, torii_core::Error> {
-        let user = self.get_user_by_email(email).await?;
-        if let Some(user) = user {
-            return Ok(user);
-        }
-
-        let user = self
-            .create_user(
-                &NewUser::builder()
-                    .id(UserId::new_random())
-                    .email(email.to_string())
-                    .build()
-                    .unwrap(),
-            )
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get or create user by email");
-                StorageError::Database("Failed to get or create user by email".to_string())
-            })?;
-
-        Ok(user)
-    }
-
-    async fn update_user(&self, user: &User) -> Result<User, torii_core::Error> {
-        let now = Utc::now();
-        let user = sqlx::query_as::<_, SqliteUser>(
-            r#"
-            UPDATE users 
-            SET email = ?, name = ?, email_verified_at = ?, locked_at = ?, updated_at = ? 
-            WHERE id = ?
-            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
-            "#,
-        )
-        .bind(&user.email)
-        .bind(&user.name)
-        .bind(
-            user.email_verified_at
-                .map(|timestamp| timestamp.timestamp()),
-        )
-        .bind(user.locked_at.map(|timestamp| timestamp.timestamp()))
-        .bind(now.timestamp())
-        .bind(user.id.as_str())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to update user");
-            StorageError::Database("Failed to update user".to_string())
-        })?;
-
-        Ok(user.into())
-    }
-
-    async fn delete_user(&self, id: &UserId) -> Result<(), torii_core::Error> {
-        sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(id.as_str())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to delete user");
-                StorageError::Database("Failed to delete user".to_string())
-            })?;
-
-        Ok(())
-    }
-
-    async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), torii_core::Error> {
-        sqlx::query("UPDATE users SET email_verified_at = ? WHERE id = ?")
-            .bind(Utc::now().timestamp())
-            .bind(user_id.as_str())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to set user email verified");
-                StorageError::Database("Failed to set user email verified".to_string())
-            })?;
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use sqlx::{Sqlite, types::chrono::Utc};
-    use torii_core::SessionToken;
+    use torii_core::{SessionToken, repositories::UserRepository, storage::NewUser};
     use torii_migration::{Migration, MigrationManager};
 
     use super::*;
@@ -353,6 +184,7 @@ mod tests {
         AddLockedAtToUsers, CreateOAuthAccountsTable, CreateSessionsTable, CreateUsersTable,
         SqliteMigrationManager,
     };
+    use crate::repositories::SqliteUserRepository;
     use crate::session::test::create_test_session;
 
     pub(crate) async fn setup_sqlite_storage() -> Result<SqliteStorage, sqlx::Error> {
@@ -382,9 +214,10 @@ mod tests {
         storage: &SqliteStorage,
         id: &str,
     ) -> Result<User, torii_core::Error> {
-        storage
-            .create_user(
-                &NewUser::builder()
+        let user_repo = SqliteUserRepository::new(storage.pool.clone());
+        user_repo
+            .create(
+                NewUser::builder()
                     .id(UserId::new(id))
                     .email(format!("test{id}@example.com"))
                     .build()
@@ -398,13 +231,15 @@ mod tests {
         let storage = setup_sqlite_storage()
             .await
             .expect("Failed to setup storage");
+        let user_repo = SqliteUserRepository::new(storage.pool.clone());
+
         let user = create_test_user(&storage, "1")
             .await
             .expect("Failed to create user");
         assert_eq!(user.email, format!("test1@example.com"));
 
-        let fetched = storage
-            .get_user(&UserId::new("1"))
+        let fetched = user_repo
+            .find_by_id(&UserId::new("1"))
             .await
             .expect("Failed to get user");
         assert_eq!(
@@ -412,12 +247,12 @@ mod tests {
             format!("test1@example.com")
         );
 
-        storage
-            .delete_user(&UserId::new("1"))
+        user_repo
+            .delete(&UserId::new("1"))
             .await
             .expect("Failed to delete user");
-        let deleted = storage
-            .get_user(&UserId::new("1"))
+        let deleted = user_repo
+            .find_by_id(&UserId::new("1"))
             .await
             .expect("Failed to get user");
         assert!(deleted.is_none());
@@ -428,6 +263,7 @@ mod tests {
         let storage = setup_sqlite_storage()
             .await
             .expect("Failed to setup storage");
+        let user_repo = SqliteUserRepository::new(storage.pool.clone());
 
         // Create test user
         let user = create_test_user(&storage, "1")
@@ -457,8 +293,8 @@ mod tests {
 
         let mut updated_user = user.clone();
         updated_user.name = Some("Test User".to_string());
-        let updated_user = storage
-            .update_user(&updated_user)
+        let updated_user = user_repo
+            .update(&updated_user)
             .await
             .expect("Failed to update user");
 
