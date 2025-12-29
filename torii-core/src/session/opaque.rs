@@ -9,8 +9,9 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 
 use crate::{
-    Error, Session, SessionStorage, SessionToken, UserId,
+    Error, Session, SessionToken, UserId,
     error::{SessionError, StorageError},
+    repositories::SessionRepository,
 };
 
 use super::provider::SessionProvider;
@@ -20,11 +21,11 @@ use super::provider::SessionProvider;
 /// This provider creates random opaque tokens and stores session data
 /// in a persistent storage backend. Each session lookup requires a
 /// database query.
-pub struct OpaqueSessionProvider<S: SessionStorage> {
+pub struct OpaqueSessionProvider<S: SessionRepository> {
     storage: Arc<S>,
 }
 
-impl<S: SessionStorage> OpaqueSessionProvider<S> {
+impl<S: SessionRepository> OpaqueSessionProvider<S> {
     /// Create a new opaque session provider with the given storage backend
     pub fn new(storage: Arc<S>) -> Self {
         Self { storage }
@@ -32,7 +33,7 @@ impl<S: SessionStorage> OpaqueSessionProvider<S> {
 }
 
 #[async_trait]
-impl<S: SessionStorage> SessionProvider for OpaqueSessionProvider<S> {
+impl<S: SessionRepository> SessionProvider for OpaqueSessionProvider<S> {
     async fn create_session(
         &self,
         user_id: &UserId,
@@ -50,7 +51,7 @@ impl<S: SessionStorage> SessionProvider for OpaqueSessionProvider<S> {
 
         let session = self
             .storage
-            .create_session(&session)
+            .create(session)
             .await
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
@@ -60,7 +61,7 @@ impl<S: SessionStorage> SessionProvider for OpaqueSessionProvider<S> {
     async fn get_session(&self, token: &SessionToken) -> Result<Session, Error> {
         let session = self
             .storage
-            .get_session(token)
+            .find_by_token(token)
             .await
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
@@ -77,7 +78,7 @@ impl<S: SessionStorage> SessionProvider for OpaqueSessionProvider<S> {
 
     async fn delete_session(&self, token: &SessionToken) -> Result<(), Error> {
         self.storage
-            .delete_session(token)
+            .delete(token)
             .await
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
@@ -86,7 +87,7 @@ impl<S: SessionStorage> SessionProvider for OpaqueSessionProvider<S> {
 
     async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
         self.storage
-            .cleanup_expired_sessions()
+            .cleanup_expired()
             .await
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
@@ -95,7 +96,7 @@ impl<S: SessionStorage> SessionProvider for OpaqueSessionProvider<S> {
 
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
         self.storage
-            .delete_sessions_for_user(user_id)
+            .delete_by_user_id(user_id)
             .await
             .map_err(|e| StorageError::Database(e.to_string()))?;
 
