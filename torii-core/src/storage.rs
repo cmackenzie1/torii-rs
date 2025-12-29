@@ -148,6 +148,16 @@ impl BruteForceProtectionConfig {
     }
 }
 
+// ============================================================================
+// Legacy Storage Traits
+// ============================================================================
+//
+// NOTE: These traits are maintained for compatibility with existing storage
+// backend implementations. New storage backends should implement the
+// Repository traits in `crate::repositories` instead.
+//
+// The Repository traits provide a cleaner, more composable API.
+
 #[async_trait]
 pub trait StoragePlugin: Send + Sync + 'static {
     type Config;
@@ -162,6 +172,9 @@ pub trait StoragePlugin: Send + Sync + 'static {
     async fn cleanup(&self) -> Result<(), Error>;
 }
 
+/// User storage trait for legacy storage backends.
+///
+/// For new implementations, consider using [`crate::repositories::UserRepository`] instead.
 #[async_trait]
 pub trait UserStorage: Send + Sync + 'static {
     async fn create_user(&self, user: &NewUser) -> Result<User, Error>;
@@ -173,6 +186,10 @@ pub trait UserStorage: Send + Sync + 'static {
     async fn set_user_email_verified(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
+/// Session storage trait used by [`crate::session::OpaqueSessionProvider`].
+///
+/// This trait is implemented by the [`crate::repositories::adapter::SessionRepositoryAdapter`]
+/// to bridge between Repository-based storage backends and the session provider system.
 #[async_trait]
 pub trait SessionStorage: Send + Sync + 'static {
     async fn create_session(&self, session: &Session) -> Result<Session, Error>;
@@ -182,10 +199,9 @@ pub trait SessionStorage: Send + Sync + 'static {
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
-/// Storage methods specific to email/password authentication
+/// Password storage trait for legacy storage backends.
 ///
-/// This trait extends the base `UserStorage` trait with methods needed for
-/// storing and retrieving password hashes.
+/// For new implementations, consider using [`crate::repositories::PasswordRepository`] instead.
 #[async_trait]
 pub trait PasswordStorage: UserStorage {
     /// Store a password hash for a user
@@ -195,10 +211,9 @@ pub trait PasswordStorage: UserStorage {
     async fn get_password_hash(&self, user_id: &UserId) -> Result<Option<String>, Error>;
 }
 
-/// Storage methods specific to OAuth authentication
+/// OAuth storage trait for legacy storage backends.
 ///
-/// This trait extends the base `UserStorage` trait with methods needed for
-/// OAuth account management and PKCE verifier storage.
+/// For new implementations, consider using [`crate::repositories::OAuthRepository`] instead.
 #[async_trait]
 pub trait OAuthStorage: UserStorage {
     /// Create a new OAuth account linked to a user
