@@ -15,12 +15,16 @@ impl SqlitePasswordRepository {
 #[async_trait]
 impl PasswordRepository for SqlitePasswordRepository {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
-        sqlx::query("UPDATE users SET password_hash = ?1 WHERE id = ?2")
+        let result = sqlx::query("UPDATE users SET password_hash = ?1 WHERE id = ?2")
             .bind(hash)
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+
+        if result.rows_affected() == 0 {
+            return Err(Error::Storage(StorageError::NotFound));
+        }
 
         Ok(())
     }
@@ -37,11 +41,15 @@ impl PasswordRepository for SqlitePasswordRepository {
     }
 
     async fn remove_password_hash(&self, user_id: &UserId) -> Result<(), Error> {
-        sqlx::query("UPDATE users SET password_hash = NULL WHERE id = ?1")
+        let result = sqlx::query("UPDATE users SET password_hash = NULL WHERE id = ?1")
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+
+        if result.rows_affected() == 0 {
+            return Err(Error::Storage(StorageError::NotFound));
+        }
 
         Ok(())
     }
