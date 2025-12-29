@@ -2,26 +2,19 @@ use async_trait::async_trait;
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 use rand::{TryRngCore, rngs::OsRng};
-use sea_orm::{ConnectionTrait, DatabaseConnection, FromQueryResult, Statement};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::str::FromStr;
 use torii_core::{
     Error, UserId,
     crypto::hash_token,
+    error::StorageError,
     repositories::TokenRepository,
     storage::{SecureToken, TokenPurpose},
 };
 
-/// Query result struct for mapping secure_tokens table rows
-#[derive(Debug, FromQueryResult)]
-struct SecureTokenRow {
-    user_id: String,
-    token: String, // This is actually the hash stored in the database
-    purpose: String,
-    used_at: Option<chrono::DateTime<Utc>>,
-    expires_at: chrono::DateTime<Utc>,
-    created_at: chrono::DateTime<Utc>,
-    updated_at: chrono::DateTime<Utc>,
-}
+use crate::SeaORMStorageError;
+use crate::entities::secure_token;
 
 /// SeaORM implementation of TokenRepository
 pub struct SeaORMTokenRepository {
@@ -56,40 +49,34 @@ impl TokenRepository for SeaORMTokenRepository {
         let now = Utc::now();
         let expires_at = now + expires_in;
 
-        let secure_token = SecureToken::new(
+        // Create the active model for insertion
+        let model = secure_token::ActiveModel {
+            user_id: Set(user_id.to_string()),
+            token: Set(token_hash.clone()), // Store hash, not plaintext
+            purpose: Set(purpose.as_str().to_string()),
+            used_at: Set(None),
+            expires_at: Set(expires_at),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+
+        let result = model
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
+
+        // Return SecureToken with plaintext token (for the caller) and hash (stored)
+        Ok(SecureToken::new(
             user_id.clone(),
-            token_string,       // Plaintext returned to user
-            token_hash.clone(), // Hash stored in database
+            token_string,  // Plaintext returned to user
+            token_hash,    // Hash stored in database
             purpose,
             None, // not used yet
-            expires_at,
-            now,
-            now,
-        );
-
-        // Get the database backend dynamically
-        let backend = self.pool.get_database_backend();
-
-        // Store the token_hash in the 'token' column (never store plaintext)
-        let query = Statement::from_sql_and_values(
-            backend,
-            "INSERT INTO secure_tokens (user_id, token, purpose, used_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            vec![
-                secure_token.user_id.to_string().into(),
-                secure_token.token_hash.clone().into(), // Store hash, not plaintext
-                secure_token.purpose.as_str().to_string().into(),
-                secure_token.used_at.into(),
-                secure_token.expires_at.into(),
-                secure_token.created_at.into(),
-                secure_token.updated_at.into(),
-            ],
-        );
-
-        self.pool.execute(query).await.map_err(|e| {
-            Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
-        })?;
-
-        Ok(secure_token)
+            result.expires_at,
+            result.created_at,
+            result.updated_at,
+        ))
     }
 
     async fn verify_token(
@@ -99,37 +86,27 @@ impl TokenRepository for SeaORMTokenRepository {
     ) -> Result<Option<SecureToken>, Error> {
         // Compute the hash of the provided token
         let token_hash = hash_token(token);
-
         let now = Utc::now();
-        let backend = self.pool.get_database_backend();
 
         // Query the specific token by its hash
-        let query = Statement::from_sql_and_values(
-            backend,
-            "SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at FROM secure_tokens WHERE token = ? AND purpose = ? AND expires_at > ? AND used_at IS NULL",
-            vec![
-                token_hash.clone().into(),
-                purpose.as_str().into(),
-                now.into(),
-            ],
-        );
-
-        let result: Option<SecureTokenRow> = SecureTokenRow::find_by_statement(query)
+        let result = secure_token::Entity::find()
+            .filter(secure_token::Column::Token.eq(&token_hash))
+            .filter(secure_token::Column::Purpose.eq(purpose.as_str()))
+            .filter(secure_token::Column::ExpiresAt.gt(now))
+            .filter(secure_token::Column::UsedAt.is_null())
             .one(&self.pool)
             .await
-            .map_err(|e| {
-                Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
-            })?;
+            .map_err(SeaORMStorageError::Database)?;
 
         if let Some(row) = result {
             let user_id = UserId::new(&row.user_id);
-            let stored_purpose =
-                TokenPurpose::from_str(&row.purpose).expect("Invalid purpose in database");
+            let stored_purpose = TokenPurpose::from_str(&row.purpose)
+                .map_err(|e| Error::Storage(StorageError::Database(format!("Invalid purpose in database: {}", e))))?;
 
             // Use from_storage since we only have the hash, not the plaintext
             let secure_token = SecureToken::from_storage(
                 user_id,
-                row.token, // This is the hash stored in the 'token' column
+                row.token.clone(), // This is the hash stored in the 'token' column
                 stored_purpose,
                 row.used_at,
                 row.expires_at,
@@ -140,20 +117,14 @@ impl TokenRepository for SeaORMTokenRepository {
             // Double-check using constant-time comparison
             if secure_token.verify(token) {
                 // Mark token as used
-                let update_query = Statement::from_sql_and_values(
-                    backend,
-                    "UPDATE secure_tokens SET used_at = ?, updated_at = ? WHERE token = ? AND purpose = ?",
-                    vec![
-                        now.into(),
-                        now.into(),
-                        token_hash.into(),
-                        purpose.as_str().into(),
-                    ],
-                );
+                let mut active_model: secure_token::ActiveModel = row.into();
+                active_model.used_at = Set(Some(now));
+                active_model.updated_at = Set(now);
 
-                self.pool.execute(update_query).await.map_err(|e| {
-                    Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
-                })?;
+                active_model
+                    .update(&self.pool)
+                    .await
+                    .map_err(SeaORMStorageError::Database)?;
 
                 // Update the token's used_at field for the return value
                 let mut updated_token = secure_token;
@@ -170,27 +141,21 @@ impl TokenRepository for SeaORMTokenRepository {
     async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
         // Compute the hash of the provided token
         let token_hash = hash_token(token);
-
         let now = Utc::now();
-        let backend = self.pool.get_database_backend();
 
         // Query the specific token by its hash
-        let query = Statement::from_sql_and_values(
-            backend,
-            "SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at FROM secure_tokens WHERE token = ? AND purpose = ? AND expires_at > ? AND used_at IS NULL",
-            vec![token_hash.into(), purpose.as_str().into(), now.into()],
-        );
-
-        let result: Option<SecureTokenRow> = SecureTokenRow::find_by_statement(query)
+        let result = secure_token::Entity::find()
+            .filter(secure_token::Column::Token.eq(&token_hash))
+            .filter(secure_token::Column::Purpose.eq(purpose.as_str()))
+            .filter(secure_token::Column::ExpiresAt.gt(now))
+            .filter(secure_token::Column::UsedAt.is_null())
             .one(&self.pool)
             .await
-            .map_err(|e| {
-                Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
-            })?;
+            .map_err(SeaORMStorageError::Database)?;
 
         if let Some(row) = result {
-            let stored_purpose =
-                TokenPurpose::from_str(&row.purpose).expect("Invalid purpose in database");
+            let stored_purpose = TokenPurpose::from_str(&row.purpose)
+                .map_err(|e| Error::Storage(StorageError::Database(format!("Invalid purpose in database: {}", e))))?;
 
             let secure_token = SecureToken::from_storage(
                 UserId::new(&row.user_id),
@@ -215,17 +180,12 @@ impl TokenRepository for SeaORMTokenRepository {
 
     async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
         let now = Utc::now();
-        let backend = self.pool.get_database_backend();
 
-        let query = Statement::from_sql_and_values(
-            backend,
-            "DELETE FROM secure_tokens WHERE expires_at < ?",
-            vec![now.into()],
-        );
-
-        self.pool.execute(query).await.map_err(|e| {
-            Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
-        })?;
+        secure_token::Entity::delete_many()
+            .filter(secure_token::Column::ExpiresAt.lt(now))
+            .exec(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }

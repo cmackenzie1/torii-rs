@@ -357,4 +357,32 @@ mod tests {
         let credentials = repo.get_credentials_for_user(&user_id).await.unwrap();
         assert_eq!(credentials.len(), 0);
     }
+
+    #[tokio::test]
+    async fn test_update_last_used() {
+        let pool = setup_test_db().await;
+        let repo = SeaORMPasskeyRepository::new(pool.clone());
+        let user_id = create_test_user(&pool).await;
+
+        let credential_id = vec![1, 2, 3, 4, 5];
+        let public_key = vec![6, 7, 8, 9, 10];
+
+        // Create a credential
+        let credential = repo
+            .add_credential(&user_id, credential_id.clone(), public_key, None)
+            .await
+            .unwrap();
+
+        // Initially, last_used_at should be None
+        assert!(credential.last_used_at.is_none());
+
+        // Update last used
+        repo.update_last_used(&credential_id).await.unwrap();
+
+        // Fetch the credential again and verify last_used_at is set
+        let updated_credential = repo.get_credential(&credential_id).await.unwrap();
+        assert!(updated_credential.is_some());
+        let updated_credential = updated_credential.unwrap();
+        assert!(updated_credential.last_used_at.is_some());
+    }
 }

@@ -135,9 +135,10 @@ impl UserRepository for PostgresUserRepository {
     }
 
     async fn mark_email_verified(&self, user_id: &UserId) -> Result<(), Error> {
+        let now = Utc::now();
         sqlx::query("UPDATE users SET email_verified_at = $1, updated_at = $2 WHERE id = $3")
-            .bind(Utc::now())
-            .bind(Utc::now())
+            .bind(now)
+            .bind(now)
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await
