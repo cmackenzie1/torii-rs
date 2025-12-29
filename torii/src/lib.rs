@@ -147,8 +147,7 @@ pub mod sqlite {
 /// PostgreSQL storage backend
 #[cfg(feature = "postgres")]
 pub mod postgres {
-    pub use torii_storage_postgres::PostgresStorage;
-    // TODO: Add PostgresRepositoryProvider once implemented
+    pub use torii_storage_postgres::{PostgresRepositoryProvider, PostgresStorage};
 }
 
 /// SeaORM storage backend
