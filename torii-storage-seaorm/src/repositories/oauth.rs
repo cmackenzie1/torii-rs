@@ -42,14 +42,11 @@ impl OAuthRepository for SeaORMOAuthRepository {
                 .await
                 .map_err(SeaORMStorageError::Database)?;
 
-            Ok(OAuthAccount::builder()
+            OAuthAccount::builder()
                 .user_id(UserId::new(&oauth_account.user_id))
                 .provider(oauth_account.provider)
                 .subject(oauth_account.subject)
                 .build()
-                .expect(
-                    "Builder with all required fields (user_id, provider, subject) should not fail",
-                ))
         } else {
             Err(SeaORMStorageError::UserNotFound.into())
         }
@@ -96,14 +93,14 @@ impl OAuthRepository for SeaORMOAuthRepository {
             .map_err(SeaORMStorageError::Database)?;
 
         match oauth_account {
-            Some(oauth_account) => Ok(Some(
-                OAuthAccount::builder()
+            Some(oauth_account) => {
+                let account = OAuthAccount::builder()
                     .user_id(UserId::new(&oauth_account.user_id))
                     .provider(oauth_account.provider)
                     .subject(oauth_account.subject)
-                    .build()
-                    .expect("Builder with all required fields (user_id, provider, subject) should not fail"),
-            )),
+                    .build()?;
+                Ok(Some(account))
+            }
             None => Ok(None),
         }
     }
