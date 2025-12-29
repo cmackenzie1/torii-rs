@@ -1,7 +1,8 @@
 use torii::{Torii, ToriiError};
+use torii_core::RepositoryProvider;
 
-async fn start_oauth_flow(
-    torii: &Torii<impl torii_core::storage::UserStorage + torii_core::storage::OAuthStorage>,
+async fn start_oauth_flow<R: RepositoryProvider>(
+    torii: &Torii<R>,
     provider: &str
 ) -> Result<String, ToriiError> {
     // Get the authorization URL for the provider

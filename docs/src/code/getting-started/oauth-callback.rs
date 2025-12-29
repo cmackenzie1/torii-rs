@@ -1,7 +1,8 @@
 use torii::{Torii, ToriiError};
+use torii_core::RepositoryProvider;
 
-async fn handle_oauth_callback(
-    torii: &Torii<impl torii_core::storage::UserStorage + torii_core::storage::OAuthStorage>,
+async fn handle_oauth_callback<R: RepositoryProvider>(
+    torii: &Torii<R>,
     provider: &str,
     code: &str,
     state: &str
