@@ -1,73 +1,148 @@
-use crate::SeaORMStorage;
 use async_trait::async_trait;
-use sea_orm::DatabaseConnection;
-use torii_core::{
-    Error, User, UserId,
-    repositories::UserRepository,
-    storage::{NewUser, UserStorage},
-};
+use chrono::Utc;
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use torii_core::{Error, User, UserId, repositories::UserRepository, storage::NewUser};
+
+use crate::SeaORMStorageError;
+use crate::entities::user;
 
 pub struct SeaORMUserRepository {
-    storage: SeaORMStorage,
+    pool: DatabaseConnection,
 }
 
 impl SeaORMUserRepository {
     pub fn new(pool: DatabaseConnection) -> Self {
-        Self {
-            storage: SeaORMStorage::new(pool),
-        }
+        Self { pool }
+    }
+
+    /// Helper method to create a user with name (convenience wrapper)
+    pub async fn create_user(&self, email: &str, name: Option<&str>) -> Result<User, Error> {
+        let new_user = NewUser {
+            id: UserId::new_random(),
+            email: email.to_string(),
+            name: name.map(|s| s.to_string()),
+            email_verified_at: None,
+        };
+
+        <Self as UserRepository>::create(self, new_user).await
     }
 }
 
 #[async_trait]
 impl UserRepository for SeaORMUserRepository {
-    async fn create(&self, user: NewUser) -> Result<User, Error> {
-        self.storage
-            .create_user(&user)
+    async fn create(&self, new_user: NewUser) -> Result<User, Error> {
+        let user_model = user::ActiveModel {
+            id: Set(new_user.id.to_string()),
+            email: Set(new_user.email),
+            name: Set(new_user.name),
+            email_verified_at: Set(new_user.email_verified_at),
+            ..Default::default()
+        };
+
+        let result = user_model
+            .insert(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        Ok(result.into())
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>, Error> {
-        self.storage
-            .get_user(id)
+        let result = user::Entity::find_by_id(id.as_str())
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        Ok(result.map(|u| u.into()))
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, Error> {
-        self.storage
-            .get_user_by_email(email)
+        let result = user::Entity::find()
+            .filter(user::Column::Email.eq(email))
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        Ok(result.map(|u| u.into()))
     }
 
     async fn find_or_create_by_email(&self, email: &str) -> Result<User, Error> {
-        self.storage
-            .get_or_create_user_by_email(email)
+        // First try to find the user
+        let existing = user::Entity::find()
+            .filter(user::Column::Email.eq(email))
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        if let Some(user) = existing {
+            return Ok(user.into());
+        }
+
+        // User doesn't exist, create a new one
+        let new_user = NewUser {
+            id: UserId::new_random(),
+            email: email.to_string(),
+            name: None,
+            email_verified_at: None,
+        };
+
+        <Self as UserRepository>::create(self, new_user).await
     }
 
     async fn update(&self, user: &User) -> Result<User, Error> {
-        self.storage
-            .update_user(user)
+        let existing: Option<user::ActiveModel> = user::Entity::find_by_id(user.id.as_str())
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?
+            .map(|u| u.into());
+
+        if existing.is_none() {
+            return Err(SeaORMStorageError::UserNotFound.into());
+        }
+
+        if let Some(mut existing) = existing {
+            existing.email = Set(user.email.clone());
+            existing.name = Set(user.name.clone());
+            existing.email_verified_at = Set(user.email_verified_at);
+            existing.locked_at = Set(user.locked_at);
+
+            let result = existing
+                .update(&self.pool)
+                .await
+                .map_err(SeaORMStorageError::Database)?;
+
+            return Ok(result.into());
+        }
+
+        Err(SeaORMStorageError::UserNotFound.into())
     }
 
     async fn delete(&self, id: &UserId) -> Result<(), Error> {
-        self.storage
-            .delete_user(id)
+        user::Entity::delete_by_id(id.as_str())
+            .exec(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        Ok(())
     }
 
     async fn mark_email_verified(&self, user_id: &UserId) -> Result<(), Error> {
-        self.storage
-            .set_user_email_verified(user_id)
+        let existing: Option<user::ActiveModel> = user::Entity::find_by_id(user_id.as_str())
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?
+            .map(|u| u.into());
+
+        if let Some(mut user) = existing {
+            user.email_verified_at = Set(Some(Utc::now()));
+            user.update(&self.pool)
+                .await
+                .map_err(SeaORMStorageError::Database)?;
+            Ok(())
+        } else {
+            Err(SeaORMStorageError::UserNotFound.into())
+        }
     }
 }
 
@@ -75,10 +150,8 @@ impl UserRepository for SeaORMUserRepository {
 mod tests {
     use super::*;
     use crate::migrations::Migrator;
-    use chrono::Utc;
     use sea_orm::Database;
     use sea_orm_migration::MigratorTrait;
-    use torii_core::storage::NewUser;
 
     async fn setup_test_db() -> DatabaseConnection {
         let pool = Database::connect("sqlite::memory:").await.unwrap();

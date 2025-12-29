@@ -1,26 +1,24 @@
-use crate::SeaORMStorage;
 use async_trait::async_trait;
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 use rand::{TryRngCore, rngs::OsRng};
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseConnection, FromQueryResult, Statement};
+use std::str::FromStr;
 use torii_core::{
     Error, UserId,
     crypto::hash_token,
     repositories::TokenRepository,
-    storage::{SecureToken, TokenPurpose, TokenStorage},
+    storage::{SecureToken, TokenPurpose},
 };
 
 /// SeaORM implementation of TokenRepository
 pub struct SeaORMTokenRepository {
-    storage: SeaORMStorage,
+    pool: DatabaseConnection,
 }
 
 impl SeaORMTokenRepository {
     pub fn new(pool: DatabaseConnection) -> Self {
-        Self {
-            storage: SeaORMStorage::new(pool),
-        }
+        Self { pool }
     }
 
     /// Generate a cryptographically secure random token with 256 bits of entropy
@@ -48,8 +46,8 @@ impl TokenRepository for SeaORMTokenRepository {
 
         let secure_token = SecureToken::new(
             user_id.clone(),
-            token_string, // Plaintext returned to user
-            token_hash,   // Hash stored in database
+            token_string,       // Plaintext returned to user
+            token_hash.clone(), // Hash stored in database
             purpose,
             None, // not used yet
             expires_at,
@@ -57,12 +55,27 @@ impl TokenRepository for SeaORMTokenRepository {
             now,
         );
 
-        self.storage
-            .save_secure_token(&secure_token)
-            .await
-            .map_err(|e| {
-                Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
-            })?;
+        // Get the database backend dynamically
+        let backend = self.pool.get_database_backend();
+
+        // Store the token_hash in the 'token' column (never store plaintext)
+        let query = Statement::from_sql_and_values(
+            backend,
+            "INSERT INTO secure_tokens (user_id, token, purpose, used_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                secure_token.user_id.to_string().into(),
+                secure_token.token_hash.clone().into(), // Store hash, not plaintext
+                secure_token.purpose.as_str().to_string().into(),
+                secure_token.used_at.into(),
+                secure_token.expires_at.into(),
+                secure_token.created_at.into(),
+                secure_token.updated_at.into(),
+            ],
+        );
+
+        self.pool.execute(query).await.map_err(|e| {
+            Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
+        })?;
 
         Ok(secure_token)
     }
@@ -75,23 +88,77 @@ impl TokenRepository for SeaORMTokenRepository {
         // Compute the hash of the provided token
         let token_hash = hash_token(token);
 
-        // Look up the token by hash - no iteration needed
-        let stored_token = self.storage.get_token_by_hash(&token_hash, purpose).await?;
+        // Custom struct to match our query results
+        #[derive(Debug, FromQueryResult)]
+        struct SecureTokenResult {
+            user_id: String,
+            token: String, // This is actually the hash
+            purpose: String,
+            used_at: Option<chrono::DateTime<Utc>>,
+            expires_at: chrono::DateTime<Utc>,
+            created_at: chrono::DateTime<Utc>,
+            updated_at: chrono::DateTime<Utc>,
+        }
 
-        if let Some(secure_token) = stored_token {
+        let now = Utc::now();
+        let backend = self.pool.get_database_backend();
+
+        // Query the specific token by its hash
+        let query = Statement::from_sql_and_values(
+            backend,
+            "SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at FROM secure_tokens WHERE token = ? AND purpose = ? AND expires_at > ? AND used_at IS NULL",
+            vec![
+                token_hash.clone().into(),
+                purpose.as_str().into(),
+                now.into(),
+            ],
+        );
+
+        let result: Option<SecureTokenResult> = SecureTokenResult::find_by_statement(query)
+            .one(&self.pool)
+            .await
+            .map_err(|e| {
+                Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
+            })?;
+
+        if let Some(row) = result {
+            let user_id = UserId::new(&row.user_id);
+            let stored_purpose =
+                TokenPurpose::from_str(&row.purpose).expect("Invalid purpose in database");
+
+            // Use from_storage since we only have the hash, not the plaintext
+            let secure_token = SecureToken::from_storage(
+                user_id,
+                row.token, // This is the hash stored in the 'token' column
+                stored_purpose,
+                row.used_at,
+                row.expires_at,
+                row.created_at,
+                row.updated_at,
+            );
+
             // Double-check using constant-time comparison
-            // This is technically redundant since we looked up by hash,
-            // but provides defense in depth
             if secure_token.verify(token) {
                 // Mark token as used
-                self.storage
-                    .set_secure_token_used_by_hash(&secure_token.token_hash, purpose)
-                    .await?;
+                let update_query = Statement::from_sql_and_values(
+                    backend,
+                    "UPDATE secure_tokens SET used_at = ?, updated_at = ? WHERE token = ? AND purpose = ?",
+                    vec![
+                        now.into(),
+                        now.into(),
+                        token_hash.into(),
+                        purpose.as_str().into(),
+                    ],
+                );
+
+                self.pool.execute(update_query).await.map_err(|e| {
+                    Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
+                })?;
 
                 // Update the token's used_at field for the return value
                 let mut updated_token = secure_token;
-                updated_token.used_at = Some(Utc::now());
-                updated_token.updated_at = Utc::now();
+                updated_token.used_at = Some(now);
+                updated_token.updated_at = now;
 
                 return Ok(Some(updated_token));
             }
@@ -104,12 +171,48 @@ impl TokenRepository for SeaORMTokenRepository {
         // Compute the hash of the provided token
         let token_hash = hash_token(token);
 
-        // Look up the token by hash - no iteration needed
-        let stored_token = self.storage.get_token_by_hash(&token_hash, purpose).await?;
+        #[derive(Debug, FromQueryResult)]
+        struct SecureTokenResult {
+            user_id: String,
+            token: String,
+            purpose: String,
+            used_at: Option<chrono::DateTime<Utc>>,
+            expires_at: chrono::DateTime<Utc>,
+            created_at: chrono::DateTime<Utc>,
+            updated_at: chrono::DateTime<Utc>,
+        }
 
-        if let Some(secure_token) = stored_token {
-            // Double-check using constant-time comparison
-            let now = Utc::now();
+        let now = Utc::now();
+        let backend = self.pool.get_database_backend();
+
+        // Query the specific token by its hash
+        let query = Statement::from_sql_and_values(
+            backend,
+            "SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at FROM secure_tokens WHERE token = ? AND purpose = ? AND expires_at > ? AND used_at IS NULL",
+            vec![token_hash.into(), purpose.as_str().into(), now.into()],
+        );
+
+        let result: Option<SecureTokenResult> = SecureTokenResult::find_by_statement(query)
+            .one(&self.pool)
+            .await
+            .map_err(|e| {
+                Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
+            })?;
+
+        if let Some(row) = result {
+            let stored_purpose =
+                TokenPurpose::from_str(&row.purpose).expect("Invalid purpose in database");
+
+            let secure_token = SecureToken::from_storage(
+                UserId::new(&row.user_id),
+                row.token,
+                stored_purpose,
+                row.used_at,
+                row.expires_at,
+                row.created_at,
+                row.updated_at,
+            );
+
             if secure_token.verify(token)
                 && secure_token.expires_at > now
                 && secure_token.used_at.is_none()
@@ -122,6 +225,126 @@ impl TokenRepository for SeaORMTokenRepository {
     }
 
     async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
-        self.storage.cleanup_expired_secure_tokens().await
+        let now = Utc::now();
+        let backend = self.pool.get_database_backend();
+
+        let query = Statement::from_sql_and_values(
+            backend,
+            "DELETE FROM secure_tokens WHERE expires_at < ?",
+            vec![now.into()],
+        );
+
+        self.pool.execute(query).await.map_err(|e| {
+            Error::Storage(torii_core::error::StorageError::Database(e.to_string()))
+        })?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::migrations::Migrator;
+    use crate::repositories::SeaORMUserRepository;
+    use sea_orm::Database;
+    use sea_orm_migration::MigratorTrait;
+
+    async fn setup_test_db() -> DatabaseConnection {
+        let pool = Database::connect("sqlite::memory:").await.unwrap();
+        Migrator::up(&pool, None).await.unwrap();
+        pool
+    }
+
+    async fn create_test_user(pool: &DatabaseConnection) -> UserId {
+        let repo = SeaORMUserRepository::new(pool.clone());
+        let user = repo
+            .create_user("test@example.com", Some("Test User"))
+            .await
+            .unwrap();
+        user.id
+    }
+
+    #[tokio::test]
+    async fn test_create_and_verify_token() {
+        let pool = setup_test_db().await;
+        let repo = SeaORMTokenRepository::new(pool.clone());
+        let user_id = create_test_user(&pool).await;
+
+        let token = repo
+            .create_token(&user_id, TokenPurpose::PasswordReset, Duration::hours(1))
+            .await
+            .unwrap();
+
+        assert_eq!(token.user_id, user_id);
+        assert!(token.used_at.is_none());
+
+        // Verify the token using the plaintext
+        let verified = repo
+            .verify_token(token.token().unwrap(), TokenPurpose::PasswordReset)
+            .await
+            .unwrap();
+
+        assert!(verified.is_some());
+        let verified = verified.unwrap();
+        assert!(verified.used_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_check_token() {
+        let pool = setup_test_db().await;
+        let repo = SeaORMTokenRepository::new(pool.clone());
+        let user_id = create_test_user(&pool).await;
+
+        let token = repo
+            .create_token(
+                &user_id,
+                TokenPurpose::EmailVerification,
+                Duration::hours(1),
+            )
+            .await
+            .unwrap();
+
+        // Check the token is valid
+        let is_valid = repo
+            .check_token(token.token().unwrap(), TokenPurpose::EmailVerification)
+            .await
+            .unwrap();
+
+        assert!(is_valid);
+
+        // Check with wrong purpose
+        let is_valid = repo
+            .check_token(token.token().unwrap(), TokenPurpose::PasswordReset)
+            .await
+            .unwrap();
+
+        assert!(!is_valid);
+    }
+
+    #[tokio::test]
+    async fn test_token_cannot_be_reused() {
+        let pool = setup_test_db().await;
+        let repo = SeaORMTokenRepository::new(pool.clone());
+        let user_id = create_test_user(&pool).await;
+
+        let token = repo
+            .create_token(&user_id, TokenPurpose::PasswordReset, Duration::hours(1))
+            .await
+            .unwrap();
+
+        // First verification should succeed
+        let verified = repo
+            .verify_token(token.token().unwrap(), TokenPurpose::PasswordReset)
+            .await
+            .unwrap();
+        assert!(verified.is_some());
+
+        // Second verification should fail (token already used)
+        let verified = repo
+            .verify_token(token.token().unwrap(), TokenPurpose::PasswordReset)
+            .await
+            .unwrap();
+        assert!(verified.is_none());
     }
 }

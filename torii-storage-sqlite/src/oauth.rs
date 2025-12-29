@@ -1,19 +1,20 @@
-use crate::{SqliteStorage, SqliteUser};
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use torii_core::error::StorageError;
-use torii_core::storage::OAuthStorage;
-use torii_core::{OAuthAccount, User, UserId};
+//! SQLite OAuth types
+//!
+//! This module contains the SQLite-specific types for OAuth storage.
+//! The actual OAuth repository implementation is in the repositories module.
+
+use chrono::DateTime;
+use torii_core::{OAuthAccount, UserId};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SqliteOAuthAccount {
     #[allow(dead_code)]
-    id: Option<i64>,
-    user_id: String,
-    provider: String,
-    subject: String,
-    created_at: i64,
-    updated_at: i64,
+    pub id: Option<i64>,
+    pub user_id: String,
+    pub provider: String,
+    pub subject: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 impl From<SqliteOAuthAccount> for OAuthAccount {
@@ -46,96 +47,17 @@ impl From<OAuthAccount> for SqliteOAuthAccount {
     }
 }
 
-#[async_trait]
-impl OAuthStorage for SqliteStorage {
-    async fn create_oauth_account(
-        &self,
-        provider: &str,
-        subject: &str,
-        user_id: &UserId,
-    ) -> Result<OAuthAccount, torii_core::Error> {
-        let now = Utc::now();
-        let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
-            r#"
-            INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            RETURNING id, user_id, provider, subject, created_at, updated_at
-            "#,
-        )
-        .bind(user_id.as_str())
-        .bind(provider)
-        .bind(subject)
-        .bind(now.timestamp())
-        .bind(now.timestamp())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create oauth account");
-            StorageError::Database("Failed to create oauth account".to_string())
-        })?;
+#[cfg(test)]
+mod tests {
+    use crate::SqliteStorage;
+    use crate::tests::{create_test_user, setup_sqlite_storage};
+    use chrono::Utc;
+    use torii_core::error::StorageError;
 
-        Ok(oauth_account.into())
-    }
-
-    async fn get_user_by_provider_and_subject(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<User>, torii_core::Error> {
-        let user = sqlx::query_as::<_, SqliteUser>(
-            r#"
-            SELECT id, email, name, email_verified_at, created_at, updated_at
-            FROM users
-            WHERE provider = ? AND subject = ?
-            "#,
-        )
-        .bind(provider)
-        .bind(subject)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get user by provider and subject");
-            StorageError::Database("Failed to get user by provider and subject".to_string())
-        })?;
-
-        if let Some(user) = user {
-            Ok(Some(user.into()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn get_oauth_account_by_provider_and_subject(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<OAuthAccount>, torii_core::Error> {
-        let oauth_account = sqlx::query_as::<_, SqliteOAuthAccount>(
-            r#"
-            SELECT id, user_id, provider, subject, created_at, updated_at
-            FROM oauth_accounts
-            WHERE provider = ? AND subject = ?
-            "#,
-        )
-        .bind(provider)
-        .bind(subject)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to get oauth account");
-            StorageError::Database("Failed to get oauth account".to_string())
-        })?;
-
-        if let Some(oauth_account) = oauth_account {
-            Ok(Some(oauth_account.into()))
-        } else {
-            Ok(None)
-        }
-    }
-
+    // Helper to link OAuth account for testing
     async fn link_oauth_account(
-        &self,
-        user_id: &UserId,
+        storage: &SqliteStorage,
+        user_id: &torii_core::UserId,
         provider: &str,
         subject: &str,
     ) -> Result<(), torii_core::Error> {
@@ -146,18 +68,38 @@ impl OAuthStorage for SqliteStorage {
             .bind(subject)
             .bind(now.timestamp())
             .bind(now.timestamp())
-            .execute(&self.pool)
+            .execute(&storage.pool)
             .await
             .map_err(|e| {
-                tracing::error!(error = %e, "Failed to link oauth account");
-                StorageError::Database("Failed to link oauth account".to_string())
+                torii_core::Error::Storage(StorageError::Database(e.to_string()))
             })?;
-
         Ok(())
     }
 
+    // Helper to get OAuth account for testing
+    async fn get_oauth_account(
+        storage: &SqliteStorage,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<super::SqliteOAuthAccount>, torii_core::Error> {
+        let oauth_account = sqlx::query_as::<_, super::SqliteOAuthAccount>(
+            r#"
+            SELECT id, user_id, provider, subject, created_at, updated_at
+            FROM oauth_accounts
+            WHERE provider = ? AND subject = ?
+            "#,
+        )
+        .bind(provider)
+        .bind(subject)
+        .fetch_optional(&storage.pool)
+        .await
+        .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
+        Ok(oauth_account)
+    }
+
+    // Helper to store PKCE verifier for testing
     async fn store_pkce_verifier(
-        &self,
+        storage: &SqliteStorage,
         csrf_state: &str,
         pkce_verifier: &str,
         expires_in: chrono::Duration,
@@ -168,41 +110,25 @@ impl OAuthStorage for SqliteStorage {
         .bind(csrf_state)
         .bind(pkce_verifier)
         .bind((Utc::now() + expires_in).timestamp())
-        .execute(&self.pool)
+        .execute(&storage.pool)
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to save pkce verifier");
-            StorageError::Database("Failed to save pkce verifier".to_string())
-        })?;
-
+        .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(())
     }
 
+    // Helper to get PKCE verifier for testing
     async fn get_pkce_verifier(
-        &self,
+        storage: &SqliteStorage,
         csrf_state: &str,
     ) -> Result<Option<String>, torii_core::Error> {
         let pkce_verifier: Option<String> =
             sqlx::query_scalar("SELECT pkce_verifier FROM oauth_state WHERE csrf_state = ?")
                 .bind(csrf_state)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&storage.pool)
                 .await
-                .map_err(|e| {
-                    tracing::error!(error = %e, "Failed to get pkce verifier");
-                    StorageError::Database("Failed to get pkce verifier".to_string())
-                })?;
-
+                .map_err(|e| torii_core::Error::Storage(StorageError::Database(e.to_string())))?;
         Ok(pkce_verifier)
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::tests::setup_sqlite_storage;
-
-    use crate::tests::create_test_user;
 
     #[tokio::test]
     async fn test_oauth_account_linking() {
@@ -216,25 +142,21 @@ mod tests {
             .expect("Failed to create user");
 
         // Link OAuth account
-        storage
-            .link_oauth_account(&user.id, "google", "oauth_id_123")
+        link_oauth_account(&storage, &user.id, "google", "oauth_id_123")
             .await
             .expect("Failed to link oauth account");
 
         // Try linking same account again - should fail
-        let result = storage
-            .link_oauth_account(&user.id, "google", "oauth_id_123")
-            .await;
+        let result = link_oauth_account(&storage, &user.id, "google", "oauth_id_123").await;
         assert!(result.is_err());
 
         // Get OAuth account
-        let oauth_account = storage
-            .get_oauth_account_by_provider_and_subject("google", "oauth_id_123")
+        let oauth_account = get_oauth_account(&storage, "google", "oauth_id_123")
             .await
             .expect("Failed to get oauth account");
 
         assert!(oauth_account.is_some());
-        assert_eq!(oauth_account.unwrap().user_id, user.id);
+        assert_eq!(oauth_account.unwrap().user_id, user.id.as_str());
     }
 
     #[tokio::test]
@@ -248,22 +170,19 @@ mod tests {
         let expires_in = chrono::Duration::seconds(3600);
 
         // Store PKCE verifier
-        storage
-            .store_pkce_verifier(csrf_state, pkce_verifier, expires_in)
+        store_pkce_verifier(&storage, csrf_state, pkce_verifier, expires_in)
             .await
             .expect("Failed to store pkce verifier");
 
         // Get PKCE verifier
-        let stored_verifier = storage
-            .get_pkce_verifier(csrf_state)
+        let stored_verifier = get_pkce_verifier(&storage, csrf_state)
             .await
             .expect("Failed to get pkce verifier");
 
         assert_eq!(stored_verifier, Some(pkce_verifier.to_string()));
 
         // Get non-existent PKCE verifier
-        let non_existent = storage
-            .get_pkce_verifier("non_existent")
+        let non_existent = get_pkce_verifier(&storage, "non_existent")
             .await
             .expect("Failed to get pkce verifier");
 
@@ -282,30 +201,26 @@ mod tests {
             .expect("Failed to create user");
 
         // Link multiple OAuth accounts
-        storage
-            .link_oauth_account(&user.id, "google", "google_id_123")
+        link_oauth_account(&storage, &user.id, "google", "google_id_123")
             .await
             .expect("Failed to link Google account");
 
-        storage
-            .link_oauth_account(&user.id, "github", "github_id_123")
+        link_oauth_account(&storage, &user.id, "github", "github_id_123")
             .await
             .expect("Failed to link GitHub account");
 
         // Verify both accounts are linked
-        let google_user = storage
-            .get_oauth_account_by_provider_and_subject("google", "google_id_123")
+        let google_account = get_oauth_account(&storage, "google", "google_id_123")
             .await
             .expect("Failed to get Google oauth account");
 
-        let github_user = storage
-            .get_oauth_account_by_provider_and_subject("github", "github_id_123")
+        let github_account = get_oauth_account(&storage, "github", "github_id_123")
             .await
             .expect("Failed to get GitHub oauth account");
 
-        assert!(google_user.is_some());
-        assert!(github_user.is_some());
-        assert_eq!(google_user.unwrap().user_id, user.id);
-        assert_eq!(github_user.unwrap().user_id, user.id);
+        assert!(google_account.is_some());
+        assert!(github_account.is_some());
+        assert_eq!(google_account.unwrap().user_id, user.id.as_str());
+        assert_eq!(github_account.unwrap().user_id, user.id.as_str());
     }
 }

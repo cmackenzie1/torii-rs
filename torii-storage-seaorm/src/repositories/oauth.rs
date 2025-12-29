@@ -1,20 +1,19 @@
-use crate::SeaORMStorage;
 use async_trait::async_trait;
-use chrono::Duration;
-use sea_orm::DatabaseConnection;
-use torii_core::{
-    Error, OAuthAccount, User, UserId, repositories::OAuthRepository, storage::OAuthStorage,
-};
+use chrono::{Duration, Utc};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use torii_core::{Error, OAuthAccount, User, UserId, repositories::OAuthRepository};
+
+use crate::SeaORMStorageError;
+use crate::entities::{oauth, pkce_verifier, user};
 
 pub struct SeaORMOAuthRepository {
-    storage: SeaORMStorage,
+    pool: DatabaseConnection,
 }
 
 impl SeaORMOAuthRepository {
     pub fn new(pool: DatabaseConnection) -> Self {
-        Self {
-            storage: SeaORMStorage::new(pool),
-        }
+        Self { pool }
     }
 }
 
@@ -26,10 +25,32 @@ impl OAuthRepository for SeaORMOAuthRepository {
         subject: &str,
         user_id: &UserId,
     ) -> Result<OAuthAccount, Error> {
-        self.storage
-            .create_oauth_account(provider, subject, user_id)
+        let user = user::Entity::find_by_id(user_id.to_string())
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        if let Some(user) = user {
+            let oauth_account = oauth::ActiveModel {
+                user_id: Set(user.id),
+                provider: Set(provider.to_string()),
+                subject: Set(subject.to_string()),
+                ..Default::default()
+            };
+            let oauth_account = oauth_account
+                .insert(&self.pool)
+                .await
+                .map_err(SeaORMStorageError::Database)?;
+
+            Ok(OAuthAccount::builder()
+                .user_id(UserId::new(&oauth_account.user_id))
+                .provider(oauth_account.provider)
+                .subject(oauth_account.subject)
+                .build()
+                .expect("Failed to build OAuthAccount"))
+        } else {
+            Err(SeaORMStorageError::UserNotFound.into())
+        }
     }
 
     async fn find_user_by_provider(
@@ -37,10 +58,27 @@ impl OAuthRepository for SeaORMOAuthRepository {
         provider: &str,
         subject: &str,
     ) -> Result<Option<User>, Error> {
-        self.storage
-            .get_user_by_provider_and_subject(provider, subject)
+        let oauth_account = oauth::Entity::find()
+            .filter(oauth::Column::Provider.eq(provider))
+            .filter(oauth::Column::Subject.eq(subject))
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        match oauth_account {
+            Some(oauth_account) => {
+                let user = user::Entity::find_by_id(oauth_account.user_id)
+                    .one(&self.pool)
+                    .await
+                    .map_err(SeaORMStorageError::Database)?;
+                let user = match user {
+                    Some(user) => user,
+                    None => return Err(SeaORMStorageError::UserNotFound.into()),
+                };
+                Ok(Some(user.into()))
+            }
+            _ => Ok(None),
+        }
     }
 
     async fn find_account_by_provider(
@@ -48,10 +86,24 @@ impl OAuthRepository for SeaORMOAuthRepository {
         provider: &str,
         subject: &str,
     ) -> Result<Option<OAuthAccount>, Error> {
-        self.storage
-            .get_oauth_account_by_provider_and_subject(provider, subject)
+        let oauth_account = oauth::Entity::find()
+            .filter(oauth::Column::Provider.eq(provider))
+            .filter(oauth::Column::Subject.eq(subject))
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        match oauth_account {
+            Some(oauth_account) => Ok(Some(
+                OAuthAccount::builder()
+                    .user_id(UserId::new(&oauth_account.user_id))
+                    .provider(oauth_account.provider)
+                    .subject(oauth_account.subject)
+                    .build()
+                    .expect("Failed to build OAuthAccount"),
+            )),
+            None => Ok(None),
+        }
     }
 
     async fn link_account(
@@ -60,10 +112,27 @@ impl OAuthRepository for SeaORMOAuthRepository {
         provider: &str,
         subject: &str,
     ) -> Result<(), Error> {
-        self.storage
-            .link_oauth_account(user_id, provider, subject)
+        let user = user::Entity::find_by_id(user_id.to_string())
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        let user = match user {
+            Some(user) => user,
+            None => return Err(SeaORMStorageError::UserNotFound.into()),
+        };
+
+        let oauth_account = oauth::ActiveModel {
+            user_id: Set(user.id),
+            provider: Set(provider.to_string()),
+            subject: Set(subject.to_string()),
+            ..Default::default()
+        };
+        oauth_account
+            .insert(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
+        Ok(())
     }
 
     async fn store_pkce_verifier(
@@ -72,22 +141,38 @@ impl OAuthRepository for SeaORMOAuthRepository {
         pkce_verifier: &str,
         expires_in: Duration,
     ) -> Result<(), Error> {
-        self.storage
-            .store_pkce_verifier(csrf_state, pkce_verifier, expires_in)
+        let pkce_verifier = pkce_verifier::ActiveModel {
+            csrf_state: Set(csrf_state.to_string()),
+            verifier: Set(pkce_verifier.to_string()),
+            expires_at: Set(Utc::now() + expires_in),
+            ..Default::default()
+        };
+        pkce_verifier
+            .insert(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+        Ok(())
     }
 
     async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error> {
-        self.storage
-            .get_pkce_verifier(csrf_state)
+        let pkce_verifier = pkce_verifier::Entity::find()
+            .filter(pkce_verifier::Column::CsrfState.eq(csrf_state))
+            .one(&self.pool)
             .await
-            .map_err(|e| Error::Storage(torii_core::error::StorageError::Database(e.to_string())))
+            .map_err(SeaORMStorageError::Database)?;
+
+        match pkce_verifier {
+            Some(pkce_verifier) => Ok(Some(pkce_verifier.verifier)),
+            None => Ok(None),
+        }
     }
 
-    async fn delete_pkce_verifier(&self, _csrf_state: &str) -> Result<(), Error> {
-        // TODO: This method is not available in the storage trait yet
-        // For now, this is a placeholder implementation
+    async fn delete_pkce_verifier(&self, csrf_state: &str) -> Result<(), Error> {
+        pkce_verifier::Entity::delete_many()
+            .filter(pkce_verifier::Column::CsrfState.eq(csrf_state))
+            .exec(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
         Ok(())
     }
 }
@@ -96,9 +181,9 @@ impl OAuthRepository for SeaORMOAuthRepository {
 mod tests {
     use super::*;
     use crate::migrations::Migrator;
+    use crate::repositories::SeaORMUserRepository;
     use sea_orm::Database;
     use sea_orm_migration::MigratorTrait;
-    use torii_core::storage::{NewUser, UserStorage};
 
     async fn setup_test_db() -> DatabaseConnection {
         let pool = Database::connect("sqlite::memory:").await.unwrap();
@@ -107,15 +192,11 @@ mod tests {
     }
 
     async fn create_test_user(pool: &DatabaseConnection) -> UserId {
-        let storage = SeaORMStorage::new(pool.clone());
-        let new_user = NewUser {
-            id: UserId::new_random(),
-            email: "test@example.com".to_string(),
-            name: Some("Test User".to_string()),
-            email_verified_at: None,
-        };
-
-        let user = storage.create_user(&new_user).await.unwrap();
+        let repo = SeaORMUserRepository::new(pool.clone());
+        let user = repo
+            .create_user("test@example.com", Some("Test User"))
+            .await
+            .unwrap();
         user.id
     }
 
@@ -250,9 +331,27 @@ mod tests {
     #[tokio::test]
     async fn test_delete_pkce_verifier() {
         let pool = setup_test_db().await;
-        let repo = SeaORMOAuthRepository::new(pool);
+        let repo = SeaORMOAuthRepository::new(pool.clone());
 
-        let result = repo.delete_pkce_verifier("test-state").await;
+        let csrf_state = "test-state-to-delete";
+        let pkce_verifier = "test-verifier";
+        let expires_in = Duration::hours(1);
+
+        // Store it first
+        repo.store_pkce_verifier(csrf_state, pkce_verifier, expires_in)
+            .await
+            .unwrap();
+
+        // Verify it exists
+        let retrieved = repo.get_pkce_verifier(csrf_state).await.unwrap();
+        assert!(retrieved.is_some());
+
+        // Delete it
+        let result = repo.delete_pkce_verifier(csrf_state).await;
         assert!(result.is_ok());
+
+        // Verify it's gone
+        let after_delete = repo.get_pkce_verifier(csrf_state).await.unwrap();
+        assert!(after_delete.is_none());
     }
 }
