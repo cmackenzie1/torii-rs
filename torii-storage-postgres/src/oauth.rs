@@ -85,7 +85,7 @@ impl PostgresOAuthAccount {
             .provider(provider.into())
             .subject(subject.into())
             .build()
-            .expect("Default builder should never fail")
+            .expect("Builder with all required fields (user_id, provider, subject) should not fail")
     }
 
     pub fn is_expired(&self, ttl: Duration) -> bool {
@@ -102,7 +102,7 @@ impl From<PostgresOAuthAccount> for OAuthAccount {
             .created_at(oauth_account.created_at)
             .updated_at(oauth_account.updated_at)
             .build()
-            .expect("Default builder should never fail")
+            .expect("Conversion from valid PostgresOAuthAccount should not fail")
     }
 }
 
@@ -115,6 +115,6 @@ impl From<OAuthAccount> for PostgresOAuthAccount {
             .created_at(oauth_account.created_at)
             .updated_at(oauth_account.updated_at)
             .build()
-            .expect("Default builder should never fail")
+            .expect("Conversion from valid OAuthAccount should not fail")
     }
 }

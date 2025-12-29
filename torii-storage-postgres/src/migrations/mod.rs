@@ -635,6 +635,167 @@ impl Migration<Postgres> for AddLockedAtToUsers {
     }
 }
 
+/// Migration to create the oauth_state table for PKCE verifier storage.
+pub struct CreateOAuthStateTable;
+
+#[async_trait]
+impl Migration<Postgres> for CreateOAuthStateTable {
+    fn version(&self) -> i64 {
+        10
+    }
+
+    fn name(&self) -> &str {
+        "CreateOAuthStateTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS oauth_state (
+                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                csrf_state TEXT NOT NULL UNIQUE,
+                pkce_verifier TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for expiration cleanup
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_state_expires_at ON oauth_state(expires_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_oauth_state_expires_at")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS oauth_state")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
+/// Migration to create the secure_tokens table for magic links and password reset.
+pub struct CreateSecureTokensTable;
+
+#[async_trait]
+impl Migration<Postgres> for CreateSecureTokensTable {
+    fn version(&self) -> i64 {
+        11
+    }
+
+    fn name(&self) -> &str {
+        "CreateSecureTokensTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS secure_tokens (
+                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                user_id TEXT NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                purpose TEXT NOT NULL,
+                used_at TIMESTAMPTZ,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index on token for faster lookups
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_secure_tokens_token ON secure_tokens(token)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index on purpose and expires_at for efficient cleanup
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_secure_tokens_purpose_expires ON secure_tokens(purpose, expires_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_secure_tokens_token")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_secure_tokens_purpose_expires")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS secure_tokens")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
+/// Migration to add name and last_used_at columns to passkeys table.
+pub struct AddPasskeyMetadata;
+
+#[async_trait]
+impl Migration<Postgres> for AddPasskeyMetadata {
+    fn version(&self) -> i64 {
+        12
+    }
+
+    fn name(&self) -> &str {
+        "AddPasskeyMetadata"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("ALTER TABLE passkeys ADD COLUMN IF NOT EXISTS name TEXT")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("ALTER TABLE passkeys ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("ALTER TABLE passkeys DROP COLUMN IF EXISTS name")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("ALTER TABLE passkeys DROP COLUMN IF EXISTS last_used_at")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,7 +47,9 @@ impl OAuthRepository for SeaORMOAuthRepository {
                 .provider(oauth_account.provider)
                 .subject(oauth_account.subject)
                 .build()
-                .expect("Failed to build OAuthAccount"))
+                .expect(
+                    "Builder with all required fields (user_id, provider, subject) should not fail",
+                ))
         } else {
             Err(SeaORMStorageError::UserNotFound.into())
         }
@@ -100,7 +102,7 @@ impl OAuthRepository for SeaORMOAuthRepository {
                     .provider(oauth_account.provider)
                     .subject(oauth_account.subject)
                     .build()
-                    .expect("Failed to build OAuthAccount"),
+                    .expect("Builder with all required fields (user_id, provider, subject) should not fail"),
             )),
             None => Ok(None),
         }

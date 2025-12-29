@@ -14,17 +14,17 @@ impl SqlitePasswordRepository {
 
 #[async_trait]
 impl PasswordRepository for SqlitePasswordRepository {
+    /// Set the password hash for a user.
+    ///
+    /// Note: This method succeeds silently if the user does not exist.
+    /// Callers are expected to verify the user exists before calling this method.
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
-        let result = sqlx::query("UPDATE users SET password_hash = ?1 WHERE id = ?2")
+        sqlx::query("UPDATE users SET password_hash = ?1 WHERE id = ?2")
             .bind(hash)
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Storage(StorageError::NotFound));
-        }
 
         Ok(())
     }
@@ -40,16 +40,16 @@ impl PasswordRepository for SqlitePasswordRepository {
         Ok(result)
     }
 
+    /// Remove the password hash for a user.
+    ///
+    /// Note: This method succeeds silently if the user does not exist.
+    /// Callers are expected to verify the user exists before calling this method.
     async fn remove_password_hash(&self, user_id: &UserId) -> Result<(), Error> {
-        let result = sqlx::query("UPDATE users SET password_hash = NULL WHERE id = ?1")
+        sqlx::query("UPDATE users SET password_hash = NULL WHERE id = ?1")
             .bind(user_id.as_str())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::Storage(StorageError::NotFound));
-        }
 
         Ok(())
     }
