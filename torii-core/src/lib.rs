@@ -34,6 +34,6 @@ pub use session::{
 };
 pub use storage::{
     AttemptStats, BruteForceProtectionConfig, FailedLoginAttempt, LockoutStatus, NewUser,
-    SecureToken, SessionStorage, TokenPurpose,
+    SecureToken, TokenPurpose,
 };
 pub use user::{OAuthAccount, User, UserId, UserManager};

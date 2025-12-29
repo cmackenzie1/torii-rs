@@ -4,7 +4,7 @@
 //! repository traits are expected. This is useful for dependency injection in services.
 
 use crate::{
-    Error, OAuthAccount, Session, SessionStorage, User, UserId,
+    Error, OAuthAccount, Session, User, UserId,
     repositories::{
         BruteForceProtectionRepository, BruteForceRepositoryProvider, OAuthRepository,
         OAuthRepositoryProvider, PasskeyCredential, PasskeyRepository, PasskeyRepositoryProvider,
@@ -95,31 +95,6 @@ impl<R: SessionRepositoryProvider> SessionRepository for SessionRepositoryAdapte
 
     async fn cleanup_expired(&self) -> Result<(), Error> {
         self.provider.session().cleanup_expired().await
-    }
-}
-
-/// Implementation of SessionStorage for SessionRepositoryAdapter.
-/// This allows the adapter to be used with the OpaqueSessionProvider.
-#[async_trait]
-impl<R: SessionRepositoryProvider> SessionStorage for SessionRepositoryAdapter<R> {
-    async fn create_session(&self, session: &Session) -> Result<Session, Error> {
-        self.create(session.clone()).await
-    }
-
-    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Error> {
-        self.find_by_token(token).await
-    }
-
-    async fn delete_session(&self, token: &SessionToken) -> Result<(), Error> {
-        self.delete(token).await
-    }
-
-    async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
-        self.cleanup_expired().await
-    }
-
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
-        self.delete_by_user_id(user_id).await
     }
 }
 

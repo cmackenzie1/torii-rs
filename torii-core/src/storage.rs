@@ -1,11 +1,10 @@
-use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::{Error, Session, UserId, error::utilities::RequiredFieldExt, session::SessionToken};
+use crate::{Error, UserId, error::utilities::RequiredFieldExt};
 
 // ============================================================================
 // Brute Force Protection Types
@@ -143,27 +142,6 @@ impl BruteForceProtectionConfig {
             ..Default::default()
         }
     }
-}
-
-// ============================================================================
-// Session Storage Trait
-// ============================================================================
-
-/// Session storage trait used by [`crate::session::OpaqueSessionProvider`].
-///
-/// This trait is implemented by storage backends to provide session persistence
-/// for opaque token-based sessions. For JWT-based sessions, this trait is not needed.
-///
-/// Storage backends should implement this trait directly or use the
-/// [`crate::repositories::adapter::SessionRepositoryAdapter`] to bridge from
-/// the Repository pattern.
-#[async_trait]
-pub trait SessionStorage: Send + Sync + 'static {
-    async fn create_session(&self, session: &Session) -> Result<Session, Error>;
-    async fn get_session(&self, token: &SessionToken) -> Result<Option<Session>, Error>;
-    async fn delete_session(&self, token: &SessionToken) -> Result<(), Error>;
-    async fn cleanup_expired_sessions(&self) -> Result<(), Error>;
-    async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
 }
 
 // ============================================================================
