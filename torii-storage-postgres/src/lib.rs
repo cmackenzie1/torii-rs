@@ -63,11 +63,14 @@ pub use repositories::PostgresRepositoryProvider;
 use chrono::DateTime;
 use chrono::Utc;
 use migrations::AddLockedAtToUsers;
+use migrations::AddPasskeyMetadata;
 use migrations::CreateFailedLoginAttemptsTable;
 use migrations::CreateIndexes;
 use migrations::CreateOAuthAccountsTable;
+use migrations::CreateOAuthStateTable;
 use migrations::CreatePasskeyChallengesTable;
 use migrations::CreatePasskeysTable;
+use migrations::CreateSecureTokensTable;
 use migrations::CreateSessionsTable;
 use migrations::CreateUsersTable;
 use migrations::PostgresMigrationManager;
@@ -112,6 +115,9 @@ impl PostgresStorage {
             Box::new(CreateIndexes),
             Box::new(CreateFailedLoginAttemptsTable),
             Box::new(AddLockedAtToUsers),
+            Box::new(CreateOAuthStateTable),
+            Box::new(CreateSecureTokensTable),
+            Box::new(AddPasskeyMetadata),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");

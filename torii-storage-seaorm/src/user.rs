@@ -53,6 +53,7 @@ mod tests {
                 email TEXT NOT NULL UNIQUE,
                 name TEXT,
                 email_verified_at DATETIME,
+                locked_at DATETIME,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )

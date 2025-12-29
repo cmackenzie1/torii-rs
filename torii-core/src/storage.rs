@@ -168,7 +168,7 @@ impl NewUser {
         NewUserBuilder::default()
             .email(email)
             .build()
-            .expect("Default builder should never fail")
+            .expect("Builder with required email field should not fail")
     }
 
     pub fn with_id(id: UserId, email: String) -> Self {
@@ -176,7 +176,7 @@ impl NewUser {
             .id(id)
             .email(email)
             .build()
-            .expect("Default builder should never fail")
+            .expect("Builder with id and email fields should not fail")
     }
 }
 

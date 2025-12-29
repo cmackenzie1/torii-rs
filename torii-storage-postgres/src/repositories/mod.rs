@@ -131,9 +131,10 @@ impl BruteForceRepositoryProvider for PostgresRepositoryProvider {
 impl RepositoryProvider for PostgresRepositoryProvider {
     async fn migrate(&self) -> Result<(), Error> {
         use crate::migrations::{
-            AddLockedAtToUsers, CreateFailedLoginAttemptsTable, CreateIndexes,
-            CreateOAuthAccountsTable, CreatePasskeyChallengesTable, CreatePasskeysTable,
-            CreateSessionsTable, CreateUsersTable, PostgresMigrationManager,
+            AddLockedAtToUsers, AddPasskeyMetadata, CreateFailedLoginAttemptsTable, CreateIndexes,
+            CreateOAuthAccountsTable, CreateOAuthStateTable, CreatePasskeyChallengesTable,
+            CreatePasskeysTable, CreateSecureTokensTable, CreateSessionsTable, CreateUsersTable,
+            PostgresMigrationManager,
         };
         use torii_migration::{Migration, MigrationManager};
 
@@ -154,6 +155,9 @@ impl RepositoryProvider for PostgresRepositoryProvider {
             Box::new(CreateIndexes),
             Box::new(CreateFailedLoginAttemptsTable),
             Box::new(AddLockedAtToUsers),
+            Box::new(CreateOAuthStateTable),
+            Box::new(CreateSecureTokensTable),
+            Box::new(AddPasskeyMetadata),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");

@@ -140,7 +140,7 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         let manager = SqliteMigrationManager::new(self.pool.clone());
         manager.initialize().await.map_err(|e| {
             tracing::error!(error = %e, "Failed to initialize migrations");
-            Error::Storage(StorageError::Database(
+            Error::Storage(StorageError::Migration(
                 "Failed to initialize migrations".to_string(),
             ))
         })?;
@@ -157,7 +157,7 @@ impl RepositoryProvider for SqliteRepositoryProvider {
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
-            Error::Storage(StorageError::Database(
+            Error::Storage(StorageError::Migration(
                 "Failed to run migrations".to_string(),
             ))
         })?;
