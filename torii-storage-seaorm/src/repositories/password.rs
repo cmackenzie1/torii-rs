@@ -19,22 +19,17 @@ impl SeaORMPasswordRepository {
 #[async_trait]
 impl PasswordRepository for SeaORMPasswordRepository {
     async fn set_password_hash(&self, user_id: &UserId, hash: &str) -> Result<(), Error> {
-        let user: Option<user::ActiveModel> = user::Entity::find_by_id(user_id.as_str())
+        let mut user: user::ActiveModel = user::Entity::find_by_id(user_id.as_str())
             .one(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?
-            .map(|user| user.into());
+            .ok_or(SeaORMStorageError::UserNotFound)?
+            .into();
 
-        if user.is_none() {
-            return Err(SeaORMStorageError::UserNotFound.into());
-        }
-
-        if let Some(mut user) = user {
-            user.password_hash = Set(Some(hash.to_string()));
-            user.update(&self.pool)
-                .await
-                .map_err(SeaORMStorageError::Database)?;
-        }
+        user.password_hash = Set(Some(hash.to_string()));
+        user.update(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
@@ -52,22 +47,17 @@ impl PasswordRepository for SeaORMPasswordRepository {
     }
 
     async fn remove_password_hash(&self, user_id: &UserId) -> Result<(), Error> {
-        let user: Option<user::ActiveModel> = user::Entity::find_by_id(user_id.as_str())
+        let mut user: user::ActiveModel = user::Entity::find_by_id(user_id.as_str())
             .one(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?
-            .map(|user| user.into());
+            .ok_or(SeaORMStorageError::UserNotFound)?
+            .into();
 
-        if user.is_none() {
-            return Err(SeaORMStorageError::UserNotFound.into());
-        }
-
-        if let Some(mut user) = user {
-            user.password_hash = Set(None);
-            user.update(&self.pool)
-                .await
-                .map_err(SeaORMStorageError::Database)?;
-        }
+        user.password_hash = Set(None);
+        user.update(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
     }
