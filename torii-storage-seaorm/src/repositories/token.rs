@@ -11,6 +11,18 @@ use torii_core::{
     storage::{SecureToken, TokenPurpose},
 };
 
+/// Query result struct for mapping secure_tokens table rows
+#[derive(Debug, FromQueryResult)]
+struct SecureTokenRow {
+    user_id: String,
+    token: String, // This is actually the hash stored in the database
+    purpose: String,
+    used_at: Option<chrono::DateTime<Utc>>,
+    expires_at: chrono::DateTime<Utc>,
+    created_at: chrono::DateTime<Utc>,
+    updated_at: chrono::DateTime<Utc>,
+}
+
 /// SeaORM implementation of TokenRepository
 pub struct SeaORMTokenRepository {
     pool: DatabaseConnection,
@@ -88,18 +100,6 @@ impl TokenRepository for SeaORMTokenRepository {
         // Compute the hash of the provided token
         let token_hash = hash_token(token);
 
-        // Custom struct to match our query results
-        #[derive(Debug, FromQueryResult)]
-        struct SecureTokenResult {
-            user_id: String,
-            token: String, // This is actually the hash
-            purpose: String,
-            used_at: Option<chrono::DateTime<Utc>>,
-            expires_at: chrono::DateTime<Utc>,
-            created_at: chrono::DateTime<Utc>,
-            updated_at: chrono::DateTime<Utc>,
-        }
-
         let now = Utc::now();
         let backend = self.pool.get_database_backend();
 
@@ -114,7 +114,7 @@ impl TokenRepository for SeaORMTokenRepository {
             ],
         );
 
-        let result: Option<SecureTokenResult> = SecureTokenResult::find_by_statement(query)
+        let result: Option<SecureTokenRow> = SecureTokenRow::find_by_statement(query)
             .one(&self.pool)
             .await
             .map_err(|e| {
@@ -171,17 +171,6 @@ impl TokenRepository for SeaORMTokenRepository {
         // Compute the hash of the provided token
         let token_hash = hash_token(token);
 
-        #[derive(Debug, FromQueryResult)]
-        struct SecureTokenResult {
-            user_id: String,
-            token: String,
-            purpose: String,
-            used_at: Option<chrono::DateTime<Utc>>,
-            expires_at: chrono::DateTime<Utc>,
-            created_at: chrono::DateTime<Utc>,
-            updated_at: chrono::DateTime<Utc>,
-        }
-
         let now = Utc::now();
         let backend = self.pool.get_database_backend();
 
@@ -192,7 +181,7 @@ impl TokenRepository for SeaORMTokenRepository {
             vec![token_hash.into(), purpose.as_str().into(), now.into()],
         );
 
-        let result: Option<SecureTokenResult> = SecureTokenResult::find_by_statement(query)
+        let result: Option<SecureTokenRow> = SecureTokenRow::find_by_statement(query)
             .one(&self.pool)
             .await
             .map_err(|e| {
