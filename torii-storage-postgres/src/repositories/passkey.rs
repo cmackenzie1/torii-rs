@@ -233,7 +233,11 @@ impl PasskeyRepository for PostgresPasskeyRepository {
     }
 }
 
-/// Internal helper methods for challenge storage
+/// Public helper methods for challenge storage.
+///
+/// Note: Expired challenges are not automatically cleaned up and will accumulate
+/// in the database. Consider implementing a periodic cleanup job if challenge
+/// volume is expected to be significant.
 impl PostgresPasskeyRepository {
     /// Store a passkey challenge.
     pub async fn set_challenge(

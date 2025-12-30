@@ -69,8 +69,8 @@ impl TokenRepository for SeaORMTokenRepository {
         // Return SecureToken with plaintext token (for the caller) and hash (stored)
         Ok(SecureToken::new(
             user_id.clone(),
-            token_string,  // Plaintext returned to user
-            token_hash,    // Hash stored in database
+            token_string, // Plaintext returned to user
+            token_hash,   // Hash stored in database
             purpose,
             None, // not used yet
             result.expires_at,
@@ -100,8 +100,12 @@ impl TokenRepository for SeaORMTokenRepository {
 
         if let Some(row) = result {
             let user_id = UserId::new(&row.user_id);
-            let stored_purpose = TokenPurpose::from_str(&row.purpose)
-                .map_err(|e| Error::Storage(StorageError::Database(format!("Invalid purpose in database: {}", e))))?;
+            let stored_purpose = TokenPurpose::from_str(&row.purpose).map_err(|e| {
+                Error::Storage(StorageError::Database(format!(
+                    "Invalid purpose in database: {}",
+                    e
+                )))
+            })?;
 
             // Use from_storage since we only have the hash, not the plaintext
             let secure_token = SecureToken::from_storage(
@@ -154,8 +158,12 @@ impl TokenRepository for SeaORMTokenRepository {
             .map_err(SeaORMStorageError::Database)?;
 
         if let Some(row) = result {
-            let stored_purpose = TokenPurpose::from_str(&row.purpose)
-                .map_err(|e| Error::Storage(StorageError::Database(format!("Invalid purpose in database: {}", e))))?;
+            let stored_purpose = TokenPurpose::from_str(&row.purpose).map_err(|e| {
+                Error::Storage(StorageError::Database(format!(
+                    "Invalid purpose in database: {}",
+                    e
+                )))
+            })?;
 
             let secure_token = SecureToken::from_storage(
                 UserId::new(&row.user_id),

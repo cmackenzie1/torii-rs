@@ -6,6 +6,7 @@ use torii_core::{Error, OAuthAccount, User, UserId, repositories::OAuthRepositor
 
 use crate::SeaORMStorageError;
 use crate::entities::{oauth, pkce_verifier, user};
+use torii_core::error::StorageError;
 
 pub struct SeaORMOAuthRepository {
     pool: DatabaseConnection,
@@ -47,6 +48,7 @@ impl OAuthRepository for SeaORMOAuthRepository {
                 .provider(oauth_account.provider)
                 .subject(oauth_account.subject)
                 .build()
+                .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))
         } else {
             Err(SeaORMStorageError::UserNotFound.into())
         }

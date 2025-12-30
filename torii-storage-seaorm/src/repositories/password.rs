@@ -40,10 +40,7 @@ impl PasswordRepository for SeaORMPasswordRepository {
             .await
             .map_err(SeaORMStorageError::Database)?;
 
-        match user {
-            Some(user) => Ok(user.password_hash),
-            _ => Err(SeaORMStorageError::UserNotFound.into()),
-        }
+        Ok(user.and_then(|u| u.password_hash))
     }
 
     async fn remove_password_hash(&self, user_id: &UserId) -> Result<(), Error> {
@@ -106,10 +103,11 @@ mod tests {
 
         assert_eq!(stored_hash, Some(hash.to_string()));
 
-        // Get password hash for non-existent user
+        // Get password hash for non-existent user returns Ok(None)
         let result = repo.get_password_hash(&UserId::new("non_existent")).await;
 
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
     }
 
     #[tokio::test]

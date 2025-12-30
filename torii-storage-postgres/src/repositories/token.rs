@@ -46,6 +46,33 @@ struct SecureTokenRow {
     updated_at: DateTime<Utc>,
 }
 
+impl PostgresTokenRepository {
+    /// Find a valid (unexpired, unused) token by its hash and purpose.
+    async fn find_valid_token(
+        &self,
+        token_hash: &str,
+        purpose: TokenPurpose,
+        now: DateTime<Utc>,
+    ) -> Result<Option<SecureTokenRow>, Error> {
+        sqlx::query_as::<_, SecureTokenRow>(
+            r#"
+            SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at
+            FROM secure_tokens
+            WHERE token = $1 AND purpose = $2 AND expires_at > $3 AND used_at IS NULL
+            "#,
+        )
+        .bind(token_hash)
+        .bind(purpose.as_str())
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to query token");
+            Error::Storage(StorageError::Database("Failed to query token".to_string()))
+        })
+    }
+}
+
 #[async_trait]
 impl TokenRepository for PostgresTokenRepository {
     async fn create_token(
@@ -101,27 +128,10 @@ impl TokenRepository for PostgresTokenRepository {
         token: &str,
         purpose: TokenPurpose,
     ) -> Result<Option<SecureToken>, Error> {
-        // Compute the hash of the provided token
         let token_hash = hash_token(token);
         let now = Utc::now();
 
-        // Query the specific token by its hash
-        let result = sqlx::query_as::<_, SecureTokenRow>(
-            r#"
-            SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at
-            FROM secure_tokens
-            WHERE token = $1 AND purpose = $2 AND expires_at > $3 AND used_at IS NULL
-            "#,
-        )
-        .bind(&token_hash)
-        .bind(purpose.as_str())
-        .bind(now)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to verify token");
-            Error::Storage(StorageError::Database("Failed to verify token".to_string()))
-        })?;
+        let result = self.find_valid_token(&token_hash, purpose, now).await?;
 
         if let Some(row) = result {
             let user_id = UserId::new(&row.user_id);
@@ -173,27 +183,10 @@ impl TokenRepository for PostgresTokenRepository {
     }
 
     async fn check_token(&self, token: &str, purpose: TokenPurpose) -> Result<bool, Error> {
-        // Compute the hash of the provided token
         let token_hash = hash_token(token);
         let now = Utc::now();
 
-        // Query the specific token by its hash
-        let result = sqlx::query_as::<_, SecureTokenRow>(
-            r#"
-            SELECT user_id, token, purpose, used_at, expires_at, created_at, updated_at
-            FROM secure_tokens
-            WHERE token = $1 AND purpose = $2 AND expires_at > $3 AND used_at IS NULL
-            "#,
-        )
-        .bind(&token_hash)
-        .bind(purpose.as_str())
-        .bind(now)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to check token");
-            Error::Storage(StorageError::Database("Failed to check token".to_string()))
-        })?;
+        let result = self.find_valid_token(&token_hash, purpose, now).await?;
 
         if let Some(row) = result {
             let stored_purpose = TokenPurpose::from_str(&row.purpose).map_err(|e| {
