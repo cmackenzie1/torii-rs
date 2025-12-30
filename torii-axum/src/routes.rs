@@ -202,7 +202,7 @@ where
 
     let cookie = build_session_cookie(
         &cookie_config,
-        &session.token.to_string(),
+        session.token.expose_secret(),
         session.expires_at,
     );
 
@@ -239,7 +239,7 @@ where
 
     let cookie = build_session_cookie(
         &cookie_config,
-        &session.token.to_string(),
+        session.token.expose_secret(),
         session.expires_at,
     );
 
@@ -407,7 +407,7 @@ where
 
     let cookie = build_session_cookie(
         &cookie_config,
-        &session.token.to_string(),
+        session.token.expose_secret(),
         session.expires_at,
     );
 

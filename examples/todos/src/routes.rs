@@ -205,7 +205,7 @@ async fn sign_in_form_handler(
         .await
         .unwrap();
 
-    let cookie = Cookie::build(("session_id", session.token.to_string()))
+    let cookie = Cookie::build(("session_id", session.token.expose_secret().to_string()))
         .path("/")
         .http_only(true)
         .secure(false) // TODO: Set to true in production
