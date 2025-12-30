@@ -49,7 +49,6 @@
 //!
 //! All tables include appropriate indexes and constraints for optimal query performance and data integrity.
 
-mod brute_force;
 mod migrations;
 mod oauth;
 mod passkey;
@@ -57,7 +56,7 @@ mod password;
 pub mod repositories;
 mod session;
 
-pub use brute_force::PostgresBruteForceRepository;
+pub use repositories::PostgresBruteForceRepository;
 pub use repositories::PostgresRepositoryProvider;
 
 use chrono::DateTime;

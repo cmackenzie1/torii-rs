@@ -88,6 +88,10 @@ impl UserRepository for PostgresUserRepository {
     }
 
     async fn find_or_create_by_email(&self, email: &str) -> Result<User, Error> {
+        // Note: There is a potential TOCTOU race condition here between find_by_email and create.
+        // If two concurrent requests call this method for the same email, both may pass the
+        // existence check and attempt to create the user, causing one to fail with a unique
+        // constraint violation. This is acceptable for this use case as the caller can retry.
         if let Some(user) = self.find_by_email(email).await? {
             return Ok(user);
         }

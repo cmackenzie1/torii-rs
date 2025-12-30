@@ -119,6 +119,7 @@ impl OAuthRepository for PostgresOAuthRepository {
             r#"
             INSERT INTO oauth_accounts (user_id, provider, subject, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (provider, subject) DO NOTHING
             "#,
         )
         .bind(user_id.as_str())

@@ -1,5 +1,6 @@
 //! Repository implementations for PostgreSQL storage
 
+pub mod brute_force;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -7,17 +8,15 @@ pub mod session;
 pub mod token;
 pub mod user;
 
+use async_trait::async_trait;
+pub use brute_force::PostgresBruteForceRepository;
 pub use oauth::PostgresOAuthRepository;
 pub use passkey::PostgresPasskeyRepository;
 pub use password::PostgresPasswordRepository;
 pub use session::PostgresSessionRepository;
-pub use token::PostgresTokenRepository;
-pub use user::PostgresUserRepository;
-
-use crate::PostgresBruteForceRepository;
-use async_trait::async_trait;
 use sqlx::PgPool;
 use std::sync::Arc;
+pub use token::PostgresTokenRepository;
 use torii_core::{
     Error,
     error::StorageError,
@@ -27,6 +26,7 @@ use torii_core::{
         TokenRepositoryProvider, UserRepositoryProvider,
     },
 };
+pub use user::PostgresUserRepository;
 
 /// Repository provider implementation for PostgreSQL.
 ///

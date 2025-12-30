@@ -68,6 +68,11 @@ impl UserRepository for SeaORMUserRepository {
     }
 
     async fn find_or_create_by_email(&self, email: &str) -> Result<User, Error> {
+        // Note: There is a potential TOCTOU race condition here between find and create.
+        // If two concurrent requests call this method for the same email, both may pass the
+        // existence check and attempt to create the user, causing one to fail with a unique
+        // constraint violation. This is acceptable for this use case as the caller can retry.
+
         // First try to find the user
         let existing = user::Entity::find()
             .filter(user::Column::Email.eq(email))
@@ -91,31 +96,24 @@ impl UserRepository for SeaORMUserRepository {
     }
 
     async fn update(&self, user: &User) -> Result<User, Error> {
-        let existing: Option<user::ActiveModel> = user::Entity::find_by_id(user.id.as_str())
+        let mut existing: user::ActiveModel = user::Entity::find_by_id(user.id.as_str())
             .one(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?
-            .map(|u| u.into());
+            .ok_or(SeaORMStorageError::UserNotFound)?
+            .into();
 
-        if existing.is_none() {
-            return Err(SeaORMStorageError::UserNotFound.into());
-        }
+        existing.email = Set(user.email.clone());
+        existing.name = Set(user.name.clone());
+        existing.email_verified_at = Set(user.email_verified_at);
+        existing.locked_at = Set(user.locked_at);
 
-        if let Some(mut existing) = existing {
-            existing.email = Set(user.email.clone());
-            existing.name = Set(user.name.clone());
-            existing.email_verified_at = Set(user.email_verified_at);
-            existing.locked_at = Set(user.locked_at);
+        let result = existing
+            .update(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
 
-            let result = existing
-                .update(&self.pool)
-                .await
-                .map_err(SeaORMStorageError::Database)?;
-
-            return Ok(result.into());
-        }
-
-        Err(SeaORMStorageError::UserNotFound.into())
+        Ok(result.into())
     }
 
     async fn delete(&self, id: &UserId) -> Result<(), Error> {
