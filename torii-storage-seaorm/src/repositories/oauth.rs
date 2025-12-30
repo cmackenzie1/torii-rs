@@ -156,8 +156,10 @@ impl OAuthRepository for SeaORMOAuthRepository {
     }
 
     async fn get_pkce_verifier(&self, csrf_state: &str) -> Result<Option<String>, Error> {
+        let now = Utc::now();
         let pkce_verifier = pkce_verifier::Entity::find()
             .filter(pkce_verifier::Column::CsrfState.eq(csrf_state))
+            .filter(pkce_verifier::Column::ExpiresAt.gt(now))
             .one(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?;
