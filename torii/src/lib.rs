@@ -507,13 +507,18 @@ impl<R: RepositoryProvider> Torii<R> {
     /// Create a Torii instance from builder configuration.
     ///
     /// This is an internal constructor used by [`ToriiBuilder::build()`].
-    /// Use [`Torii::builder()`] for the public API.
+    /// Use [`ToriiBuilder::new()`] for the public API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the mailer configuration is invalid (when the mailer feature is enabled
+    /// and mailer_config is provided).
     pub(crate) fn from_builder(
         repositories: Arc<R>,
         session_config: SessionConfig,
         brute_force_config: BruteForceProtectionConfig,
         #[cfg(feature = "mailer")] mailer_config: Option<MailerConfig>,
-    ) -> Self {
+    ) -> Result<Self, ToriiBuilderError> {
         // Create repository adapters
         let user_repo = Arc::new(UserRepositoryAdapter::new(repositories.clone()));
         let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
@@ -540,12 +545,17 @@ impl<R: RepositoryProvider> Torii<R> {
             brute_force_config,
         ));
 
-        // Initialize mailer if configured
+        // Initialize mailer if configured - propagate errors instead of silently ignoring them
         #[cfg(feature = "mailer")]
-        let mailer_service =
-            mailer_config.and_then(|config| ToriiMailerService::new(config).ok().map(Arc::new));
+        let mailer_service = mailer_config
+            .map(|config| {
+                ToriiMailerService::new(config)
+                    .map(Arc::new)
+                    .map_err(|e| ToriiBuilderError::MailerConfiguration(e.to_string()))
+            })
+            .transpose()?;
 
-        Self {
+        Ok(Self {
             repositories: repositories.clone(),
             user_service,
             session_service,
@@ -596,7 +606,7 @@ impl<R: RepositoryProvider> Torii<R> {
             brute_force_service,
 
             session_config,
-        }
+        })
     }
 
     /// Get a reference to the underlying repository provider.
