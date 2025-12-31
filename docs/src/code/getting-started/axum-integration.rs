@@ -1,16 +1,19 @@
 use std::sync::Arc;
 use axum::{response::Json, routing::get, Router};
-use torii::Torii;
+use torii::ToriiBuilder;
 use torii_axum::{AuthUser, CookieConfig, LinkConfig};
-use torii_storage_seaorm::SeaORMStorage;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Set up database and Torii
-    let storage = SeaORMStorage::connect("sqlite::memory:").await?;
-    storage.migrate().await?;
-    let repositories = Arc::new(storage.into_repository_provider());
-    let torii = Arc::new(Torii::new(repositories));
+    // Set up Torii using the builder pattern
+    let torii = Arc::new(
+        ToriiBuilder::new()
+            .with_seaorm("sqlite::memory:")
+            .await?
+            .apply_migrations(true)
+            .build()
+            .await?
+    );
 
     // Create authentication routes with configuration
     let auth_routes = torii_axum::routes(torii.clone())
