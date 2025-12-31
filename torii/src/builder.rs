@@ -6,12 +6,12 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use torii::Torii;
+//! use torii::ToriiBuilder;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Build with SQLite and auto-migration
-//!     let torii = Torii::builder()
+//!     let torii = ToriiBuilder::new()
 //!         .with_sqlite("sqlite::memory:")
 //!         .await?
 //!         .apply_migrations(true)
@@ -19,7 +19,7 @@
 //!         .await?;
 //!
 //!     // Or build without auto-migration and run manually
-//!     let torii = Torii::builder()
+//!     let torii = ToriiBuilder::new()
 //!         .with_sqlite("sqlite::memory:")
 //!         .await?
 //!         .build()
@@ -99,12 +99,12 @@ pub struct WithStorage<R: RepositoryProvider> {
 /// # Example
 ///
 /// ```rust,no_run
-/// use torii::Torii;
+/// use torii::ToriiBuilder;
 /// use chrono::Duration;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let torii = Torii::builder()
+///     let torii = ToriiBuilder::new()
 ///         .with_sqlite("sqlite::memory:")
 ///         .await?
 ///         .with_session_expiry(Duration::days(7))
@@ -170,10 +170,10 @@ impl ToriiBuilder<NoStorage> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .build()
@@ -214,13 +214,13 @@ impl ToriiBuilder<NoStorage> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     /// use sqlx::SqlitePool;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let pool = SqlitePool::connect("sqlite::memory:").await?;
     ///
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite_pool(pool)
     ///     .build()
     ///     .await?;
@@ -257,10 +257,10 @@ impl ToriiBuilder<NoStorage> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_postgres("postgresql://user:pass@localhost/myapp")
     ///     .await?
     ///     .build()
@@ -303,13 +303,13 @@ impl ToriiBuilder<NoStorage> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     /// use sqlx::PgPool;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let pool = PgPool::connect("postgresql://user:pass@localhost/myapp").await?;
     ///
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_postgres_pool(pool)
     ///     .build()
     ///     .await?;
@@ -355,10 +355,10 @@ impl ToriiBuilder<NoStorage> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_seaorm("sqlite::memory:")
     ///     .await?
     ///     .build()
@@ -399,13 +399,13 @@ impl ToriiBuilder<NoStorage> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     /// use sea_orm::Database;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let connection = Database::connect("sqlite::memory:").await?;
     ///
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_seaorm_connection(connection)
     ///     .build()
     ///     .await?;
@@ -445,11 +445,11 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     /// use chrono::Duration;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .with_session_expiry(Duration::days(7))
@@ -477,12 +477,12 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::{Torii, JwtConfig};
+    /// use torii::{ToriiBuilder, JwtConfig};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let jwt_config = JwtConfig::new_hs256(vec![0u8; 32])?;
     ///
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .with_jwt_sessions(jwt_config)
@@ -547,11 +547,11 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// // With auto-migration
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .apply_migrations(true)
@@ -559,7 +559,7 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     ///     .await?;
     ///
     /// // Without auto-migration (default)
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .build()
@@ -585,10 +585,10 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::{Torii, MailerConfig};
+    /// use torii::{ToriiBuilder, MailerConfig};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .with_mailer(MailerConfig::default())
@@ -611,10 +611,10 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .with_mailer_from_env()?
@@ -644,10 +644,10 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use torii::Torii;
+    /// use torii::ToriiBuilder;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let torii = Torii::builder()
+    /// let torii = ToriiBuilder::new()
     ///     .with_sqlite("sqlite::memory:")
     ///     .await?
     ///     .apply_migrations(true)
@@ -667,13 +667,14 @@ impl<R: RepositoryProvider> ToriiBuilder<WithStorage<R>> {
         }
 
         // Build Torii using the internal constructor
+        // This will return an error if mailer configuration is invalid
         let torii = Torii::from_builder(
             self.storage.repositories,
             self.session_config,
             self.brute_force_config,
             #[cfg(feature = "mailer")]
             self.mailer_config,
-        );
+        )?;
 
         Ok(torii)
     }
