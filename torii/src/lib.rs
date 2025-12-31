@@ -26,7 +26,82 @@
 //! without notice. As this project has not undergone security audits, it should not be used in
 //! production environments.
 //!
-//! ## Example
+//! ## Quick Start
+//!
+//! The recommended way to create a Torii instance is using the builder pattern:
+//!
+//! ```rust,no_run
+//! use torii::ToriiBuilder;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Simple setup with SQLite
+//!     let torii = ToriiBuilder::new()
+//!         .with_sqlite("sqlite::memory:")
+//!         .await?
+//!         .apply_migrations(true)
+//!         .build()
+//!         .await?;
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Builder Configuration
+//!
+//! The builder provides a fluent API for configuring Torii:
+//!
+//! ```rust,no_run
+//! use torii::{ToriiBuilder, JwtConfig, BruteForceProtectionConfig};
+//! use chrono::Duration;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let torii = ToriiBuilder::new()
+//!         .with_sqlite("sqlite::memory:")
+//!         .await?
+//!         .with_session_expiry(Duration::days(7))
+//!         .with_brute_force_protection(BruteForceProtectionConfig {
+//!             max_failed_attempts: 3,
+//!             lockout_period: Duration::minutes(30),
+//!             ..Default::default()
+//!         })
+//!         .apply_migrations(true)
+//!         .build()
+//!         .await?;
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Manual Migration
+//!
+//! By default, migrations are not applied automatically. You can either:
+//!
+//! 1. Enable auto-migration with `.apply_migrations(true)`
+//! 2. Run migrations manually after building:
+//!
+//! ```rust,no_run
+//! use torii::ToriiBuilder;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let torii = ToriiBuilder::new()
+//!         .with_sqlite("sqlite::memory:")
+//!         .await?
+//!         .build()
+//!         .await?;
+//!
+//!     // Run migrations manually
+//!     torii.migrate().await?;
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Advanced: Custom Repository Provider
+//!
+//! For advanced use cases, you can still create Torii with a custom repository provider:
 //!
 //! ```rust,no_run
 //! use torii::Torii;
@@ -41,6 +116,8 @@
 //!     let torii = Torii::new(repositories);
 //! }
 //! ```
+mod builder;
+
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
@@ -53,6 +130,9 @@ use torii_core::{
     },
     services::{SessionService, UserService},
 };
+
+// Re-export builder types
+pub use builder::{NoStorage, ToriiBuilder, ToriiBuilderError, WithStorage};
 
 // Re-export brute force protection config for users to configure
 pub use torii_core::BruteForceProtectionConfig;
@@ -338,7 +418,9 @@ impl<R: RepositoryProvider> Torii<R> {
     /// Create a new Torii instance with a repository provider
     ///
     /// This constructor initializes Torii with all the required services
-    /// using the provided repository provider.
+    /// using the provided repository provider and default configuration.
+    ///
+    /// For more control over configuration, use [`ToriiBuilder`] instead.
     ///
     /// # Arguments
     ///
@@ -420,6 +502,109 @@ impl<R: RepositoryProvider> Torii<R> {
 
             session_config: SessionConfig::default(),
         }
+    }
+
+    /// Create a Torii instance from builder configuration.
+    ///
+    /// This is an internal constructor used by [`ToriiBuilder::build()`].
+    /// Use [`Torii::builder()`] for the public API.
+    pub(crate) fn from_builder(
+        repositories: Arc<R>,
+        session_config: SessionConfig,
+        brute_force_config: BruteForceProtectionConfig,
+        #[cfg(feature = "mailer")] mailer_config: Option<MailerConfig>,
+    ) -> Self {
+        // Create repository adapters
+        let user_repo = Arc::new(UserRepositoryAdapter::new(repositories.clone()));
+        let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
+        let brute_force_repo = Arc::new(BruteForceProtectionRepositoryAdapter::new(
+            repositories.clone(),
+        ));
+
+        let user_service = Arc::new(UserService::new(user_repo.clone()));
+
+        // Create session provider based on config
+        let session_provider: Arc<Box<dyn SessionProvider>> = match &session_config.provider_type {
+            SessionProviderType::Opaque => {
+                Arc::new(Box::new(OpaqueSessionProvider::new(session_repo)))
+            }
+            SessionProviderType::Jwt(jwt_config) => {
+                Arc::new(Box::new(JwtSessionProvider::new(jwt_config.clone())))
+            }
+        };
+        let session_service = Arc::new(SessionService::new(session_provider.clone()));
+
+        // Initialize brute force protection with provided config
+        let brute_force_service = Arc::new(BruteForceProtectionService::new(
+            brute_force_repo,
+            brute_force_config,
+        ));
+
+        // Initialize mailer if configured
+        #[cfg(feature = "mailer")]
+        let mailer_service =
+            mailer_config.and_then(|config| ToriiMailerService::new(config).ok().map(Arc::new));
+
+        Self {
+            repositories: repositories.clone(),
+            user_service,
+            session_service,
+            session_provider,
+
+            #[cfg(feature = "password")]
+            password_service: Arc::new(PasswordService::new(
+                user_repo.clone(),
+                Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
+            )),
+
+            #[cfg(feature = "oauth")]
+            oauth_service: Arc::new(OAuthService::new(
+                user_repo.clone(),
+                Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
+
+            #[cfg(feature = "passkey")]
+            passkey_service: Arc::new(PasskeyService::new(
+                user_repo.clone(),
+                Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
+
+            #[cfg(feature = "magic-link")]
+            magic_link_service: Arc::new(MagicLinkService::new(
+                user_repo.clone(),
+                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
+
+            #[cfg(any(feature = "password", feature = "magic-link"))]
+            password_reset_service: Arc::new(PasswordResetService::new(
+                user_repo,
+                Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
+                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
+
+            #[cfg(feature = "mailer")]
+            mailer_service,
+
+            brute_force_service,
+
+            session_config,
+        }
+    }
+
+    /// Get a reference to the underlying repository provider.
+    ///
+    /// This can be useful for advanced use cases where you need direct
+    /// access to the repositories.
+    pub fn repositories(&self) -> &Arc<R> {
+        &self.repositories
     }
 
     /// Set the session configuration

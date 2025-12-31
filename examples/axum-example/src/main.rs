@@ -6,8 +6,7 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
-use torii::seaorm::SeaORMStorage;
-use torii::{MailerConfig, Torii};
+use torii::{MailerConfig, Torii, ToriiBuilder};
 use torii_axum::{
     AuthUser, CookieConfig, HasTorii, LinkConfig, OptionalAuthUser, SessionTokenFromBearer,
     SessionTokenFromRequest,
@@ -36,19 +35,20 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting Torii Axum SQLite Password Example");
 
-    // Connect to SQLite in-memory database
-    let storage = SeaORMStorage::connect("sqlite::memory:").await?;
-
-    // Run migrations to set up the database schema
-    storage.migrate().await?;
-    info!("Database migrations completed");
-
-    // Configure mailer for local development (saves emails to files)
-    let mailer_config = MailerConfig::default();
-
-    // Create repository provider and Torii instance with mailer
-    let repositories = Arc::new(storage.into_repository_provider());
-    let torii = Arc::new(Torii::new(repositories).with_mailer(mailer_config)?);
+    // Create Torii instance using the builder pattern
+    // - Connects to SQLite in-memory database
+    // - Configures mailer for local development (saves emails to files)
+    // - Applies database migrations automatically
+    let torii = Arc::new(
+        ToriiBuilder::new()
+            .with_seaorm("sqlite::memory:")
+            .await?
+            .with_mailer(MailerConfig::default())
+            .apply_migrations(true)
+            .build()
+            .await?,
+    );
+    info!("Torii initialized with database migrations completed");
 
     // Configure session cookies for development
     let cookie_config = CookieConfig::development();

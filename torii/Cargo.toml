@@ -16,6 +16,10 @@ torii-storage-postgres = { path = "../torii-storage-postgres", version = "0.5.2"
 torii-storage-seaorm = { path = "../torii-storage-seaorm", version = "0.5.2", optional = true }
 torii-mailer = { path = "../torii-mailer", version = "0.5.2", optional = true }
 
+# Pool types for builder (re-exported from storage crates)
+sqlx = { workspace = true, optional = true }
+sea-orm = { workspace = true, optional = true }
+
 # dependencies
 chrono.workspace = true     # TODO: Make this optional and expose std::time::Duration in APIs
 tracing.workspace = true
@@ -37,15 +41,16 @@ sqlx = { workspace = true, features = ["sqlite", "runtime-tokio-rustls"] }
 default = ["password", "sqlite"]
 
 # storage backends
-sqlite = ["dep:torii-storage-sqlite"]
-postgres = ["dep:torii-storage-postgres"]
+sqlite = ["dep:torii-storage-sqlite", "dep:sqlx", "sqlx/sqlite", "sqlx/runtime-tokio-rustls"]
+postgres = ["dep:torii-storage-postgres", "dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio-rustls"]
 
 # seaorm storage backends
-seaorm-sqlite = ["dep:torii-storage-seaorm", "torii-storage-seaorm/sqlite"]
-seaorm-postgres = ["dep:torii-storage-seaorm", "torii-storage-seaorm/postgres"]
-seaorm-mysql = ["dep:torii-storage-seaorm", "torii-storage-seaorm/mysql"]
+seaorm-sqlite = ["dep:torii-storage-seaorm", "dep:sea-orm", "torii-storage-seaorm/sqlite"]
+seaorm-postgres = ["dep:torii-storage-seaorm", "dep:sea-orm", "torii-storage-seaorm/postgres"]
+seaorm-mysql = ["dep:torii-storage-seaorm", "dep:sea-orm", "torii-storage-seaorm/mysql"]
 seaorm = [
     "dep:torii-storage-seaorm",
+    "dep:sea-orm",
     "torii-storage-seaorm/sqlite",
     "torii-storage-seaorm/postgres",
     "torii-storage-seaorm/mysql",
