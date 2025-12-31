@@ -1,22 +1,21 @@
 use std::sync::Arc;
-use torii::Torii;
-use torii_storage_seaorm::SeaORMStorage;
+use torii::ToriiBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up storage backend
-    let storage = SeaORMStorage::connect("sqlite://auth.db?mode=rwc").await?;
-    storage.migrate().await?;
-
-    // Create repository provider - this is the new pattern
-    let repositories = Arc::new(storage.into_repository_provider());
-
-    // Single constructor for all authentication methods
-    let torii = Arc::new(Torii::new(repositories));
+    // Create Torii instance using the builder pattern
+    let torii = Arc::new(
+        ToriiBuilder::new()
+            .with_seaorm("sqlite://auth.db?mode=rwc")
+            .await?
+            .apply_migrations(true)
+            .build()
+            .await?
+    );
 
     // All authentication methods are now available as services
-    let user = torii.password().register("user@example.com", "password").await?;
-    let (_user, session) = torii.password().authenticate("user@example.com", "password", None, None).await?;
+    let _user = torii.password().register("user@example.com", "password").await?;
+    let (_user, _session) = torii.password().authenticate("user@example.com", "password", None, None).await?;
 
     Ok(())
 }

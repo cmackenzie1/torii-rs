@@ -94,27 +94,39 @@ torii-axum = { version = "0.5", features = ["sqlite", "password"] }
 ```
 
 ```rust
-use torii_axum::{AuthRoutes, CookieConfig, AuthUser};
+use std::sync::Arc;
+use torii::ToriiBuilder;
+use torii_axum::{AuthUser, CookieConfig, LinkConfig};
 use axum::{routing::get, Router, Json};
 
 #[tokio::main]
-async fn main() {
-    let storage = /* ... setup storage ... */;
-    let torii = /* ... setup torii ... */;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Build Torii instance with SQLite
+    let torii = Arc::new(
+        ToriiBuilder::new()
+            .with_sqlite("sqlite::memory:")
+            .await?
+            .apply_migrations(true)
+            .build()
+            .await?
+    );
     
-    // Create authentication routes with cookie configuration
-    let auth_routes = AuthRoutes::new(torii.clone())
-        .with_cookie_config(CookieConfig::development());
+    // Create authentication routes with configuration
+    let auth_routes = torii_axum::routes(torii.clone())
+        .with_cookie_config(CookieConfig::development())
+        .with_link_config(LinkConfig::new("http://localhost:3000"))
+        .build();
     
     // Build your application with auth routes
     let app = Router::new()
+        .nest("/auth", auth_routes)
         .route("/protected", get(protected_handler))
-        .merge(auth_routes.into_router())
         .with_state(torii);
     
     // Start server
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
 }
 
 // Protected route handler

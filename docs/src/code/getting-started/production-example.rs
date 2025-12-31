@@ -1,36 +1,31 @@
 use std::sync::Arc;
-use torii::{Torii, JwtConfig, SessionConfig};
-use torii_storage_seaorm::SeaORMStorage;
+use torii::{ToriiBuilder, JwtConfig};
 use chrono::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up SeaORM storage with PostgreSQL
+    // Get database URL from environment
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://user:password@localhost/torii_db".to_string());
-
-    let storage = SeaORMStorage::connect(&database_url).await?;
-    storage.migrate().await?;
-
-    // Create repository provider
-    let repositories = Arc::new(storage.into_repository_provider());
 
     // Configure JWT sessions
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "your-secret-key-at-least-32-characters-long!".to_string());
 
-    let jwt_config = JwtConfig::new(jwt_secret)
+    let jwt_config = JwtConfig::new_hs256(jwt_secret.into_bytes())?
         .with_issuer("my-app")
         .with_metadata(true);
 
-    // Create Torii instance with JWT sessions
+    // Create Torii instance using the builder pattern with PostgreSQL
     let torii = Arc::new(
-        Torii::new(repositories)
-            .with_session_config(
-                SessionConfig::default()
-                    .with_jwt(jwt_config)
-                    .expires_in(Duration::hours(24))
-            )
+        ToriiBuilder::new()
+            .with_postgres(&database_url)
+            .await?
+            .with_jwt_sessions(jwt_config)
+            .with_session_expiry(Duration::hours(24))
+            .apply_migrations(true)
+            .build()
+            .await?
     );
 
     // Example: Register and login a user
