@@ -47,25 +47,23 @@ Add Torii to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-torii = { version = "0.4.0", features = ["sqlite", "password"] }
+torii = { version = "0.5", features = ["sqlite", "password"] }
 ```
 
 Basic usage example:
 
 ```rust
-use torii::Torii;
-use torii::sqlite::SqliteStorage;
-use std::sync::Arc;
+use torii::ToriiBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Connect to database
-    let storage = SqliteStorage::connect("sqlite://auth.db?mode=rwc").await?;
-    storage.migrate().await?;
-    
-    // Create Torii instance
-    let repositories = Arc::new(storage.into_repository_provider());
-    let torii = Torii::new(repositories);
+    // Build Torii instance with SQLite and auto-migration
+    let torii = ToriiBuilder::new()
+        .with_sqlite("sqlite::memory:")
+        .await?
+        .apply_migrations(true)
+        .build()
+        .await?;
     
     // Register a user
     let user = torii.password().register(
@@ -92,7 +90,7 @@ For web applications, use the `torii-axum` crate for plug-and-play integration:
 
 ```toml
 [dependencies]
-torii-axum = { version = "0.4.0", features = ["sqlite", "password"] }
+torii-axum = { version = "0.5", features = ["sqlite", "password"] }
 ```
 
 ```rust
