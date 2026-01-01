@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Duration;
 use sqlx::SqlitePool;
 use torii_core::{
     Error, Session, UserId, error::StorageError, repositories::SessionRepository,
@@ -120,5 +121,51 @@ impl SessionRepository for SqliteSessionRepository {
             .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
 
         Ok(())
+    }
+
+    async fn find_by_user_id(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        let sqlite_sessions = sqlx::query_as::<_, SqliteSession>(
+            "SELECT * FROM sessions WHERE user_id = ?1 ORDER BY created_at DESC",
+        )
+        .bind(user_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+
+        use chrono::DateTime;
+        Ok(sqlite_sessions
+            .into_iter()
+            .map(|s| Session {
+                // Note: We don't have the plaintext token, only the hash
+                // Create an empty token - callers should not use this for auth
+                token: SessionToken::empty(),
+                token_hash: s.token,
+                user_id: UserId::new(&s.user_id),
+                user_agent: s.user_agent,
+                ip_address: s.ip_address,
+                created_at: DateTime::from_timestamp(s.created_at, 0).expect("Invalid timestamp"),
+                updated_at: DateTime::from_timestamp(s.updated_at, 0).expect("Invalid timestamp"),
+                expires_at: DateTime::from_timestamp(s.expires_at, 0).expect("Invalid timestamp"),
+            })
+            .collect())
+    }
+
+    async fn refresh(&self, token: &SessionToken, duration: Duration) -> Result<Session, Error> {
+        let token_hash = token.token_hash();
+        let now = chrono::Utc::now();
+        let new_expires_at = now + duration;
+
+        sqlx::query("UPDATE sessions SET expires_at = ?1, updated_at = ?2 WHERE token = ?3")
+            .bind(new_expires_at.timestamp())
+            .bind(now.timestamp())
+            .bind(&token_hash)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Storage(StorageError::Database(e.to_string())))?;
+
+        // Fetch and return the updated session
+        self.find_by_token(token)
+            .await?
+            .ok_or_else(|| Error::Storage(StorageError::Database("Session not found".to_string())))
     }
 }

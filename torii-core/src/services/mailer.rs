@@ -30,6 +30,13 @@ mod mailer_impl {
             to: &str,
             user_name: Option<&str>,
         ) -> Result<(), Error>;
+
+        async fn send_verification_email(
+            &self,
+            to: &str,
+            verification_link: &str,
+            user_name: Option<&str>,
+        ) -> Result<(), Error>;
     }
 
     pub struct ToriiMailerService {
@@ -153,6 +160,31 @@ mod mailer_impl {
                 &self.engine,
                 &self.config.get_from_address(),
                 to,
+                context,
+            )
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Connection(e.to_string())))?;
+
+            self.transport.send_email(email).await.map_err(|e| {
+                Error::Storage(crate::error::StorageError::Connection(e.to_string()))
+            })?;
+
+            Ok(())
+        }
+
+        async fn send_verification_email(
+            &self,
+            to: &str,
+            verification_link: &str,
+            user_name: Option<&str>,
+        ) -> Result<(), Error> {
+            let context = self.create_context(user_name, Some(to));
+
+            let email = EmailVerificationEmail::build(
+                &self.engine,
+                &self.config.get_from_address(),
+                to,
+                verification_link,
                 context,
             )
             .await

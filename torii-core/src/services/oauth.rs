@@ -120,6 +120,23 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
             .find_account_by_provider(provider, subject)
             .await
     }
+
+    /// List all OAuth accounts linked to a user
+    pub async fn list_accounts_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<OAuthAccount>, Error> {
+        self.oauth_repository
+            .find_accounts_by_user_id(user_id)
+            .await
+    }
+
+    /// Unlink an OAuth provider from a user
+    pub async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error> {
+        self.oauth_repository
+            .unlink_account(user_id, provider)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -342,6 +359,37 @@ mod tests {
 
         async fn delete_pkce_verifier(&self, csrf_state: &str) -> Result<(), Error> {
             self.pkce_verifiers.lock().await.remove(csrf_state);
+            Ok(())
+        }
+
+        async fn find_accounts_by_user_id(
+            &self,
+            user_id: &UserId,
+        ) -> Result<Vec<OAuthAccount>, Error> {
+            let accounts = self.accounts.lock().await;
+            let result: Vec<OAuthAccount> = accounts
+                .values()
+                .filter(|a| &a.user_id == user_id)
+                .cloned()
+                .collect();
+            Ok(result)
+        }
+
+        async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error> {
+            let mut accounts = self.accounts.lock().await;
+            let mut user_links = self.user_links.lock().await;
+
+            // Find and remove the account
+            let key_to_remove: Option<(String, String)> = accounts
+                .iter()
+                .find(|(_, a)| &a.user_id == user_id && a.provider == provider)
+                .map(|(k, _)| k.clone());
+
+            if let Some(key) = key_to_remove {
+                accounts.remove(&key);
+                user_links.remove(&key);
+            }
+
             Ok(())
         }
     }

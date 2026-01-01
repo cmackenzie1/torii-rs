@@ -207,4 +207,47 @@ impl OAuthRepository for PostgresOAuthRepository {
 
         Ok(())
     }
+
+    async fn find_accounts_by_user_id(&self, user_id: &UserId) -> Result<Vec<OAuthAccount>, Error> {
+        let accounts = sqlx::query_as::<_, PostgresOAuthAccount>(
+            r#"
+            SELECT id, user_id, provider, subject, created_at, updated_at
+            FROM oauth_accounts
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(user_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to find OAuth accounts by user_id");
+            Error::Storage(StorageError::Database(
+                "Failed to find OAuth accounts by user_id".to_string(),
+            ))
+        })?;
+
+        Ok(accounts.into_iter().map(|a| a.into()).collect())
+    }
+
+    async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error> {
+        sqlx::query(
+            r#"
+            DELETE FROM oauth_accounts
+            WHERE user_id = $1 AND provider = $2
+            "#,
+        )
+        .bind(user_id.as_str())
+        .bind(provider)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to unlink OAuth account");
+            Error::Storage(StorageError::Database(
+                "Failed to unlink OAuth account".to_string(),
+            ))
+        })?;
+
+        Ok(())
+    }
 }

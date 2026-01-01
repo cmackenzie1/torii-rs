@@ -36,6 +36,11 @@ impl<P: SessionProvider> SessionService<P> {
         }
     }
 
+    /// List all sessions for a user
+    pub async fn list_sessions_for_user(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        self.provider.list_sessions_for_user(user_id).await
+    }
+
     /// Delete a session
     pub async fn delete_session(&self, token: &SessionToken) -> Result<(), Error> {
         self.provider.delete_session(token).await
@@ -49,5 +54,14 @@ impl<P: SessionProvider> SessionService<P> {
     /// Clean up expired sessions
     pub async fn cleanup_expired_sessions(&self) -> Result<(), Error> {
         self.provider.cleanup_expired_sessions().await
+    }
+
+    /// Refresh a session by extending its expiration time
+    pub async fn refresh_session(
+        &self,
+        token: &SessionToken,
+        duration: Duration,
+    ) -> Result<Session, Error> {
+        self.provider.refresh_session(token, duration).await
     }
 }

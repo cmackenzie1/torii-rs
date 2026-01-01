@@ -323,3 +323,81 @@ impl PasswordChangedTemplate {
         })
     }
 }
+
+#[derive(Template)]
+#[template(
+    source = r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email - {{ app_name }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .button { display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ app_name }}</h1>
+        </div>
+        
+        <h2>Verify Your Email Address</h2>
+        
+        <p>{% if let Some(name) = user_name %}Hello {{ name }},{% else %}Hello,{% endif %}</p>
+        
+        <p>Please click the button below to verify your email address and complete your account setup:</p>
+        
+        <div style="text-align: center;">
+            <a href="{{ verification_link }}" class="button">Verify Email</a>
+        </div>
+        
+        <p>Or copy and paste this URL into your browser:</p>
+        <p style="word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace;">{{ verification_link }}</p>
+        
+        <p>This link will expire in 24 hours for security reasons.</p>
+        
+        <p>If you didn't create an account with {{ app_name }}, you can safely ignore this email.</p>
+        
+        <div class="footer">
+            <p>This email was sent by {{ app_name }}. If you have any questions, please contact our support team.</p>
+        </div>
+    </div>
+</body>
+</html>
+"#,
+    ext = "html"
+)]
+pub struct EmailVerificationTemplate {
+    pub app_name: String,
+    pub app_url: String,
+    pub user_name: Option<String>,
+    pub verification_link: String,
+}
+
+impl EmailVerificationTemplate {
+    pub fn from_data(data: TemplateData) -> Result<Self, MailerError> {
+        let context: TemplateContext = data
+            .get("context")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let verification_link = data
+            .get("verification_link")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| MailerError::Builder("verification_link is required".to_string()))?
+            .to_string();
+
+        Ok(Self {
+            app_name: context.app_name,
+            app_url: context.app_url,
+            user_name: context.user_name,
+            verification_link,
+        })
+    }
+}

@@ -1,7 +1,7 @@
 //! PostgreSQL implementation of the session repository.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use torii_core::{
     Error, Session, UserId, error::StorageError, repositories::SessionRepository,
@@ -147,5 +147,65 @@ impl SessionRepository for PostgresSessionRepository {
             })?;
 
         Ok(())
+    }
+
+    async fn find_by_user_id(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        let pg_sessions = sqlx::query_as::<_, PgSession>(
+            r#"
+            SELECT token, user_id, user_agent, ip_address, created_at, updated_at, expires_at
+            FROM sessions
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(user_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to find sessions by user_id");
+            Error::Storage(StorageError::Database(
+                "Failed to find sessions by user_id".to_string(),
+            ))
+        })?;
+
+        Ok(pg_sessions
+            .into_iter()
+            .map(|s| Session {
+                // Note: We don't have the plaintext token, only the hash
+                // Create an empty token - callers should not use this for auth
+                token: SessionToken::empty(),
+                token_hash: s.token,
+                user_id: UserId::new(&s.user_id),
+                user_agent: s.user_agent,
+                ip_address: s.ip_address,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+                expires_at: s.expires_at,
+            })
+            .collect())
+    }
+
+    async fn refresh(&self, token: &SessionToken, duration: Duration) -> Result<Session, Error> {
+        let token_hash = token.token_hash();
+        let now = Utc::now();
+        let new_expires_at = now + duration;
+
+        sqlx::query("UPDATE sessions SET expires_at = $1, updated_at = $2 WHERE token = $3")
+            .bind(new_expires_at)
+            .bind(now)
+            .bind(&token_hash)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to refresh session");
+                Error::Storage(StorageError::Database(
+                    "Failed to refresh session".to_string(),
+                ))
+            })?;
+
+        // Fetch and return the updated session
+        self.find_by_token(token)
+            .await?
+            .ok_or_else(|| Error::Storage(StorageError::Database("Session not found".to_string())))
     }
 }

@@ -158,6 +158,8 @@ use torii_core::services::MagicLinkService;
 #[cfg(any(feature = "password", feature = "magic-link"))]
 pub use torii_core::services::PasswordResetService;
 
+use torii_core::services::EmailVerificationService;
+
 #[cfg(feature = "mailer")]
 use torii_core::services::{MailerService, ToriiMailerService};
 
@@ -384,6 +386,10 @@ pub struct Torii<R: RepositoryProvider> {
     /// Brute force protection service for rate limiting login attempts
     brute_force_service: Arc<BruteForceProtectionService<BruteForceProtectionRepositoryAdapter<R>>>,
 
+    /// Email verification service
+    email_verification_service:
+        Arc<EmailVerificationService<UserRepositoryAdapter<R>, TokenRepositoryAdapter<R>>>,
+
     session_config: SessionConfig,
 }
 
@@ -488,7 +494,7 @@ impl<R: RepositoryProvider> Torii<R> {
 
             #[cfg(any(feature = "password", feature = "magic-link"))]
             password_reset_service: Arc::new(PasswordResetService::new(
-                user_repo,
+                user_repo.clone(),
                 Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
                 Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
                     repositories.clone(),
@@ -499,6 +505,13 @@ impl<R: RepositoryProvider> Torii<R> {
             mailer_service: None,
 
             brute_force_service,
+
+            email_verification_service: Arc::new(EmailVerificationService::new(
+                user_repo,
+                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
 
             session_config: SessionConfig::default(),
         }
@@ -593,7 +606,7 @@ impl<R: RepositoryProvider> Torii<R> {
 
             #[cfg(any(feature = "password", feature = "magic-link"))]
             password_reset_service: Arc::new(PasswordResetService::new(
-                user_repo,
+                user_repo.clone(),
                 Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
                 Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
                     repositories.clone(),
@@ -604,6 +617,13 @@ impl<R: RepositoryProvider> Torii<R> {
             mailer_service,
 
             brute_force_service,
+
+            email_verification_service: Arc::new(EmailVerificationService::new(
+                user_repo,
+                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                    repositories.clone(),
+                )),
+            )),
 
             session_config,
         })
@@ -869,6 +889,99 @@ impl<R: RepositoryProvider> Torii<R> {
     pub async fn delete_user(&self, user_id: &UserId) -> Result<(), ToriiError> {
         self.user_service
             .delete_user(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
+
+    /// Send an email verification token to a user
+    ///
+    /// This generates a secure token and optionally sends a verification email
+    /// if a mailer is configured.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to send verification to
+    /// * `verification_url_base`: The base URL for the verification link (e.g., "https://example.com/verify-email").
+    ///   The token will be appended as a query parameter: `{verification_url_base}?token={token}`
+    ///
+    /// # Returns
+    ///
+    /// Returns the generated secure token. The plaintext token can be accessed
+    /// via `token.token()` if you need to send it manually.
+    pub async fn send_verification_email(
+        &self,
+        user_id: &UserId,
+        verification_url_base: &str,
+    ) -> Result<SecureToken, ToriiError> {
+        // Get user info for the email
+        let user = self
+            .get_user(user_id)
+            .await?
+            .ok_or_else(|| ToriiError::AuthError("User not found".to_string()))?;
+
+        // Generate the verification token
+        let token = self
+            .email_verification_service
+            .generate_token(user_id)
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))?;
+
+        // Send verification email if mailer is configured
+        #[cfg(feature = "mailer")]
+        if let Some(mailer) = &self.mailer_service {
+            let verification_link = format!(
+                "{}?token={}",
+                verification_url_base.trim_end_matches('/'),
+                token
+                    .token()
+                    .expect("Token should be available after creation")
+            );
+
+            if let Err(e) = mailer
+                .send_verification_email(&user.email, &verification_link, user.name.as_deref())
+                .await
+            {
+                tracing::warn!("Failed to send verification email: {}", e);
+                // Don't fail if email sending fails
+            }
+        }
+
+        Ok(token)
+    }
+
+    /// Verify an email verification token
+    ///
+    /// This validates the token and marks the user's email as verified.
+    /// The token is consumed (single-use).
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The verification token from the email link
+    ///
+    /// # Returns
+    ///
+    /// Returns the user whose email was verified
+    pub async fn verify_email_token(&self, token: &str) -> Result<User, ToriiError> {
+        self.email_verification_service
+            .verify_email(token)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Check if an email verification token is valid without consuming it
+    ///
+    /// This is useful for frontend validation before showing a confirmation page.
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The verification token to check
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the token is valid and not expired
+    pub async fn check_email_verification_token(&self, token: &str) -> Result<bool, ToriiError> {
+        self.email_verification_service
+            .check_token(token)
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
@@ -1428,6 +1541,53 @@ impl<R: RepositoryProvider> OAuthAuth<'_, R> {
         torii
             .oauth_service
             .get_account(provider, subject)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// List all OAuth accounts linked to a user
+    ///
+    /// This is useful for implementing a "connected accounts" UI where
+    /// users can see which social providers are linked to their account.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to list accounts for
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of all OAuth accounts linked to the user
+    pub async fn list_accounts_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<torii_core::OAuthAccount>, ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .list_accounts_for_user(user_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Unlink an OAuth provider from a user account
+    ///
+    /// This removes the association between the user and the specified
+    /// OAuth provider. The user will no longer be able to log in using
+    /// that provider unless they link it again.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id`: The ID of the user to unlink the account from
+    /// * `provider`: The OAuth provider name to unlink (e.g., "google", "github")
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok() if the account was unlinked successfully
+    pub async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), ToriiError> {
+        let torii = self.torii();
+        torii
+            .oauth_service
+            .unlink_account(user_id, provider)
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))
     }

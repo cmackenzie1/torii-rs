@@ -108,6 +108,30 @@ impl SessionProvider for JwtSessionProvider {
         );
         Ok(())
     }
+
+    async fn list_sessions_for_user(&self, _user_id: &UserId) -> Result<Vec<Session>, Error> {
+        // JWTs are stateless, we don't have a list of active sessions
+        tracing::warn!("JwtSessionProvider doesn't support listing sessions; JWTs are stateless");
+        Ok(vec![])
+    }
+
+    async fn refresh_session(
+        &self,
+        token: &SessionToken,
+        duration: Duration,
+    ) -> Result<Session, Error> {
+        // First validate the existing token
+        let existing_session = self.get_session(token).await?;
+
+        // Create a new session with the same user info but new expiration
+        self.create_session(
+            &existing_session.user_id,
+            existing_session.user_agent,
+            existing_session.ip_address,
+            duration,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]

@@ -96,6 +96,14 @@ impl<R: SessionRepositoryProvider> SessionRepository for SessionRepositoryAdapte
     async fn cleanup_expired(&self) -> Result<(), Error> {
         self.provider.session().cleanup_expired().await
     }
+
+    async fn find_by_user_id(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        self.provider.session().find_by_user_id(user_id).await
+    }
+
+    async fn refresh(&self, token: &SessionToken, duration: Duration) -> Result<Session, Error> {
+        self.provider.session().refresh(token, duration).await
+    }
 }
 
 /// Adapter that wraps a PasswordRepositoryProvider and implements PasswordRepository.
@@ -204,6 +212,20 @@ impl<R: OAuthRepositoryProvider> OAuthRepository for OAuthRepositoryAdapter<R> {
 
     async fn delete_pkce_verifier(&self, csrf_state: &str) -> Result<(), Error> {
         self.provider.oauth().delete_pkce_verifier(csrf_state).await
+    }
+
+    async fn find_accounts_by_user_id(&self, user_id: &UserId) -> Result<Vec<OAuthAccount>, Error> {
+        self.provider
+            .oauth()
+            .find_accounts_by_user_id(user_id)
+            .await
+    }
+
+    async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error> {
+        self.provider
+            .oauth()
+            .unlink_account(user_id, provider)
+            .await
     }
 }
 

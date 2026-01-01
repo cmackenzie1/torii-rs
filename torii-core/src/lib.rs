@@ -23,8 +23,8 @@ pub use error::Error;
 pub use events::UnlockReason;
 pub use repositories::RepositoryProvider;
 pub use services::{
-    BruteForceProtectionService, MagicLinkService, OAuthService, PasskeyService,
-    PasswordResetService, PasswordService, SessionService, UserService,
+    BruteForceProtectionService, EmailVerificationService, MagicLinkService, OAuthService,
+    PasskeyService, PasswordResetService, PasswordService, SessionService, UserService,
 };
 #[cfg(feature = "mailer")]
 pub use services::{MailerService, ToriiMailerService};

@@ -102,4 +102,16 @@ impl<S: SessionRepository> SessionProvider for OpaqueSessionProvider<S> {
 
         Ok(())
     }
+
+    async fn list_sessions_for_user(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        self.storage.find_by_user_id(user_id).await
+    }
+
+    async fn refresh_session(
+        &self,
+        token: &SessionToken,
+        duration: Duration,
+    ) -> Result<Session, Error> {
+        self.storage.refresh(token, duration).await
+    }
 }
