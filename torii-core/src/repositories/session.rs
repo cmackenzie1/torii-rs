@@ -1,5 +1,6 @@
 use crate::{Error, Session, UserId, session::SessionToken};
 use async_trait::async_trait;
+use chrono::Duration;
 
 /// Repository for session data access
 #[async_trait]
@@ -10,6 +11,9 @@ pub trait SessionRepository: Send + Sync + 'static {
     /// Find a session by token
     async fn find_by_token(&self, token: &SessionToken) -> Result<Option<Session>, Error>;
 
+    /// Find all sessions for a user
+    async fn find_by_user_id(&self, user_id: &UserId) -> Result<Vec<Session>, Error>;
+
     /// Delete a session by token
     async fn delete(&self, token: &SessionToken) -> Result<(), Error>;
 
@@ -18,4 +22,9 @@ pub trait SessionRepository: Send + Sync + 'static {
 
     /// Clean up expired sessions
     async fn cleanup_expired(&self) -> Result<(), Error>;
+
+    /// Refresh a session by extending its expiration time
+    ///
+    /// Returns the updated session with the new expiration time
+    async fn refresh(&self, token: &SessionToken, duration: Duration) -> Result<Session, Error>;
 }

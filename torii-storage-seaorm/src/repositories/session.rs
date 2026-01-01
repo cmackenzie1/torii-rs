@@ -1,7 +1,9 @@
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+};
 use torii_core::{Error, Session, UserId, repositories::SessionRepository, session::SessionToken};
 
 use crate::SeaORMStorageError;
@@ -109,6 +111,70 @@ impl SessionRepository for SeaORMSessionRepository {
             .map_err(SeaORMStorageError::Database)?;
 
         Ok(())
+    }
+
+    async fn find_by_user_id(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        let sessions = session::Entity::find()
+            .filter(session::Column::UserId.eq(user_id.as_str()))
+            .order_by_desc(session::Column::CreatedAt)
+            .all(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
+
+        Ok(sessions
+            .into_iter()
+            .map(|s| Session {
+                // Note: We don't have the plaintext token, only the hash
+                // Create an empty token - callers should not use this for auth
+                token: SessionToken::empty(),
+                token_hash: s.token,
+                user_id: UserId::new(&s.user_id),
+                user_agent: s.user_agent,
+                ip_address: s.ip_address,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+                expires_at: s.expires_at,
+            })
+            .collect())
+    }
+
+    async fn refresh(&self, token: &SessionToken, duration: Duration) -> Result<Session, Error> {
+        let token_hash = token.token_hash();
+        let now = Utc::now();
+        let new_expires_at = now + duration;
+
+        // Find the session first
+        let existing = session::Entity::find()
+            .filter(session::Column::Token.eq(&token_hash))
+            .one(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?
+            .ok_or_else(|| {
+                Error::Storage(torii_core::error::StorageError::Database(
+                    "Session not found".to_string(),
+                ))
+            })?;
+
+        // Update the session
+        let mut active: session::ActiveModel = existing.into();
+        active.expires_at = Set(new_expires_at);
+        active.updated_at = Set(now);
+
+        let updated = active
+            .update(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
+
+        Ok(Session {
+            token: token.clone(),
+            token_hash: updated.token,
+            user_id: UserId::new(&updated.user_id),
+            user_agent: updated.user_agent,
+            ip_address: updated.ip_address,
+            created_at: updated.created_at,
+            updated_at: updated.updated_at,
+            expires_at: updated.expires_at,
+        })
     }
 }
 

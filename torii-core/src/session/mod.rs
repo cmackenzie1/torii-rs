@@ -82,6 +82,15 @@ impl SessionToken {
         SessionToken::Opaque(SecretString::from(generate_random_string(32)))
     }
 
+    /// Create an empty session token.
+    ///
+    /// This is used when returning sessions from the database where only the
+    /// token hash is stored. The plaintext token is not available in these cases.
+    /// This token should NOT be used for authentication purposes.
+    pub fn empty() -> Self {
+        SessionToken::Opaque(SecretString::from(String::new()))
+    }
+
     /// Create a new JWT session token with the specified algorithm
     pub fn new_jwt(claims: &JwtClaims, config: &JwtConfig) -> Result<Self, Error> {
         let header = Header::new(config.jwt_algorithm());

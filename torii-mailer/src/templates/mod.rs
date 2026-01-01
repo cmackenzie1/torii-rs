@@ -2,8 +2,8 @@ mod auth_templates;
 mod engine;
 
 pub use auth_templates::{
-    MagicLinkTemplate, PasswordChangedTemplate, PasswordResetTemplate, TemplateContext,
-    WelcomeTemplate,
+    EmailVerificationTemplate, MagicLinkTemplate, PasswordChangedTemplate, PasswordResetTemplate,
+    TemplateContext, WelcomeTemplate,
 };
 pub use engine::{AskamaTemplateEngine, TemplateEngine};
 

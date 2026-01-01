@@ -43,6 +43,19 @@ pub trait SessionProvider: Send + Sync {
     /// The Session if the token is valid, or an error if invalid/expired
     async fn get_session(&self, token: &SessionToken) -> Result<Session, Error>;
 
+    /// List all sessions for a specific user
+    ///
+    /// # Arguments
+    /// * `user_id` - The ID of the user whose sessions should be listed
+    ///
+    /// # Returns
+    /// A list of all active sessions for the user
+    ///
+    /// # Note
+    /// For stateless providers like JWT, this may return an empty list
+    /// as sessions are not stored server-side.
+    async fn list_sessions_for_user(&self, user_id: &UserId) -> Result<Vec<Session>, Error>;
+
     /// Invalidate a session token
     ///
     /// For stateless providers (like JWT), this may be a no-op.
@@ -67,6 +80,24 @@ pub trait SessionProvider: Send + Sync {
     /// For stateless providers like JWT, this may not be fully supported
     /// without implementing a token blacklist or revocation mechanism.
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error>;
+
+    /// Refresh a session by extending its expiration time
+    ///
+    /// # Arguments
+    /// * `token` - The session token to refresh
+    /// * `duration` - The new duration from now until expiration
+    ///
+    /// # Returns
+    /// The updated session with the new expiration time
+    ///
+    /// # Note
+    /// For stateless providers like JWT, this will create a new token
+    /// with updated expiration claims.
+    async fn refresh_session(
+        &self,
+        token: &SessionToken,
+        duration: Duration,
+    ) -> Result<Session, Error>;
 }
 
 /// Implementation of SessionProvider for Box<dyn SessionProvider>
@@ -89,6 +120,10 @@ impl SessionProvider for Box<dyn SessionProvider> {
         (**self).get_session(token).await
     }
 
+    async fn list_sessions_for_user(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
+        (**self).list_sessions_for_user(user_id).await
+    }
+
     async fn delete_session(&self, token: &SessionToken) -> Result<(), Error> {
         (**self).delete_session(token).await
     }
@@ -99,5 +134,13 @@ impl SessionProvider for Box<dyn SessionProvider> {
 
     async fn delete_sessions_for_user(&self, user_id: &UserId) -> Result<(), Error> {
         (**self).delete_sessions_for_user(user_id).await
+    }
+
+    async fn refresh_session(
+        &self,
+        token: &SessionToken,
+        duration: Duration,
+    ) -> Result<Session, Error> {
+        (**self).refresh_session(token, duration).await
     }
 }

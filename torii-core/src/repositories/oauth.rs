@@ -27,6 +27,9 @@ pub trait OAuthRepository: Send + Sync + 'static {
         subject: &str,
     ) -> Result<Option<OAuthAccount>, Error>;
 
+    /// Find all OAuth accounts for a user
+    async fn find_accounts_by_user_id(&self, user_id: &UserId) -> Result<Vec<OAuthAccount>, Error>;
+
     /// Link an existing user to an OAuth account
     async fn link_account(
         &self,
@@ -34,6 +37,9 @@ pub trait OAuthRepository: Send + Sync + 'static {
         provider: &str,
         subject: &str,
     ) -> Result<(), Error>;
+
+    /// Unlink an OAuth account from a user
+    async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error>;
 
     /// Store a PKCE verifier with an expiration time
     async fn store_pkce_verifier(

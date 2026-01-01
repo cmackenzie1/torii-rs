@@ -116,6 +116,37 @@ impl PasswordChangedEmail {
     }
 }
 
+pub struct EmailVerificationEmail;
+
+impl EmailVerificationEmail {
+    pub async fn build<T: TemplateEngine>(
+        engine: &T,
+        from: &str,
+        to: &str,
+        verification_link: &str,
+        context: TemplateContext,
+    ) -> Result<Email, MailerError> {
+        let template_data = TemplateData::new()
+            .insert("context", &context)?
+            .insert("verification_link", verification_link)?;
+
+        let html_body = engine
+            .render_html("email_verification", template_data.clone())
+            .await?;
+        let text_body = engine
+            .render_text("email_verification", template_data)
+            .await?;
+
+        Email::builder()
+            .from(from)
+            .to(to)
+            .subject(format!("Verify your email for {}", context.app_name))
+            .html_body(html_body)
+            .text_body(text_body)
+            .build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

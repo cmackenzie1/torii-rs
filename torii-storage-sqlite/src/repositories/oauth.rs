@@ -82,4 +82,19 @@ impl OAuthRepository for SqliteOAuthRepository {
             "OAuth repository not yet implemented".to_string(),
         )))
     }
+
+    async fn find_accounts_by_user_id(
+        &self,
+        _user_id: &UserId,
+    ) -> Result<Vec<OAuthAccount>, Error> {
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
+    }
+
+    async fn unlink_account(&self, _user_id: &UserId, _provider: &str) -> Result<(), Error> {
+        Err(Error::Storage(StorageError::Database(
+            "OAuth repository not yet implemented".to_string(),
+        )))
+    }
 }

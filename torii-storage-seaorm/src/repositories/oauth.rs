@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+};
 use torii_core::{Error, OAuthAccount, User, UserId, repositories::OAuthRepository};
 
 use crate::SeaORMStorageError;
@@ -176,6 +178,41 @@ impl OAuthRepository for SeaORMOAuthRepository {
             .exec(&self.pool)
             .await
             .map_err(SeaORMStorageError::Database)?;
+        Ok(())
+    }
+
+    async fn find_accounts_by_user_id(&self, user_id: &UserId) -> Result<Vec<OAuthAccount>, Error> {
+        let oauth_accounts = oauth::Entity::find()
+            .filter(oauth::Column::UserId.eq(user_id.as_str()))
+            .order_by_desc(oauth::Column::CreatedAt)
+            .all(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
+
+        let accounts = oauth_accounts
+            .into_iter()
+            .map(|account| {
+                OAuthAccount::builder()
+                    .user_id(UserId::new(&account.user_id))
+                    .provider(account.provider)
+                    .subject(account.subject)
+                    .created_at(account.created_at)
+                    .updated_at(account.updated_at)
+                    .build()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(accounts)
+    }
+
+    async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error> {
+        oauth::Entity::delete_many()
+            .filter(oauth::Column::UserId.eq(user_id.as_str()))
+            .filter(oauth::Column::Provider.eq(provider))
+            .exec(&self.pool)
+            .await
+            .map_err(SeaORMStorageError::Database)?;
+
         Ok(())
     }
 }
