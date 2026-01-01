@@ -1575,6 +1575,13 @@ impl<R: RepositoryProvider> OAuthAuth<'_, R> {
     /// OAuth provider. The user will no longer be able to log in using
     /// that provider unless they link it again.
     ///
+    /// # Safety
+    ///
+    /// This method validates that the user has at least one other authentication
+    /// method (another OAuth account, password, or passkeys) before allowing the
+    /// unlink operation. This prevents users from locking themselves out of their
+    /// accounts.
+    ///
     /// # Arguments
     ///
     /// * `user_id`: The ID of the user to unlink the account from
@@ -1583,8 +1590,55 @@ impl<R: RepositoryProvider> OAuthAuth<'_, R> {
     /// # Returns
     ///
     /// Returns Ok() if the account was unlinked successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns `ToriiError::AuthError` with "Cannot remove last authentication method"
+    /// if unlinking this OAuth provider would leave the user with no way to log in.
     pub async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), ToriiError> {
         let torii = self.torii();
+
+        // Check if user has other authentication methods before unlinking
+        let oauth_accounts = torii
+            .oauth_service
+            .list_accounts_for_user(user_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Count remaining OAuth accounts after removing the specified provider
+        let remaining_oauth = oauth_accounts
+            .iter()
+            .filter(|a| a.provider != provider)
+            .count();
+
+        // Check for password
+        #[cfg(feature = "password")]
+        let has_password = torii
+            .password_service
+            .has_password(user_id)
+            .await
+            .unwrap_or(false);
+        #[cfg(not(feature = "password"))]
+        let has_password = false;
+
+        // Check for passkeys
+        #[cfg(feature = "passkey")]
+        let has_passkeys = torii
+            .passkey_service
+            .get_user_credentials(user_id)
+            .await
+            .map(|creds| !creds.is_empty())
+            .unwrap_or(false);
+        #[cfg(not(feature = "passkey"))]
+        let has_passkeys = false;
+
+        // If no alternative auth methods exist, prevent unlinking
+        if remaining_oauth == 0 && !has_password && !has_passkeys {
+            return Err(ToriiError::AuthError(
+                "Cannot remove last authentication method".to_string(),
+            ));
+        }
+
         torii
             .oauth_service
             .unlink_account(user_id, provider)

@@ -134,6 +134,16 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
         self.password_repository.remove_password_hash(user_id).await
     }
 
+    /// Check if a user has a password set
+    ///
+    /// Returns `true` if the user has a password stored, `false` otherwise.
+    /// This is useful for checking if a user can authenticate with a password,
+    /// or for validation before removing other authentication methods.
+    pub async fn has_password(&self, user_id: &UserId) -> Result<bool, Error> {
+        let password_hash = self.password_repository.get_password_hash(user_id).await?;
+        Ok(password_hash.is_some())
+    }
+
     /// Hash a password using argon2
     fn hash_password(password: &str) -> Result<String, Error> {
         use password_auth::generate_hash;
