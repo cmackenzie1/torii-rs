@@ -54,6 +54,9 @@ pub enum AuthError {
         /// Seconds until the account can be accessed again
         retry_after_seconds: Option<i64>,
     },
+
+    #[error("Cannot remove last authentication method")]
+    CannotRemoveLastAuthMethod,
 }
 
 #[derive(Debug, Error)]
