@@ -12,6 +12,8 @@
 //! | `email_verified_at` | `Option<DateTime>` | The timestamp when the user's email was verified. |
 //! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
 //! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
+use std::str::FromStr;
+
 use crate::{
     Error,
     error::ValidationError,
@@ -71,6 +73,47 @@ impl From<&str> for UserId {
 impl std::fmt::Display for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for UserId {
+    type Err = Error;
+
+    /// Parse a string into a UserId.
+    ///
+    /// This validates that the string has the correct format for a user ID
+    /// (prefixed with "usr_" and containing valid base58-encoded data).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationError::InvalidUserId`] if the string is not a valid user ID format.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use std::str::FromStr;
+    /// use torii_core::UserId;
+    ///
+    /// // Valid user ID
+    /// let id = UserId::new_random();
+    /// let parsed: UserId = id.as_str().parse().unwrap();
+    /// assert_eq!(id, parsed);
+    ///
+    /// // Invalid user ID
+    /// let result: Result<UserId, _> = "invalid".parse();
+    /// assert!(result.is_err());
+    /// ```
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let id = UserId(s.to_string());
+        if id.is_valid() {
+            Ok(id)
+        } else {
+            Err(ValidationError::InvalidUserId(format!(
+                "Invalid user ID format: expected 'usr_' prefix with valid base58 data, got '{}'",
+                s
+            ))
+            .into())
+        }
     }
 }
 
@@ -319,5 +362,28 @@ mod tests {
         // Test valid manual creation
         let valid_id = UserId::new("usr_dGVzdA"); // "test" in base64
         assert!(!valid_id.is_valid()); // Should be false because it's too short (not 96 bits)
+    }
+
+    #[test]
+    fn test_user_id_from_str() {
+        // Valid user ID should parse successfully
+        let user_id = UserId::new_random();
+        let parsed: UserId = user_id.as_str().parse().unwrap();
+        assert_eq!(user_id, parsed);
+
+        // Invalid formats should fail
+        let invalid_cases = vec![
+            "invalid",
+            "sess_abc123",
+            "usr_",
+            "usr_short",
+            "",
+            "USR_abc123",
+        ];
+
+        for invalid in invalid_cases {
+            let result: Result<UserId, _> = invalid.parse();
+            assert!(result.is_err(), "Expected '{}' to fail parsing", invalid);
+        }
     }
 }
