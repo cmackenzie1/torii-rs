@@ -1,4 +1,3 @@
-use torii_core::session::SessionToken;
 use torii_core::{Session, UserId};
 
 use crate::entities::session;
@@ -6,15 +5,14 @@ use crate::entities::session;
 /// Convert a database session model to a Session.
 ///
 /// Note: The token field in the database stores the hash, not the plaintext.
-/// When loading from storage, we create a "placeholder" token that contains the hash.
-/// This allows verification via constant-time comparison, but the original
-/// plaintext token is not recoverable (by design).
+/// When loading from storage, the plaintext token is not available (by design).
+/// The token field will be None since we only have the hash.
 impl From<session::Model> for Session {
     fn from(value: session::Model) -> Self {
         // The database stores the hash in the 'token' column
-        // We create a placeholder token - actual verification should use verify_hash
+        // Token is None since plaintext is not stored in the database
         Self {
-            token: SessionToken::new(&value.token),
+            token: None,
             token_hash: value.token.clone(),
             user_id: UserId::new(&value.user_id),
             user_agent: value.user_agent.to_owned(),

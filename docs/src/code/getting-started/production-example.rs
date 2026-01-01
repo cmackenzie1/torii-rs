@@ -40,10 +40,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ).await?;
 
     println!("Login successful!");
-    println!("JWT Token: {}", session.token);
+    let token = session.token.as_ref().expect("freshly created session should have token");
+    println!("JWT Token: {}", token);
 
     // Validate the JWT session
-    let validated_session = torii.get_session(&session.token).await?;
+    let validated_session = torii.get_session(token).await?;
     println!("Session valid for user: {}", validated_session.user_id);
 
     Ok(())

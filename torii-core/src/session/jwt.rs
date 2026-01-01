@@ -57,7 +57,7 @@ impl SessionProvider for JwtSessionProvider {
 
         // Return a new session with the JWT token
         Ok(Session {
-            token: jwt_token,
+            token: Some(jwt_token),
             ..session
         })
     }
@@ -165,7 +165,10 @@ mod tests {
         assert_eq!(session.ip_address, ip_address);
 
         // Retrieve the session
-        let retrieved = provider.get_session(&session.token).await.unwrap();
+        let retrieved = provider
+            .get_session(session.token.as_ref().expect("token should be present"))
+            .await
+            .unwrap();
 
         assert_eq!(retrieved.user_id, user_id);
         assert_eq!(retrieved.user_agent, user_agent);

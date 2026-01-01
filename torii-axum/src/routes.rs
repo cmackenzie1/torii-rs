@@ -202,7 +202,11 @@ where
 
     let cookie = build_session_cookie(
         &cookie_config,
-        session.token.expose_secret(),
+        session
+            .token
+            .as_ref()
+            .expect("freshly created session should have token")
+            .expose_secret(),
         session.expires_at,
     );
 
@@ -239,7 +243,11 @@ where
 
     let cookie = build_session_cookie(
         &cookie_config,
-        session.token.expose_secret(),
+        session
+            .token
+            .as_ref()
+            .expect("freshly created session should have token")
+            .expose_secret(),
         session.expires_at,
     );
 
@@ -407,7 +415,11 @@ where
 
     let cookie = build_session_cookie(
         &cookie_config,
-        session.token.expose_secret(),
+        session
+            .token
+            .as_ref()
+            .expect("freshly created session should have token")
+            .expose_secret(),
         session.expires_at,
     );
 

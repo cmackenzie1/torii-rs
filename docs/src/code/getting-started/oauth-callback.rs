@@ -17,7 +17,8 @@ async fn handle_oauth_callback<R: RepositoryProvider>(
     ).await?;
 
     println!("OAuth user authenticated: {}", user.id);
-    println!("Session token: {}", session.token);
+    let token = session.token.as_ref().expect("freshly created session should have token");
+    println!("Session token: {}", token);
 
     Ok(())
 }

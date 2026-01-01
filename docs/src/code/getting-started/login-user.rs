@@ -16,7 +16,8 @@ async fn login_user(
 
     // The session token can be stored in a cookie or returned to the client
     println!("User authenticated: {}", user.id);
-    println!("Session token: {}", session.token);
+    let token = session.token.as_ref().expect("freshly created session should have token");
+    println!("Session token: {}", token);
 
     Ok(())
 }

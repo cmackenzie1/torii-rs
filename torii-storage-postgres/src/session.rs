@@ -119,7 +119,12 @@ mod test {
 
         // Verify expired session was removed
         let expired_result = session_repo
-            .find_by_token(&expired_session.token)
+            .find_by_token(
+                expired_session
+                    .token
+                    .as_ref()
+                    .expect("token should be present"),
+            )
             .await
             .expect("Failed to get session");
         assert!(expired_result.is_none());

@@ -82,15 +82,6 @@ impl SessionToken {
         SessionToken::Opaque(SecretString::from(generate_random_string(32)))
     }
 
-    /// Create an empty session token.
-    ///
-    /// This is used when returning sessions from the database where only the
-    /// token hash is stored. The plaintext token is not available in these cases.
-    /// This token should NOT be used for authentication purposes.
-    pub fn empty() -> Self {
-        SessionToken::Opaque(SecretString::from(String::new()))
-    }
-
     /// Create a new JWT session token with the specified algorithm
     pub fn new_jwt(claims: &JwtClaims, config: &JwtConfig) -> Result<Self, Error> {
         let header = Header::new(config.jwt_algorithm());
@@ -525,8 +516,13 @@ impl JwtConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
-    /// The unique identifier for the session.
-    pub token: SessionToken,
+    /// The session token (None when only token_hash is available from DB).
+    ///
+    /// When listing sessions for a user, the plaintext token is not available
+    /// since only the hash is stored in the database. In these cases, this field
+    /// will be `None`. For freshly created sessions, this will always be `Some`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<SessionToken>,
 
     /// The SHA256 hash of the token (stored in database for secure lookups).
     /// This field is computed from the token and should be used for database queries.
@@ -595,7 +591,7 @@ impl Session {
 
         let token_hash = token.token_hash();
         Self {
-            token,
+            token: Some(token),
             token_hash,
             user_id: UserId::new(&claims.sub),
             user_agent,
@@ -610,6 +606,7 @@ impl Session {
 #[derive(Default)]
 pub struct SessionBuilder {
     token: Option<SessionToken>,
+    token_hash: Option<String>,
     user_id: Option<UserId>,
     user_agent: Option<String>,
     ip_address: Option<String>,
@@ -621,6 +618,12 @@ pub struct SessionBuilder {
 impl SessionBuilder {
     pub fn token(mut self, token: SessionToken) -> Self {
         self.token = Some(token);
+        self
+    }
+
+    /// Set the token hash directly (used when loading from database where plaintext is unavailable)
+    pub fn token_hash(mut self, token_hash: String) -> Self {
+        self.token_hash = Some(token_hash);
         self
     }
 
@@ -656,8 +659,22 @@ impl SessionBuilder {
 
     pub fn build(self) -> Result<Session, Error> {
         let now = Utc::now();
-        let token = self.token.unwrap_or_default();
-        let token_hash = token.token_hash();
+
+        // If token is provided, compute hash from it. Otherwise use provided hash (or empty).
+        let (token, token_hash) = match (self.token, self.token_hash) {
+            (Some(t), _) => {
+                let hash = t.token_hash();
+                (Some(t), hash)
+            }
+            (None, Some(hash)) => (None, hash),
+            (None, None) => {
+                // Generate a new random token if neither is provided
+                let t = SessionToken::new_random();
+                let hash = t.token_hash();
+                (Some(t), hash)
+            }
+        };
+
         Ok(Session {
             token,
             token_hash,

@@ -45,7 +45,8 @@ async fn test_jwt_session_manager() {
         .unwrap();
 
     // Verify the token is a JWT
-    match &session.token {
+    let token = session.token.as_ref().expect("token should be present");
+    match token {
         SessionToken::Jwt(_) => {
             // Expected
         }
@@ -53,7 +54,7 @@ async fn test_jwt_session_manager() {
     }
 
     // Retrieve the session
-    let retrieved = torii.get_session(&session.token).await.unwrap();
+    let retrieved = torii.get_session(token).await.unwrap();
     assert_eq!(retrieved.user_id, user.id);
 }
 
@@ -84,14 +85,15 @@ async fn test_jwt_expiration() {
     let session = torii.create_session(&user.id, None, None).await.unwrap();
 
     // Verify we can get the session immediately
-    let retrieved = torii.get_session(&session.token).await.unwrap();
+    let token = session.token.as_ref().expect("token should be present");
+    let retrieved = torii.get_session(token).await.unwrap();
     assert_eq!(retrieved.user_id, user.id);
 
     // Wait for expiration
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // Try to get the expired session
-    let result = torii.get_session(&session.token).await;
+    let result = torii.get_session(token).await;
     assert!(result.is_err());
 }
 
@@ -130,7 +132,8 @@ async fn test_password_auth_with_jwt() {
         .unwrap();
 
     // Verify the token is a JWT
-    match &session.token {
+    let token = session.token.as_ref().expect("token should be present");
+    match token {
         SessionToken::Jwt(_) => {
             // Expected
         }
@@ -141,7 +144,7 @@ async fn test_password_auth_with_jwt() {
     assert_eq!(session.user_id, user.id);
 
     // Validate the session
-    let retrieved = torii.get_session(&session.token).await.unwrap();
+    let retrieved = torii.get_session(token).await.unwrap();
     assert_eq!(retrieved.user_id, user.id);
 
     // Try with incorrect password

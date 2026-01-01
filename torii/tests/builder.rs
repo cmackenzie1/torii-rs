@@ -177,15 +177,16 @@ async fn test_builder_full_auth_flow() {
     assert!(!session.is_expired());
 
     // Verify session
+    let token = session.token.as_ref().expect("token should be present");
     let retrieved = torii
-        .get_session(&session.token)
+        .get_session(token)
         .await
         .expect("Failed to get session");
     assert_eq!(retrieved.user_id, user.id);
 
     // Logout
     torii
-        .delete_session(&session.token)
+        .delete_session(token)
         .await
         .expect("Failed to delete session");
 }

@@ -27,10 +27,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Login successful!");
     println!("User: {}", user.id);
-    println!("Session token: {}", session.token);
+    let token = session.token.as_ref().expect("freshly created session should have token");
+    println!("Session token: {}", token);
 
     // Validate session
-    let validated_session = torii.get_session(&session.token).await?;
+    let validated_session = torii.get_session(token).await?;
     println!("Session valid for user: {}", validated_session.user_id);
 
     Ok(())

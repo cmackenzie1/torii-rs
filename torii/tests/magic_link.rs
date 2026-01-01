@@ -101,7 +101,8 @@ async fn test_magic_link_expired_token() {
     sleep(StdDuration::from_secs(3)).await;
 
     // Get the session - should fail because it's expired
-    let result = torii.get_session(&session.token).await;
+    let token = session.token.as_ref().expect("token should be present");
+    let result = torii.get_session(token).await;
     assert!(result.is_err());
 }
 
