@@ -85,7 +85,7 @@ impl SessionRepository for PostgresSessionRepository {
                 // Verify using constant-time comparison
                 if token.verify_hash(&s.token) {
                     Ok(Some(Session {
-                        token: token.clone(),
+                        token: Some(token.clone()),
                         token_hash: s.token,
                         user_id: UserId::new(&s.user_id),
                         user_agent: s.user_agent,
@@ -172,8 +172,8 @@ impl SessionRepository for PostgresSessionRepository {
             .into_iter()
             .map(|s| Session {
                 // Note: We don't have the plaintext token, only the hash
-                // Create an empty token - callers should not use this for auth
-                token: SessionToken::empty(),
+                // Token is None when listing sessions since plaintext is not stored
+                token: None,
                 token_hash: s.token,
                 user_id: UserId::new(&s.user_id),
                 user_agent: s.user_agent,

@@ -65,7 +65,7 @@ impl SessionRepository for SeaORMSessionRepository {
             // Verify using constant-time comparison
             if token.verify_hash(&s.token) {
                 return Ok(Some(Session {
-                    token: token.clone(),
+                    token: Some(token.clone()),
                     token_hash: s.token,
                     user_id: UserId::new(&s.user_id),
                     user_agent: s.user_agent,
@@ -125,8 +125,8 @@ impl SessionRepository for SeaORMSessionRepository {
             .into_iter()
             .map(|s| Session {
                 // Note: We don't have the plaintext token, only the hash
-                // Create an empty token - callers should not use this for auth
-                token: SessionToken::empty(),
+                // Token is None when listing sessions since plaintext is not stored
+                token: None,
                 token_hash: s.token,
                 user_id: UserId::new(&s.user_id),
                 user_agent: s.user_agent,
@@ -166,7 +166,7 @@ impl SessionRepository for SeaORMSessionRepository {
             .map_err(SeaORMStorageError::Database)?;
 
         Ok(Session {
-            token: token.clone(),
+            token: Some(token.clone()),
             token_hash: updated.token,
             user_id: UserId::new(&updated.user_id),
             user_agent: updated.user_agent,
@@ -230,6 +230,11 @@ mod tests {
         assert_eq!(created_session.user_id, user_id);
     }
 
+    // Helper to extract token from Option for tests
+    fn get_token(session: &Session) -> &SessionToken {
+        session.token.as_ref().expect("token should be present")
+    }
+
     #[tokio::test]
     async fn test_find_by_token() {
         let pool = setup_test_db().await;
@@ -237,7 +242,7 @@ mod tests {
         let user_id = create_test_user(&pool).await;
 
         let session = create_test_session(&user_id);
-        let token = session.token.clone();
+        let token = get_token(&session).clone();
 
         let _created_session = repo.create(session).await.unwrap();
 
@@ -245,7 +250,7 @@ mod tests {
         assert!(found_session.is_some());
 
         let found_session = found_session.unwrap();
-        assert_eq!(found_session.token, token);
+        assert_eq!(found_session.token, Some(token));
         assert_eq!(found_session.user_id, user_id);
     }
 
@@ -267,7 +272,7 @@ mod tests {
         let user_id = create_test_user(&pool).await;
 
         let session = create_test_session(&user_id);
-        let token = session.token.clone();
+        let token = get_token(&session).clone();
 
         let _created_session = repo.create(session).await.unwrap();
 
@@ -286,8 +291,8 @@ mod tests {
 
         let session1 = create_test_session(&user_id);
         let session2 = create_test_session(&user_id);
-        let token1 = session1.token.clone();
-        let token2 = session2.token.clone();
+        let token1 = get_token(&session1).clone();
+        let token2 = get_token(&session2).clone();
 
         let _created_session1 = repo.create(session1).await.unwrap();
         let _created_session2 = repo.create(session2).await.unwrap();
@@ -316,8 +321,8 @@ mod tests {
             .unwrap();
 
         let valid_session = create_test_session(&user_id);
-        let expired_token = expired_session.token.clone();
-        let valid_token = valid_session.token.clone();
+        let expired_token = get_token(&expired_session).clone();
+        let valid_token = get_token(&valid_session).clone();
 
         let _created_expired = repo.create(expired_session).await.unwrap();
         let _created_valid = repo.create(valid_session).await.unwrap();

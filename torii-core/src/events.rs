@@ -340,7 +340,10 @@ mod tests {
             Event::UserUpdated(test_user.clone()),
             Event::UserDeleted(test_user.id.clone()),
             Event::SessionCreated(test_user.id.clone(), test_session.clone()),
-            Event::SessionDeleted(test_user.id.clone(), test_session.token.clone()),
+            Event::SessionDeleted(
+                test_user.id.clone(),
+                test_session.token.clone().expect("token should be present"),
+            ),
         ];
 
         for event in events {

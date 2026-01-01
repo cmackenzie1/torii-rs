@@ -195,14 +195,15 @@ async fn test_session_expiration() {
         .unwrap();
 
     // Verify we can get the session immediately
-    let retrieved = torii.get_session(&session.token).await.unwrap();
+    let token = session.token.as_ref().expect("token should be present");
+    let retrieved = torii.get_session(token).await.unwrap();
     assert_eq!(retrieved.user_id, user.id);
 
     // Wait for expiration
     sleep(StdDuration::from_secs(2)).await;
 
     // Try to get the expired session
-    let result = torii.get_session(&session.token).await;
+    let result = torii.get_session(token).await;
     assert!(result.is_err());
 }
 
@@ -247,8 +248,10 @@ async fn test_multiple_sessions() {
         .unwrap();
 
     // Verify both sessions are valid
-    let retrieved1 = torii.get_session(&session1.token).await.unwrap();
-    let retrieved2 = torii.get_session(&session2.token).await.unwrap();
+    let token1 = session1.token.as_ref().expect("token should be present");
+    let token2 = session2.token.as_ref().expect("token should be present");
+    let retrieved1 = torii.get_session(token1).await.unwrap();
+    let retrieved2 = torii.get_session(token2).await.unwrap();
 
     assert_eq!(retrieved1.user_id, user.id);
     assert_eq!(retrieved2.user_id, user.id);
@@ -256,21 +259,21 @@ async fn test_multiple_sessions() {
     assert_eq!(retrieved2.user_agent, Some("Device 2".to_string()));
 
     // Delete one session
-    torii.delete_session(&session1.token).await.unwrap();
+    torii.delete_session(token1).await.unwrap();
 
     // Verify first session is deleted and second is still valid
-    let result = torii.get_session(&session1.token).await;
+    let result = torii.get_session(token1).await;
     assert!(result.is_err());
 
-    let retrieved2 = torii.get_session(&session2.token).await.unwrap();
+    let retrieved2 = torii.get_session(token2).await.unwrap();
     assert_eq!(retrieved2.user_id, user.id);
 
     // Delete all sessions for user
     torii.delete_sessions_for_user(&user.id).await.unwrap();
 
     // Verify both sessions are now invalid
-    let result1 = torii.get_session(&session1.token).await;
-    let result2 = torii.get_session(&session2.token).await;
+    let result1 = torii.get_session(token1).await;
+    let result2 = torii.get_session(token2).await;
     assert!(result1.is_err());
     assert!(result2.is_err());
 }
@@ -310,7 +313,8 @@ async fn test_password_auth_with_jwt() {
     assert_eq!(logged_in_user.email, email);
 
     // Verify the token is a JWT
-    match &session.token {
+    let token = session.token.as_ref().expect("token should be present");
+    match token {
         SessionToken::Jwt(_) => {
             // Expected
         }
@@ -318,7 +322,7 @@ async fn test_password_auth_with_jwt() {
     }
 
     // Verify the session can be retrieved
-    let retrieved = torii.get_session(&session.token).await.unwrap();
+    let retrieved = torii.get_session(token).await.unwrap();
     assert_eq!(retrieved.user_id, user.id);
 
     // Try login with incorrect password
@@ -430,7 +434,8 @@ async fn test_delete_user() {
     assert!(retrieved_user.is_some(), "User should exist");
 
     // Verify session exists
-    let retrieved_session = torii.get_session(&session.token).await;
+    let token = session.token.as_ref().expect("token should be present");
+    let retrieved_session = torii.get_session(token).await;
     assert!(retrieved_session.is_ok(), "Session should exist");
 
     // Delete the user
@@ -441,6 +446,6 @@ async fn test_delete_user() {
     assert!(deleted_user.is_none(), "User should be deleted");
 
     // Verify session is deleted
-    let deleted_session = torii.get_session(&session.token).await;
+    let deleted_session = torii.get_session(token).await;
     assert!(deleted_session.is_err(), "Session should be deleted");
 }

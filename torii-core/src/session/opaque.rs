@@ -104,7 +104,10 @@ impl<S: SessionRepository> SessionProvider for OpaqueSessionProvider<S> {
     }
 
     async fn list_sessions_for_user(&self, user_id: &UserId) -> Result<Vec<Session>, Error> {
-        self.storage.find_by_user_id(user_id).await
+        self.storage
+            .find_by_user_id(user_id)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()).into())
     }
 
     async fn refresh_session(
@@ -112,6 +115,9 @@ impl<S: SessionRepository> SessionProvider for OpaqueSessionProvider<S> {
         token: &SessionToken,
         duration: Duration,
     ) -> Result<Session, Error> {
-        self.storage.refresh(token, duration).await
+        self.storage
+            .refresh(token, duration)
+            .await
+            .map_err(|e| StorageError::Database(e.to_string()).into())
     }
 }

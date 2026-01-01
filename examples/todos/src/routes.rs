@@ -205,11 +205,19 @@ async fn sign_in_form_handler(
         .await
         .unwrap();
 
-    let cookie = Cookie::build(("session_id", session.token.expose_secret().to_string()))
-        .path("/")
-        .http_only(true)
-        .secure(false) // TODO: Set to true in production
-        .same_site(SameSite::Lax);
+    let cookie = Cookie::build((
+        "session_id",
+        session
+            .token
+            .as_ref()
+            .expect("freshly created session should have token")
+            .expose_secret()
+            .to_string(),
+    ))
+    .path("/")
+    .http_only(true)
+    .secure(false) // TODO: Set to true in production
+    .same_site(SameSite::Lax);
     (
         StatusCode::OK,
         [(header::SET_COOKIE, cookie.to_string())],
