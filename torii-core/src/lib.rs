@@ -12,6 +12,7 @@ pub mod crypto;
 pub mod error;
 pub mod events;
 pub mod id;
+pub mod invitation;
 pub mod repositories;
 pub mod services;
 pub mod session;
@@ -21,10 +22,12 @@ pub mod validation;
 
 pub use error::Error;
 pub use events::UnlockReason;
+pub use invitation::{Invitation, InvitationId, InvitationStatus, NewInvitation};
 pub use repositories::RepositoryProvider;
 pub use services::{
-    BruteForceProtectionService, EmailVerificationService, MagicLinkService, OAuthService,
-    PasskeyService, PasswordResetService, PasswordService, SessionService, UserService,
+    BruteForceProtectionService, EmailVerificationService, InvitationConfig, InvitationService,
+    MagicLinkService, OAuthService, PasskeyService, PasswordResetService, PasswordService,
+    SessionService, UserService,
 };
 #[cfg(feature = "mailer")]
 pub use services::{MailerService, ToriiMailerService};
@@ -36,4 +39,4 @@ pub use storage::{
     AttemptStats, BruteForceProtectionConfig, FailedLoginAttempt, LockoutStatus, NewUser,
     SecureToken, TokenPurpose,
 };
-pub use user::{OAuthAccount, User, UserId, UserManager};
+pub use user::{OAuthAccount, User, UserId, UserManager, UserStatus};

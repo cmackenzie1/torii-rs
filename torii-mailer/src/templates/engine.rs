@@ -76,6 +76,10 @@ impl TemplateEngine for AskamaTemplateEngine {
                 let template = crate::templates::EmailVerificationTemplate::from_data(data)?;
                 Ok(template.render()?)
             }
+            "invitation" => {
+                let template = crate::templates::InvitationTemplate::from_data(data)?;
+                Ok(template.render()?)
+            }
             _ => Err(MailerError::Template(askama::Error::Fmt(std::fmt::Error))),
         }
     }

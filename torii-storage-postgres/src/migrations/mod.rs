@@ -796,6 +796,167 @@ impl Migration<Postgres> for AddPasskeyMetadata {
     }
 }
 
+/// Migration to add status and invited_by columns to users table for invitation support.
+pub struct AddUserStatusAndInvitedBy;
+
+#[async_trait]
+impl Migration<Postgres> for AddUserStatusAndInvitedBy {
+    fn version(&self) -> i64 {
+        13
+    }
+
+    fn name(&self) -> &str {
+        "AddUserStatusAndInvitedBy"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        // Add status column with default 'active' for existing users
+        sqlx::query(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Add invited_by column (nullable FK to users)
+        sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS invited_by TEXT REFERENCES users(id) ON DELETE SET NULL")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index for finding users by status
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index for finding users invited by a specific user
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_invited_by ON users(invited_by)")
+            .execute(&mut *conn)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_users_invited_by")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_users_status")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("ALTER TABLE users DROP COLUMN IF EXISTS invited_by")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("ALTER TABLE users DROP COLUMN IF EXISTS status")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
+/// Migration to create the invitations table.
+pub struct CreateInvitationsTable;
+
+#[async_trait]
+impl Migration<Postgres> for CreateInvitationsTable {
+    fn version(&self) -> i64 {
+        14
+    }
+
+    fn name(&self) -> &str {
+        "CreateInvitationsTable"
+    }
+
+    async fn up<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS invitations (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                inviter_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                metadata JSONB,
+                expires_at TIMESTAMPTZ NOT NULL,
+                accepted_at TIMESTAMPTZ,
+                accepted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+                revoked_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )"#,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for token lookup
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for finding invitations by email
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email)")
+            .execute(&mut *conn)
+            .await?;
+
+        // Index for finding pending invitations by email (most common query)
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_invitations_email_status ON invitations(email, status)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for finding invitations by inviter
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_invitations_inviter_id ON invitations(inviter_id)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        // Index for cleanup of expired invitations
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_invitations_expires_at ON invitations(expires_at)",
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn down<'a>(
+        &'a self,
+        conn: &'a mut <Postgres as Database>::Connection,
+    ) -> Result<(), MigrationError> {
+        sqlx::query("DROP INDEX IF EXISTS idx_invitations_expires_at")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_invitations_inviter_id")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_invitations_email_status")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_invitations_email")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP INDEX IF EXISTS idx_invitations_token_hash")
+            .execute(&mut *conn)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS invitations")
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

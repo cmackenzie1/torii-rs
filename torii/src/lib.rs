@@ -125,10 +125,11 @@ use torii_core::{
     BruteForceProtectionService, JwtSessionProvider, OpaqueSessionProvider, RepositoryProvider,
     SessionProvider,
     repositories::{
-        BruteForceProtectionRepositoryAdapter, PasswordRepositoryAdapter, SessionRepositoryAdapter,
-        TokenRepositoryAdapter, UserRepositoryAdapter,
+        BruteForceProtectionRepositoryAdapter, InvitationRepositoryAdapter,
+        PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
+        UserRepositoryAdapter,
     },
-    services::{SessionService, UserService},
+    services::{InvitationService, SessionService, UserService},
 };
 
 // Re-export builder types
@@ -167,8 +168,8 @@ use torii_core::services::{MailerService, ToriiMailerService};
 ///
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
-    JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, LockoutStatus, Session, SessionToken, User,
-    UserId,
+    Invitation, InvitationConfig, InvitationId, InvitationStatus, JwtAlgorithm, JwtClaims,
+    JwtConfig, JwtMetadata, LockoutStatus, Session, SessionToken, User, UserId, UserStatus,
 };
 
 /// Re-export storage types
@@ -390,6 +391,10 @@ pub struct Torii<R: RepositoryProvider> {
     email_verification_service:
         Arc<EmailVerificationService<UserRepositoryAdapter<R>, TokenRepositoryAdapter<R>>>,
 
+    /// Invitation service for user invitations
+    invitation_service:
+        Arc<InvitationService<InvitationRepositoryAdapter<R>, UserRepositoryAdapter<R>>>,
+
     session_config: SessionConfig,
 }
 
@@ -507,10 +512,15 @@ impl<R: RepositoryProvider> Torii<R> {
             brute_force_service,
 
             email_verification_service: Arc::new(EmailVerificationService::new(
-                user_repo,
+                user_repo.clone(),
                 Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
                     repositories.clone(),
                 )),
+            )),
+
+            invitation_service: Arc::new(InvitationService::new(
+                Arc::new(InvitationRepositoryAdapter::new(repositories.clone())),
+                user_repo,
             )),
 
             session_config: SessionConfig::default(),
@@ -619,10 +629,15 @@ impl<R: RepositoryProvider> Torii<R> {
             brute_force_service,
 
             email_verification_service: Arc::new(EmailVerificationService::new(
-                user_repo,
+                user_repo.clone(),
                 Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
                     repositories.clone(),
                 )),
+            )),
+
+            invitation_service: Arc::new(InvitationService::new(
+                Arc::new(InvitationRepositoryAdapter::new(repositories.clone())),
+                user_repo,
             )),
 
             session_config,
@@ -985,6 +1000,227 @@ impl<R: RepositoryProvider> Torii<R> {
             .await
             .map_err(|e| ToriiError::StorageError(e.to_string()))
     }
+
+    // =========================================================================
+    // Invitation Methods
+    // =========================================================================
+
+    /// Create an invitation for a user to join
+    ///
+    /// This creates an invitation that can be sent to a user via email. The invitation
+    /// includes a secure token that can be used to verify the invitation when the user
+    /// signs up.
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email address to invite
+    /// * `inviter_id`: The ID of the user sending the invitation
+    /// * `invitation_url_base`: The base URL for the invitation link (e.g., "https://example.com/invite").
+    ///   The token will be appended as a query parameter: `{invitation_url_base}?token={token}`
+    /// * `metadata`: Optional metadata to store with the invitation (e.g., role, team)
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of (Invitation, provisional_user) where provisional_user is Some if
+    /// a new provisional user was created for the invitee
+    pub async fn create_invitation(
+        &self,
+        email: &str,
+        inviter_id: Option<&UserId>,
+        invitation_url_base: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(Invitation, Option<User>), ToriiError> {
+        let (invitation, provisional_user) = self
+            .invitation_service
+            .create_invitation(email, inviter_id.cloned(), metadata)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Get the plaintext token from the invitation
+        let token = invitation
+            .token()
+            .expect("Token should be available after creation");
+
+        // Send invitation email if mailer is configured
+        #[cfg(feature = "mailer")]
+        if let Some(mailer) = &self.mailer_service {
+            let invitation_link = format!(
+                "{}?token={}",
+                invitation_url_base.trim_end_matches('/'),
+                token
+            );
+
+            // Get inviter's name for the email
+            let inviter_name = if let Some(inviter_id) = inviter_id {
+                self.get_user(inviter_id).await?.and_then(|u| u.name)
+            } else {
+                None
+            };
+
+            // Calculate expiry in days from the invitation's expires_at
+            let expires_in_days = (invitation.expires_at - chrono::Utc::now()).num_days();
+
+            if let Err(e) = mailer
+                .send_invitation_email(
+                    email,
+                    &invitation_link,
+                    inviter_name.as_deref(),
+                    expires_in_days,
+                )
+                .await
+            {
+                tracing::warn!("Failed to send invitation email: {}", e);
+                // Don't fail the invitation if email sending fails
+            }
+        }
+
+        // Suppress unused variable warning when mailer feature is disabled
+        let _ = invitation_url_base;
+
+        Ok((invitation, provisional_user))
+    }
+
+    /// Accept pending invitations for a user after signup
+    ///
+    /// This should be called after a user completes signup to automatically accept
+    /// any pending invitations for their email address. This enables the flow where
+    /// a user can be invited first and then sign up with any auth method.
+    ///
+    /// # Arguments
+    ///
+    /// * `user`: The user who just signed up
+    ///
+    /// # Returns
+    ///
+    /// Returns the list of accepted invitations
+    pub async fn accept_pending_invitations(
+        &self,
+        user: &User,
+    ) -> Result<Vec<Invitation>, ToriiError> {
+        self.invitation_service
+            .accept_pending_invitations_for_user(user)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Verify an invitation token without consuming it
+    ///
+    /// This is useful for frontend validation before showing the signup form.
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The invitation token to verify
+    ///
+    /// # Returns
+    ///
+    /// Returns the invitation if the token is valid and not expired
+    pub async fn verify_invitation_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<Invitation>, ToriiError> {
+        self.invitation_service
+            .get_invitation_by_token(token)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Accept an invitation by token
+    ///
+    /// This consumes the invitation token and marks it as accepted. If the user
+    /// was provisional, they will be activated.
+    ///
+    /// # Arguments
+    ///
+    /// * `token`: The invitation token
+    /// * `user_id`: The ID of the user accepting the invitation
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of (accepted invitation, user)
+    pub async fn accept_invitation(
+        &self,
+        token: &str,
+        user_id: &UserId,
+    ) -> Result<(Invitation, User), ToriiError> {
+        self.invitation_service
+            .accept_invitation(token, user_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Revoke an invitation
+    ///
+    /// This marks the invitation as revoked, preventing it from being accepted.
+    ///
+    /// # Arguments
+    ///
+    /// * `invitation_id`: The ID of the invitation to revoke
+    ///
+    /// # Returns
+    ///
+    /// Returns the revoked invitation
+    pub async fn revoke_invitation(
+        &self,
+        invitation_id: &InvitationId,
+    ) -> Result<Invitation, ToriiError> {
+        self.invitation_service
+            .revoke_invitation(invitation_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// List pending invitations for an email address
+    ///
+    /// # Arguments
+    ///
+    /// * `email`: The email address to check
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of pending invitations for the email
+    pub async fn list_pending_invitations(
+        &self,
+        email: &str,
+    ) -> Result<Vec<Invitation>, ToriiError> {
+        self.invitation_service
+            .list_pending_invitations(email)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// List all invitations sent by a user
+    ///
+    /// # Arguments
+    ///
+    /// * `inviter_id`: The ID of the user who sent the invitations
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of invitations sent by the user
+    pub async fn list_invitations_by_inviter(
+        &self,
+        inviter_id: &UserId,
+    ) -> Result<Vec<Invitation>, ToriiError> {
+        self.invitation_service
+            .list_invitations_by_inviter(inviter_id)
+            .await
+            .map_err(|e| ToriiError::AuthError(e.to_string()))
+    }
+
+    /// Clean up expired invitations
+    ///
+    /// This removes invitations that have passed their expiration date.
+    /// Should be called periodically (e.g., via a cron job).
+    ///
+    /// # Returns
+    ///
+    /// Returns the number of invitations that were expired
+    pub async fn cleanup_expired_invitations(&self) -> Result<u64, ToriiError> {
+        self.invitation_service
+            .cleanup_expired()
+            .await
+            .map_err(|e| ToriiError::StorageError(e.to_string()))
+    }
 }
 
 // Password authentication implementation moved to PasswordAuth namespace
@@ -1040,6 +1276,12 @@ impl<R: RepositoryProvider> PasswordAuth<'_, R> {
             .register_user(email, password, name.map(|n| n.to_string()))
             .await
             .map_err(|e| ToriiError::AuthError(e.to_string()))?;
+
+        // Accept any pending invitations for this user's email
+        if let Err(e) = torii.accept_pending_invitations(&user).await {
+            tracing::warn!("Failed to accept pending invitations: {}", e);
+            // Don't fail registration if invitation acceptance fails
+        }
 
         // Send welcome email if mailer is configured
         #[cfg(feature = "mailer")]

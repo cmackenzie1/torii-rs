@@ -119,6 +119,8 @@ mod tests {
                 email: user.email,
                 name: user.name,
                 email_verified_at: None,
+                status: crate::UserStatus::Active,
+                invited_by: None,
                 locked_at: None,
                 created_at: user.created_at,
                 updated_at: user.updated_at,

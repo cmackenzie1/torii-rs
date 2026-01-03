@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
-use torii_core::{Error, User, UserId, repositories::UserRepository, storage::NewUser};
+use torii_core::{Error, User, UserId, UserStatus, repositories::UserRepository, storage::NewUser};
 
 use crate::SeaORMStorageError;
 use crate::entities::user;
@@ -23,6 +23,8 @@ impl SeaORMUserRepository {
             email: email.to_string(),
             name: name.map(|s| s.to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         <Self as UserRepository>::create(self, new_user).await
@@ -90,6 +92,8 @@ impl UserRepository for SeaORMUserRepository {
             email: email.to_string(),
             name: None,
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         <Self as UserRepository>::create(self, new_user).await
@@ -167,6 +171,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let result = repo.create(new_user).await;
@@ -188,6 +194,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let created_user = repo.create(new_user).await.unwrap();
@@ -218,6 +226,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let _created_user = repo.create(new_user).await.unwrap();
@@ -246,6 +256,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let created_user = repo.create(new_user).await.unwrap();
@@ -283,6 +295,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let mut user = repo.create(new_user).await.unwrap();
@@ -305,6 +319,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let user = repo.create(new_user).await.unwrap();
@@ -326,6 +342,8 @@ mod tests {
             email: "test@example.com".to_string(),
             name: Some("Test User".to_string()),
             email_verified_at: None,
+            status: UserStatus::Active,
+            invited_by: None,
         };
 
         let user = repo.create(new_user).await.unwrap();

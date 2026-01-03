@@ -401,3 +401,102 @@ impl EmailVerificationTemplate {
         })
     }
 }
+
+#[derive(Template)]
+#[template(
+    source = r#"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You've Been Invited - {{ app_name }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .button { display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+        .inviter-info { background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ app_name }}</h1>
+        </div>
+        
+        <h2>You've Been Invited!</h2>
+        
+        <p>Hello,</p>
+        
+        {% if let Some(inviter) = inviter_name %}
+        <div class="inviter-info">
+            <strong>{{ inviter }}</strong> has invited you to join {{ app_name }}.
+        </div>
+        {% else %}
+        <p>You've been invited to join <strong>{{ app_name }}</strong>.</p>
+        {% endif %}
+        
+        <p>Click the button below to accept the invitation and create your account:</p>
+        
+        <div style="text-align: center;">
+            <a href="{{ invitation_link }}" class="button">Accept Invitation</a>
+        </div>
+        
+        <p>Or copy and paste this URL into your browser:</p>
+        <p style="word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace;">{{ invitation_link }}</p>
+        
+        <p>This invitation will expire in {{ expires_in_days }} days for security reasons.</p>
+        
+        <p>If you didn't expect this invitation, you can safely ignore this email.</p>
+        
+        <div class="footer">
+            <p>This invitation was sent by {{ app_name }}. If you have any questions, please contact our support team.</p>
+        </div>
+    </div>
+</body>
+</html>
+"#,
+    ext = "html"
+)]
+pub struct InvitationTemplate {
+    pub app_name: String,
+    pub app_url: String,
+    pub inviter_name: Option<String>,
+    pub invitation_link: String,
+    pub expires_in_days: i64,
+}
+
+impl InvitationTemplate {
+    pub fn from_data(data: TemplateData) -> Result<Self, MailerError> {
+        let context: TemplateContext = data
+            .get("context")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let invitation_link = data
+            .get("invitation_link")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| MailerError::Builder("invitation_link is required".to_string()))?
+            .to_string();
+
+        let inviter_name = data
+            .get("inviter_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let expires_in_days = data
+            .get("expires_in_days")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(7);
+
+        Ok(Self {
+            app_name: context.app_name,
+            app_url: context.app_url,
+            inviter_name,
+            invitation_link,
+            expires_in_days,
+        })
+    }
+}

@@ -147,6 +147,59 @@ impl EmailVerificationEmail {
     }
 }
 
+pub struct InvitationEmail;
+
+impl InvitationEmail {
+    /// Build an invitation email.
+    ///
+    /// # Arguments
+    ///
+    /// * `engine` - The template engine to use
+    /// * `from` - The sender email address
+    /// * `to` - The recipient email address (the invitee)
+    /// * `invitation_link` - The link to accept the invitation
+    /// * `inviter_name` - Optional name of the person who sent the invitation
+    /// * `expires_in_days` - Number of days until the invitation expires
+    /// * `context` - Template context with app information
+    pub async fn build<T: TemplateEngine>(
+        engine: &T,
+        from: &str,
+        to: &str,
+        invitation_link: &str,
+        inviter_name: Option<&str>,
+        expires_in_days: i64,
+        context: TemplateContext,
+    ) -> Result<Email, MailerError> {
+        let mut template_data = TemplateData::new()
+            .insert("context", &context)?
+            .insert("invitation_link", invitation_link)?
+            .insert("expires_in_days", expires_in_days)?;
+
+        if let Some(inviter) = inviter_name {
+            template_data = template_data.insert("inviter_name", inviter)?;
+        }
+
+        let html_body = engine
+            .render_html("invitation", template_data.clone())
+            .await?;
+        let text_body = engine.render_text("invitation", template_data).await?;
+
+        let subject = if let Some(inviter) = inviter_name {
+            format!("{} has invited you to join {}", inviter, context.app_name)
+        } else {
+            format!("You've been invited to join {}", context.app_name)
+        };
+
+        Email::builder()
+            .from(from)
+            .to(to)
+            .subject(subject)
+            .html_body(html_body)
+            .text_body(text_body)
+            .build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::{Error, UserId, error::utilities::RequiredFieldExt};
+use crate::{Error, UserId, error::utilities::RequiredFieldExt, user::UserStatus};
 
 // ============================================================================
 // Brute Force Protection Types
@@ -157,6 +157,8 @@ pub struct NewUser {
     pub email: String,
     pub name: Option<String>,
     pub email_verified_at: Option<DateTime<Utc>>,
+    pub status: UserStatus,
+    pub invited_by: Option<UserId>,
 }
 
 impl NewUser {
@@ -186,6 +188,8 @@ pub struct NewUserBuilder {
     email: Option<String>,
     name: Option<String>,
     email_verified_at: Option<DateTime<Utc>>,
+    status: Option<UserStatus>,
+    invited_by: Option<UserId>,
 }
 
 impl NewUserBuilder {
@@ -209,12 +213,24 @@ impl NewUserBuilder {
         self
     }
 
+    pub fn status(mut self, status: UserStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn invited_by(mut self, invited_by: UserId) -> Self {
+        self.invited_by = Some(invited_by);
+        self
+    }
+
     pub fn build(self) -> Result<NewUser, Error> {
         Ok(NewUser {
             id: self.id.unwrap_or_default(),
             email: self.email.require_field("Email")?,
             name: self.name,
             email_verified_at: self.email_verified_at,
+            status: self.status.unwrap_or_default(),
+            invited_by: self.invited_by,
         })
     }
 }

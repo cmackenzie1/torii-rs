@@ -10,6 +10,7 @@
 //! | `name`              | `String`           | The name of the user.                             |
 //! | `email`             | `String`           | The email of the user.                            |
 //! | `email_verified_at` | `Option<DateTime>` | The timestamp when the user's email was verified. |
+//! | `status`            | `UserStatus`       | The status of the user (provisional or active).   |
 //! | `created_at`        | `DateTime`         | The timestamp when the user was created.          |
 //! | `updated_at`        | `DateTime`         | The timestamp when the user was last updated.     |
 use std::str::FromStr;
@@ -23,6 +24,62 @@ use crate::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+/// The status of a user account.
+///
+/// This enum represents the lifecycle state of a user:
+/// - `Provisional`: The user was created via an invitation but has not yet completed signup
+/// - `Active`: The user has completed signup and can authenticate
+///
+/// Provisional users are created when someone is invited to the system. They have a user ID
+/// that can be used for references (e.g., sharing resources), but cannot authenticate until
+/// they complete the signup process and become active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum UserStatus {
+    /// User was invited but has not completed signup
+    Provisional,
+    /// User has completed signup and can authenticate
+    #[default]
+    Active,
+}
+
+impl UserStatus {
+    /// Get the string representation for storage
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UserStatus::Provisional => "provisional",
+            UserStatus::Active => "active",
+        }
+    }
+
+    /// Check if the user is provisional (invited but not yet signed up)
+    pub fn is_provisional(&self) -> bool {
+        matches!(self, UserStatus::Provisional)
+    }
+
+    /// Check if the user is active (can authenticate)
+    pub fn is_active(&self) -> bool {
+        matches!(self, UserStatus::Active)
+    }
+}
+
+impl FromStr for UserStatus {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "provisional" => Ok(UserStatus::Provisional),
+            "active" => Ok(UserStatus::Active),
+            _ => Err(ValidationError::InvalidField(format!("Invalid user status: {s}")).into()),
+        }
+    }
+}
+
+impl std::fmt::Display for UserStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 /// A unique, stable identifier for a specific user
 /// This value should be treated as opaque, and should not be used as a UUID even if it may look like one
@@ -163,6 +220,18 @@ pub struct User {
     // The email verified at timestamp. If the user has not verified their email, this will be None.
     pub email_verified_at: Option<DateTime<Utc>>,
 
+    /// The status of the user account.
+    ///
+    /// - `Provisional`: User was created via invitation but hasn't completed signup
+    /// - `Active`: User has completed signup and can authenticate
+    pub status: UserStatus,
+
+    /// The user ID of whoever invited this user, if applicable.
+    ///
+    /// This is set when a user is created via an invitation and can be used
+    /// for referral tracking or permission inheritance.
+    pub invited_by: Option<UserId>,
+
     /// When the account was locked due to brute force protection.
     ///
     /// This field is set when an account becomes locked after too many failed
@@ -196,6 +265,16 @@ impl User {
     pub fn is_locked(&self) -> bool {
         self.locked_at.is_some()
     }
+
+    /// Check if the user is provisional (invited but hasn't completed signup).
+    pub fn is_provisional(&self) -> bool {
+        self.status.is_provisional()
+    }
+
+    /// Check if the user is active (can authenticate).
+    pub fn is_active(&self) -> bool {
+        self.status.is_active()
+    }
 }
 
 #[derive(Default)]
@@ -204,6 +283,8 @@ pub struct UserBuilder {
     name: Option<String>,
     email: Option<String>,
     email_verified_at: Option<DateTime<Utc>>,
+    status: Option<UserStatus>,
+    invited_by: Option<UserId>,
     locked_at: Option<DateTime<Utc>>,
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
@@ -227,6 +308,16 @@ impl UserBuilder {
 
     pub fn email_verified_at(mut self, email_verified_at: Option<DateTime<Utc>>) -> Self {
         self.email_verified_at = email_verified_at;
+        self
+    }
+
+    pub fn status(mut self, status: UserStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn invited_by(mut self, invited_by: Option<UserId>) -> Self {
+        self.invited_by = invited_by;
         self
     }
 
@@ -254,6 +345,8 @@ impl UserBuilder {
                 "Email is required".to_string(),
             ))?,
             email_verified_at: self.email_verified_at,
+            status: self.status.unwrap_or_default(),
+            invited_by: self.invited_by,
             locked_at: self.locked_at,
             created_at: self.created_at.unwrap_or(now),
             updated_at: self.updated_at.unwrap_or(now),
