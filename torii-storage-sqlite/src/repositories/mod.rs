@@ -1,6 +1,7 @@
 //! Repository implementations for SQLite storage
 
 pub mod brute_force;
+pub mod invitation;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -9,6 +10,7 @@ pub mod token;
 pub mod user;
 
 pub use brute_force::SqliteBruteForceRepository;
+pub use invitation::SqliteInvitationRepository;
 pub use oauth::SqliteOAuthRepository;
 pub use passkey::SqlitePasskeyRepository;
 pub use password::SqlitePasswordRepository;
@@ -23,9 +25,9 @@ use torii_core::{
     Error,
     error::StorageError,
     repositories::{
-        BruteForceRepositoryProvider, OAuthRepositoryProvider, PasskeyRepositoryProvider,
-        PasswordRepositoryProvider, RepositoryProvider, SessionRepositoryProvider,
-        TokenRepositoryProvider, UserRepositoryProvider,
+        BruteForceRepositoryProvider, InvitationRepositoryProvider, OAuthRepositoryProvider,
+        PasskeyRepositoryProvider, PasswordRepositoryProvider, RepositoryProvider,
+        SessionRepositoryProvider, TokenRepositoryProvider, UserRepositoryProvider,
     },
 };
 
@@ -42,6 +44,7 @@ pub struct SqliteRepositoryProvider {
     passkey: Arc<SqlitePasskeyRepository>,
     token: Arc<SqliteTokenRepository>,
     brute_force: Arc<SqliteBruteForceRepository>,
+    invitation: Arc<SqliteInvitationRepository>,
 }
 
 impl SqliteRepositoryProvider {
@@ -53,6 +56,7 @@ impl SqliteRepositoryProvider {
         let passkey = Arc::new(SqlitePasskeyRepository::new(pool.clone()));
         let token = Arc::new(SqliteTokenRepository::new(pool.clone()));
         let brute_force = Arc::new(SqliteBruteForceRepository::new(pool.clone()));
+        let invitation = Arc::new(SqliteInvitationRepository::new(pool.clone()));
 
         Self {
             pool,
@@ -63,6 +67,7 @@ impl SqliteRepositoryProvider {
             passkey,
             token,
             brute_force,
+            invitation,
         }
     }
 }
@@ -122,6 +127,14 @@ impl BruteForceRepositoryProvider for SqliteRepositoryProvider {
 
     fn brute_force(&self) -> &Self::BruteForceRepo {
         &self.brute_force
+    }
+}
+
+impl InvitationRepositoryProvider for SqliteRepositoryProvider {
+    type InvitationRepo = SqliteInvitationRepository;
+
+    fn invitation(&self) -> &Self::InvitationRepo {
+        &self.invitation
     }
 }
 

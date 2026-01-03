@@ -1,6 +1,6 @@
 //! SeaORM user types
 
-use torii_core::{User as ToriiUser, UserId};
+use torii_core::{User as ToriiUser, UserId, UserStatus};
 
 use crate::entities::user;
 
@@ -11,6 +11,9 @@ impl From<user::Model> for ToriiUser {
             name: user.name.to_owned(),
             email: user.email.to_owned(),
             email_verified_at: user.email_verified_at.to_owned(),
+            // SeaORM doesn't have status/invited_by columns yet, default to Active
+            status: UserStatus::Active,
+            invited_by: None,
             locked_at: user.locked_at.to_owned(),
             created_at: user.created_at.to_owned(),
             updated_at: user.updated_at.to_owned(),

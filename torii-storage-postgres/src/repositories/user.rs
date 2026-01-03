@@ -26,15 +26,17 @@ impl UserRepository for PostgresUserRepository {
     async fn create(&self, user: NewUser) -> Result<User, Error> {
         let pg_user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            INSERT INTO users (id, email, name, email_verified_at)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
+            INSERT INTO users (id, email, name, email_verified_at, status, invited_by)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id, email, name, email_verified_at, status, invited_by, locked_at, created_at, updated_at
             "#,
         )
         .bind(user.id.as_str())
         .bind(&user.email)
         .bind(&user.name)
         .bind(user.email_verified_at)
+        .bind(user.status.as_str())
+        .bind(user.invited_by.as_ref().map(|id| id.as_str()))
         .fetch_one(&self.pool)
         .await
         .map_err(|e| {
@@ -48,7 +50,7 @@ impl UserRepository for PostgresUserRepository {
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>, Error> {
         let pg_user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at
+            SELECT id, email, name, email_verified_at, status, invited_by, locked_at, created_at, updated_at
             FROM users
             WHERE id = $1
             "#,
@@ -69,7 +71,7 @@ impl UserRepository for PostgresUserRepository {
     async fn find_by_email(&self, email: &str) -> Result<Option<User>, Error> {
         let pg_user = sqlx::query_as::<_, PostgresUser>(
             r#"
-            SELECT id, email, name, email_verified_at, locked_at, created_at, updated_at
+            SELECT id, email, name, email_verified_at, status, invited_by, locked_at, created_at, updated_at
             FROM users
             WHERE email = $1
             "#,
@@ -104,14 +106,16 @@ impl UserRepository for PostgresUserRepository {
         let pg_user = sqlx::query_as::<_, PostgresUser>(
             r#"
             UPDATE users
-            SET email = $1, name = $2, email_verified_at = $3, locked_at = $4, updated_at = $5
-            WHERE id = $6
-            RETURNING id, email, name, email_verified_at, locked_at, created_at, updated_at
+            SET email = $1, name = $2, email_verified_at = $3, status = $4, invited_by = $5, locked_at = $6, updated_at = $7
+            WHERE id = $8
+            RETURNING id, email, name, email_verified_at, status, invited_by, locked_at, created_at, updated_at
             "#,
         )
         .bind(&user.email)
         .bind(&user.name)
         .bind(user.email_verified_at)
+        .bind(user.status.as_str())
+        .bind(user.invited_by.as_ref().map(|id| id.as_str()))
         .bind(user.locked_at)
         .bind(Utc::now())
         .bind(user.id.as_str())

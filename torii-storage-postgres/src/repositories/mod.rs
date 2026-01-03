@@ -1,6 +1,7 @@
 //! Repository implementations for PostgreSQL storage
 
 pub mod brute_force;
+pub mod invitation;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -10,6 +11,7 @@ pub mod user;
 
 use async_trait::async_trait;
 pub use brute_force::PostgresBruteForceRepository;
+pub use invitation::PostgresInvitationRepository;
 pub use oauth::PostgresOAuthRepository;
 pub use passkey::PostgresPasskeyRepository;
 pub use password::PostgresPasswordRepository;
@@ -21,9 +23,9 @@ use torii_core::{
     Error,
     error::StorageError,
     repositories::{
-        BruteForceRepositoryProvider, OAuthRepositoryProvider, PasskeyRepositoryProvider,
-        PasswordRepositoryProvider, RepositoryProvider, SessionRepositoryProvider,
-        TokenRepositoryProvider, UserRepositoryProvider,
+        BruteForceRepositoryProvider, InvitationRepositoryProvider, OAuthRepositoryProvider,
+        PasskeyRepositoryProvider, PasswordRepositoryProvider, RepositoryProvider,
+        SessionRepositoryProvider, TokenRepositoryProvider, UserRepositoryProvider,
     },
 };
 pub use user::PostgresUserRepository;
@@ -41,6 +43,7 @@ pub struct PostgresRepositoryProvider {
     passkey: Arc<PostgresPasskeyRepository>,
     token: Arc<PostgresTokenRepository>,
     brute_force: Arc<PostgresBruteForceRepository>,
+    invitation: Arc<PostgresInvitationRepository>,
 }
 
 impl PostgresRepositoryProvider {
@@ -53,6 +56,7 @@ impl PostgresRepositoryProvider {
         let passkey = Arc::new(PostgresPasskeyRepository::new(pool.clone()));
         let token = Arc::new(PostgresTokenRepository::new(pool.clone()));
         let brute_force = Arc::new(PostgresBruteForceRepository::new(pool.clone()));
+        let invitation = Arc::new(PostgresInvitationRepository::new(pool.clone()));
 
         Self {
             pool,
@@ -63,6 +67,7 @@ impl PostgresRepositoryProvider {
             passkey,
             token,
             brute_force,
+            invitation,
         }
     }
 }
@@ -125,13 +130,22 @@ impl BruteForceRepositoryProvider for PostgresRepositoryProvider {
     }
 }
 
+impl InvitationRepositoryProvider for PostgresRepositoryProvider {
+    type InvitationRepo = PostgresInvitationRepository;
+
+    fn invitation(&self) -> &Self::InvitationRepo {
+        &self.invitation
+    }
+}
+
 // Implement the unified RepositoryProvider trait
 
 #[async_trait]
 impl RepositoryProvider for PostgresRepositoryProvider {
     async fn migrate(&self) -> Result<(), Error> {
         use crate::migrations::{
-            AddLockedAtToUsers, AddPasskeyMetadata, CreateFailedLoginAttemptsTable, CreateIndexes,
+            AddLockedAtToUsers, AddPasskeyMetadata, AddUserStatusAndInvitedBy,
+            CreateFailedLoginAttemptsTable, CreateIndexes, CreateInvitationsTable,
             CreateOAuthAccountsTable, CreateOAuthStateTable, CreatePasskeyChallengesTable,
             CreatePasskeysTable, CreateSecureTokensTable, CreateSessionsTable, CreateUsersTable,
             PostgresMigrationManager,
@@ -158,6 +172,8 @@ impl RepositoryProvider for PostgresRepositoryProvider {
             Box::new(CreateOAuthStateTable),
             Box::new(CreateSecureTokensTable),
             Box::new(AddPasskeyMetadata),
+            Box::new(AddUserStatusAndInvitedBy),
+            Box::new(CreateInvitationsTable),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");

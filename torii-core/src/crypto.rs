@@ -22,8 +22,32 @@
 //!
 //! See: <https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#compare-password-hashes-using-safe-functions>
 
+use rand::{TryRngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+
+/// Generate a cryptographically secure random token.
+///
+/// This produces a 256-bit (32-byte) random token encoded as URL-safe base64.
+/// The token has sufficient entropy for security-critical applications like
+/// magic links, password reset tokens, and invitation tokens.
+///
+/// # Returns
+///
+/// A URL-safe base64-encoded random token (43 characters)
+///
+/// # Panics
+///
+/// Panics if the OS random number generator fails. This indicates a critical
+/// system failure (e.g., /dev/urandom unavailable) from which recovery is not
+/// possible for security-sensitive operations.
+pub fn generate_secure_token() -> String {
+    let mut bytes = [0u8; 32]; // 256 bits of entropy
+    OsRng
+        .try_fill_bytes(&mut bytes)
+        .expect("OS RNG failure - system entropy source unavailable");
+    base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes)
+}
 
 /// Hash a token for secure storage using SHA256.
 ///

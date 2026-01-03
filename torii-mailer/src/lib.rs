@@ -9,7 +9,8 @@ pub mod transports;
 pub use config::MailerConfig;
 pub use email::{Email, EmailBuilder};
 pub use email_types::{
-    EmailVerificationEmail, MagicLinkEmail, PasswordChangedEmail, PasswordResetEmail, WelcomeEmail,
+    EmailVerificationEmail, InvitationEmail, MagicLinkEmail, PasswordChangedEmail,
+    PasswordResetEmail, WelcomeEmail,
 };
 pub use error::MailerError;
 pub use mailer::Mailer;
@@ -19,7 +20,7 @@ pub use transports::{FileTransport, SendmailTransport, SmtpTransport};
 pub mod prelude {
     pub use crate::{
         AskamaTemplateEngine, Email, EmailBuilder, EmailVerificationEmail, FileTransport,
-        MagicLinkEmail, Mailer, MailerConfig, MailerError, PasswordChangedEmail,
+        InvitationEmail, MagicLinkEmail, Mailer, MailerConfig, MailerError, PasswordChangedEmail,
         PasswordResetEmail, SendmailTransport, SmtpTransport, TemplateContext, TemplateEngine,
         WelcomeEmail,
     };

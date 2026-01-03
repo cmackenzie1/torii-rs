@@ -37,6 +37,14 @@ mod mailer_impl {
             verification_link: &str,
             user_name: Option<&str>,
         ) -> Result<(), Error>;
+
+        async fn send_invitation_email(
+            &self,
+            to: &str,
+            invitation_link: &str,
+            inviter_name: Option<&str>,
+            expires_in_days: i64,
+        ) -> Result<(), Error>;
     }
 
     pub struct ToriiMailerService {
@@ -185,6 +193,34 @@ mod mailer_impl {
                 &self.config.get_from_address(),
                 to,
                 verification_link,
+                context,
+            )
+            .await
+            .map_err(|e| Error::Storage(crate::error::StorageError::Connection(e.to_string())))?;
+
+            self.transport.send_email(email).await.map_err(|e| {
+                Error::Storage(crate::error::StorageError::Connection(e.to_string()))
+            })?;
+
+            Ok(())
+        }
+
+        async fn send_invitation_email(
+            &self,
+            to: &str,
+            invitation_link: &str,
+            inviter_name: Option<&str>,
+            expires_in_days: i64,
+        ) -> Result<(), Error> {
+            let context = self.create_context(inviter_name, Some(to));
+
+            let email = InvitationEmail::build(
+                &self.engine,
+                &self.config.get_from_address(),
+                to,
+                invitation_link,
+                inviter_name,
+                expires_in_days,
                 context,
             )
             .await

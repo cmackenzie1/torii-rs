@@ -63,8 +63,10 @@ use chrono::DateTime;
 use chrono::Utc;
 use migrations::AddLockedAtToUsers;
 use migrations::AddPasskeyMetadata;
+use migrations::AddUserStatusAndInvitedBy;
 use migrations::CreateFailedLoginAttemptsTable;
 use migrations::CreateIndexes;
+use migrations::CreateInvitationsTable;
 use migrations::CreateOAuthAccountsTable;
 use migrations::CreateOAuthStateTable;
 use migrations::CreatePasskeyChallengesTable;
@@ -117,6 +119,8 @@ impl PostgresStorage {
             Box::new(CreateOAuthStateTable),
             Box::new(CreateSecureTokensTable),
             Box::new(AddPasskeyMetadata),
+            Box::new(AddUserStatusAndInvitedBy),
+            Box::new(CreateInvitationsTable),
         ];
         manager.up(&migrations).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to run migrations");
@@ -138,6 +142,8 @@ pub struct PostgresUser {
     pub email: String,
     pub name: Option<String>,
     pub email_verified_at: Option<DateTime<Utc>>,
+    pub status: String,
+    pub invited_by: Option<String>,
     pub locked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -150,6 +156,8 @@ impl From<PostgresUser> for User {
             .email(user.email)
             .name(user.name)
             .email_verified_at(user.email_verified_at)
+            .status(user.status.parse().unwrap_or_default())
+            .invited_by(user.invited_by.map(|id| UserId::new(&id)))
             .locked_at(user.locked_at)
             .created_at(user.created_at)
             .updated_at(user.updated_at)
@@ -165,6 +173,8 @@ impl From<User> for PostgresUser {
             email: user.email,
             name: user.name,
             email_verified_at: user.email_verified_at,
+            status: user.status.as_str().to_string(),
+            invited_by: user.invited_by.map(|id| id.into_inner()),
             locked_at: user.locked_at,
             created_at: user.created_at,
             updated_at: user.updated_at,

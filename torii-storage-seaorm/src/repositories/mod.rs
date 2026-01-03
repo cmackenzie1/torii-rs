@@ -1,6 +1,7 @@
 //! Repository implementations for SeaORM storage
 
 pub mod brute_force;
+pub mod invitation;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -9,6 +10,7 @@ pub mod token;
 pub mod user;
 
 pub use brute_force::SeaORMBruteForceRepository;
+pub use invitation::SeaORMInvitationRepository;
 pub use oauth::SeaORMOAuthRepository;
 pub use passkey::SeaORMPasskeyRepository;
 pub use password::SeaORMPasswordRepository;
@@ -24,9 +26,9 @@ use torii_core::{
     Error,
     error::StorageError,
     repositories::{
-        BruteForceRepositoryProvider, OAuthRepositoryProvider, PasskeyRepositoryProvider,
-        PasswordRepositoryProvider, RepositoryProvider, SessionRepositoryProvider,
-        TokenRepositoryProvider, UserRepositoryProvider,
+        BruteForceRepositoryProvider, InvitationRepositoryProvider, OAuthRepositoryProvider,
+        PasskeyRepositoryProvider, PasswordRepositoryProvider, RepositoryProvider,
+        SessionRepositoryProvider, TokenRepositoryProvider, UserRepositoryProvider,
     },
 };
 
@@ -44,6 +46,7 @@ pub struct SeaORMRepositoryProvider {
     passkey: Arc<SeaORMPasskeyRepository>,
     token: Arc<SeaORMTokenRepository>,
     brute_force: Arc<SeaORMBruteForceRepository>,
+    invitation: Arc<SeaORMInvitationRepository>,
 }
 
 impl SeaORMRepositoryProvider {
@@ -55,6 +58,7 @@ impl SeaORMRepositoryProvider {
         let passkey = Arc::new(SeaORMPasskeyRepository::new(pool.clone()));
         let token = Arc::new(SeaORMTokenRepository::new(pool.clone()));
         let brute_force = Arc::new(SeaORMBruteForceRepository::new(pool.clone()));
+        let invitation = Arc::new(SeaORMInvitationRepository::new(pool.clone()));
 
         Self {
             pool,
@@ -65,6 +69,7 @@ impl SeaORMRepositoryProvider {
             passkey,
             token,
             brute_force,
+            invitation,
         }
     }
 }
@@ -124,6 +129,14 @@ impl BruteForceRepositoryProvider for SeaORMRepositoryProvider {
 
     fn brute_force(&self) -> &Self::BruteForceRepo {
         &self.brute_force
+    }
+}
+
+impl InvitationRepositoryProvider for SeaORMRepositoryProvider {
+    type InvitationRepo = SeaORMInvitationRepository;
+
+    fn invitation(&self) -> &Self::InvitationRepo {
+        &self.invitation
     }
 }
 

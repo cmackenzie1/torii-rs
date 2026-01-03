@@ -4,13 +4,13 @@
 //! repository traits are expected. This is useful for dependency injection in services.
 
 use crate::{
-    Error, OAuthAccount, Session, User, UserId,
+    Error, Invitation, InvitationId, InvitationStatus, OAuthAccount, Session, User, UserId,
     repositories::{
-        BruteForceProtectionRepository, BruteForceRepositoryProvider, OAuthRepository,
-        OAuthRepositoryProvider, PasskeyCredential, PasskeyRepository, PasskeyRepositoryProvider,
-        PasswordRepository, PasswordRepositoryProvider, SessionRepository,
-        SessionRepositoryProvider, TokenRepository, TokenRepositoryProvider, UserRepository,
-        UserRepositoryProvider,
+        BruteForceProtectionRepository, BruteForceRepositoryProvider, InvitationRepository,
+        InvitationRepositoryProvider, OAuthRepository, OAuthRepositoryProvider, PasskeyCredential,
+        PasskeyRepository, PasskeyRepositoryProvider, PasswordRepository,
+        PasswordRepositoryProvider, SessionRepository, SessionRepositoryProvider, TokenRepository,
+        TokenRepositoryProvider, UserRepository, UserRepositoryProvider,
     },
     session::SessionToken,
     storage::{AttemptStats, FailedLoginAttempt, NewUser, SecureToken, TokenPurpose},
@@ -398,5 +398,80 @@ impl<R: BruteForceRepositoryProvider> BruteForceProtectionRepository
 
     async fn get_locked_at(&self, email: &str) -> Result<Option<DateTime<Utc>>, Error> {
         self.provider.brute_force().get_locked_at(email).await
+    }
+}
+
+/// Adapter that wraps an InvitationRepositoryProvider and implements InvitationRepository.
+pub struct InvitationRepositoryAdapter<R: InvitationRepositoryProvider> {
+    provider: Arc<R>,
+}
+
+impl<R: InvitationRepositoryProvider> InvitationRepositoryAdapter<R> {
+    pub fn new(provider: Arc<R>) -> Self {
+        Self { provider }
+    }
+}
+
+#[async_trait]
+impl<R: InvitationRepositoryProvider> InvitationRepository for InvitationRepositoryAdapter<R> {
+    async fn create(&self, invitation: &Invitation) -> Result<Invitation, Error> {
+        self.provider.invitation().create(invitation).await
+    }
+
+    async fn find_by_id(&self, id: &InvitationId) -> Result<Option<Invitation>, Error> {
+        self.provider.invitation().find_by_id(id).await
+    }
+
+    async fn find_by_token_hash(&self, token_hash: &str) -> Result<Option<Invitation>, Error> {
+        self.provider
+            .invitation()
+            .find_by_token_hash(token_hash)
+            .await
+    }
+
+    async fn find_by_email(&self, email: &str) -> Result<Vec<Invitation>, Error> {
+        self.provider.invitation().find_by_email(email).await
+    }
+
+    async fn find_pending_by_email(&self, email: &str) -> Result<Vec<Invitation>, Error> {
+        self.provider
+            .invitation()
+            .find_pending_by_email(email)
+            .await
+    }
+
+    async fn find_by_inviter(&self, inviter_id: &UserId) -> Result<Vec<Invitation>, Error> {
+        self.provider.invitation().find_by_inviter(inviter_id).await
+    }
+
+    async fn update_status(
+        &self,
+        id: &InvitationId,
+        status: InvitationStatus,
+    ) -> Result<Invitation, Error> {
+        self.provider.invitation().update_status(id, status).await
+    }
+
+    async fn accept(&self, id: &InvitationId, accepted_by: &UserId) -> Result<Invitation, Error> {
+        self.provider.invitation().accept(id, accepted_by).await
+    }
+
+    async fn revoke(&self, id: &InvitationId) -> Result<Invitation, Error> {
+        self.provider.invitation().revoke(id).await
+    }
+
+    async fn delete(&self, id: &InvitationId) -> Result<(), Error> {
+        self.provider.invitation().delete(id).await
+    }
+
+    async fn cleanup_expired(&self) -> Result<u64, Error> {
+        self.provider.invitation().cleanup_expired().await
+    }
+
+    async fn count_pending_by_email(&self, email: &str) -> Result<u64, Error> {
+        self.provider
+            .invitation()
+            .count_pending_by_email(email)
+            .await
     }
 }

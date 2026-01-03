@@ -18,6 +18,7 @@
 
 pub mod adapter;
 pub mod brute_force;
+pub mod invitation;
 pub mod oauth;
 pub mod passkey;
 pub mod password;
@@ -26,11 +27,12 @@ pub mod token;
 pub mod user;
 
 pub use adapter::{
-    BruteForceProtectionRepositoryAdapter, OAuthRepositoryAdapter, PasskeyRepositoryAdapter,
-    PasswordRepositoryAdapter, SessionRepositoryAdapter, TokenRepositoryAdapter,
-    UserRepositoryAdapter,
+    BruteForceProtectionRepositoryAdapter, InvitationRepositoryAdapter, OAuthRepositoryAdapter,
+    PasskeyRepositoryAdapter, PasswordRepositoryAdapter, SessionRepositoryAdapter,
+    TokenRepositoryAdapter, UserRepositoryAdapter,
 };
 pub use brute_force::BruteForceProtectionRepository;
+pub use invitation::InvitationRepository;
 pub use oauth::OAuthRepository;
 pub use passkey::{PasskeyCredential, PasskeyRepository};
 pub use password::PasswordRepository;
@@ -123,6 +125,17 @@ pub trait BruteForceRepositoryProvider: Send + Sync + 'static {
     fn brute_force(&self) -> &Self::BruteForceRepo;
 }
 
+/// Provider trait for invitation repository access.
+///
+/// Implement this trait to provide user invitation functionality.
+pub trait InvitationRepositoryProvider: Send + Sync + 'static {
+    /// The invitation repository implementation type
+    type InvitationRepo: InvitationRepository;
+
+    /// Get the invitation repository
+    fn invitation(&self) -> &Self::InvitationRepo;
+}
+
 // ============================================================================
 // Unified Repository Provider Trait
 // ============================================================================
@@ -168,6 +181,7 @@ pub trait RepositoryProvider:
     + PasskeyRepositoryProvider
     + TokenRepositoryProvider
     + BruteForceRepositoryProvider
+    + InvitationRepositoryProvider
 {
     /// Run migrations for all repositories
     async fn migrate(&self) -> Result<(), Error>;
