@@ -39,7 +39,7 @@ async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 dashmap = "6.1"
-jsonwebtoken = "9.3"
+jsonwebtoken = "10.2"
 rand = "0.9"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
