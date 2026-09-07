@@ -39,9 +39,12 @@ use chrono::Utc;
 
 use torii_core::{
     Error,
+    events::{Event, UnlockReason},
     repositories::BruteForceProtectionRepository,
     storage::{AttemptStats, BruteForceProtectionConfig, LockoutStatus},
 };
+
+use crate::{EventBus, EventEmitter};
 
 /// Service for managing brute force protection.
 ///
@@ -56,6 +59,7 @@ use torii_core::{
 pub struct BruteForceProtectionService<R: BruteForceProtectionRepository> {
     repository: Arc<R>,
     config: BruteForceProtectionConfig,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl<R: BruteForceProtectionRepository> BruteForceProtectionService<R> {
@@ -66,7 +70,17 @@ impl<R: BruteForceProtectionRepository> BruteForceProtectionService<R> {
     /// * `repository` - The repository implementation for storing attempt data
     /// * `config` - Configuration for lockout behavior
     pub fn new(repository: Arc<R>, config: BruteForceProtectionConfig) -> Self {
-        Self { repository, config }
+        Self {
+            repository,
+            config,
+            event_bus: None,
+        }
+    }
+
+    /// Enable security event emission for this service.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Get the current configuration.
@@ -155,6 +169,8 @@ impl<R: BruteForceProtectionRepository> BruteForceProtectionService<R> {
             });
         }
 
+        let was_locked = self.get_lockout_status(email).await?.is_locked;
+
         // Record the attempt
         self.repository
             .record_failed_attempt(email, ip_address)
@@ -168,6 +184,24 @@ impl<R: BruteForceProtectionRepository> BruteForceProtectionService<R> {
             self.repository
                 .set_locked_at(email, Some(Utc::now()))
                 .await?;
+        }
+
+        self.emit_event(Event::LoginFailed {
+            email: email.to_string(),
+            failed_attempts: status.failed_attempts,
+            ip_address: ip_address.map(str::to_string),
+            timestamp: Utc::now(),
+        })
+        .await?;
+        if !was_locked && status.is_locked {
+            self.emit_event(Event::AccountLocked {
+                email: email.to_string(),
+                failed_attempts: status.failed_attempts,
+                locked_until: status.locked_until.unwrap_or_else(Utc::now),
+                ip_address: ip_address.map(str::to_string),
+                timestamp: Utc::now(),
+            })
+            .await?;
         }
 
         Ok(status)
@@ -203,6 +237,14 @@ impl<R: BruteForceProtectionRepository> BruteForceProtectionService<R> {
         let was_locked = self.is_locked(email).await?;
         self.repository.clear_attempts(email).await?;
         self.repository.set_locked_at(email, None).await?;
+        if was_locked {
+            self.emit_event(Event::AccountUnlocked {
+                email: email.to_string(),
+                reason: UnlockReason::PasswordReset,
+                timestamp: Utc::now(),
+            })
+            .await?;
+        }
         Ok(was_locked)
     }
 
@@ -287,6 +329,13 @@ impl<R: BruteForceProtectionRepository> BruteForceProtectionService<R> {
             is_locked,
             locked_until: if is_locked { locked_until } else { None },
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl<R: BruteForceProtectionRepository> EventEmitter for BruteForceProtectionService<R> {
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 }
 

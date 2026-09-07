@@ -1,7 +1,8 @@
-use crate::services::UserService;
+use crate::{EventBus, EventEmitter, services::UserService};
 use std::sync::Arc;
 use torii_core::{
     Error, User, UserId,
+    events::Event,
     repositories::{PasskeyCredential, PasskeyRepository, UserRepository},
 };
 
@@ -9,6 +10,7 @@ use torii_core::{
 pub struct PasskeyService<U: UserRepository, P: PasskeyRepository> {
     user_service: Arc<UserService<U>>,
     passkey_repository: Arc<P>,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
@@ -18,7 +20,14 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
         Self {
             user_service,
             passkey_repository,
+            event_bus: None,
         }
+    }
+
+    /// Enable passkey event emission.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Register a new passkey credential for a user
@@ -29,9 +38,13 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
         public_key: Vec<u8>,
         name: Option<String>,
     ) -> Result<PasskeyCredential, Error> {
-        self.passkey_repository
+        let credential = self
+            .passkey_repository
             .add_credential(user_id, credential_id, public_key, name)
-            .await
+            .await?;
+        self.emit_event(Event::PasskeyRegistered(user_id.clone()))
+            .await?;
+        Ok(credential)
     }
 
     /// Get all passkey credentials for a user
@@ -72,6 +85,10 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
             // Get the user
             let user = self.user_service.get_user(&cred.user_id).await?;
 
+            if let Some(user) = &user {
+                self.emit_event(Event::PasskeyAuthenticated(user.id.clone()))
+                    .await?;
+            }
             Ok(user)
         } else {
             Ok(None)
@@ -80,14 +97,36 @@ impl<U: UserRepository, P: PasskeyRepository> PasskeyService<U, P> {
 
     /// Delete a passkey credential
     pub async fn delete_credential(&self, credential_id: &[u8]) -> Result<(), Error> {
+        let user_id = self
+            .passkey_repository
+            .get_credential(credential_id)
+            .await?
+            .map(|credential| credential.user_id);
+
         self.passkey_repository
             .delete_credential(credential_id)
-            .await
+            .await?;
+
+        if let Some(user_id) = user_id {
+            self.emit_event(Event::PasskeyRemoved(user_id)).await?;
+        }
+
+        Ok(())
     }
 
     /// Delete all passkey credentials for a user
     pub async fn delete_user_credentials(&self, user_id: &UserId) -> Result<(), Error> {
-        self.passkey_repository.delete_all_for_user(user_id).await
+        self.passkey_repository.delete_all_for_user(user_id).await?;
+        self.emit_event(Event::PasskeyRemoved(user_id.clone()))
+            .await?;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl<U: UserRepository, P: PasskeyRepository> EventEmitter for PasskeyService<U, P> {
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 }
 

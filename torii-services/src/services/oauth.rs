@@ -1,9 +1,10 @@
-use crate::services::UserService;
+use crate::{EventBus, EventEmitter, services::UserService};
 use chrono::Duration;
 use std::sync::Arc;
 use torii_core::{
     Error, OAuthAccount, User, UserId,
     error::AuthError,
+    events::Event,
     repositories::{OAuthRepository, UserRepository},
 };
 
@@ -11,6 +12,7 @@ use torii_core::{
 pub struct OAuthService<U: UserRepository, O: OAuthRepository> {
     user_service: Arc<UserService<U>>,
     oauth_repository: Arc<O>,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
@@ -20,7 +22,14 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
         Self {
             user_service,
             oauth_repository,
+            event_bus: None,
         }
+    }
+
+    /// Enable OAuth event emission.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Create or get a user from OAuth provider information
@@ -59,6 +68,12 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
             new_user
         };
 
+        self.emit_event(Event::OAuthAuthenticated {
+            user_id: user.id.clone(),
+            provider: provider.to_string(),
+        })
+        .await?;
+
         Ok(user)
     }
 
@@ -81,7 +96,13 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
 
         self.oauth_repository
             .link_account(user_id, provider, subject)
-            .await
+            .await?;
+        self.emit_event(Event::OAuthAccountLinked {
+            user_id: user_id.clone(),
+            provider: provider.to_string(),
+        })
+        .await?;
+        Ok(())
     }
 
     /// Store a PKCE verifier
@@ -135,7 +156,20 @@ impl<U: UserRepository, O: OAuthRepository> OAuthService<U, O> {
     pub async fn unlink_account(&self, user_id: &UserId, provider: &str) -> Result<(), Error> {
         self.oauth_repository
             .unlink_account(user_id, provider)
-            .await
+            .await?;
+        self.emit_event(Event::OAuthAccountUnlinked {
+            user_id: user_id.clone(),
+            provider: provider.to_string(),
+        })
+        .await?;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl<U: UserRepository, O: OAuthRepository> EventEmitter for OAuthService<U, O> {
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 }
 

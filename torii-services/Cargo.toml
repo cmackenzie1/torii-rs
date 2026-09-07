@@ -26,6 +26,7 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 tokio.workspace = true
+sqlx = { workspace = true, optional = true, features = ["postgres"] }
 b58 = "0.1.2"
 
 # Optional mailer integration
@@ -38,3 +39,4 @@ tokio.workspace = true
 [features]
 default = []
 mailer = ["dep:torii-mailer"]
+postgres = ["dep:sqlx"]

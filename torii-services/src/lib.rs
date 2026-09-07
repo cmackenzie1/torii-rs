@@ -8,7 +8,12 @@
 //!
 
 pub mod eventbus;
-pub use eventbus::EventBus;
+pub use eventbus::{EventBus, EventEmitter, EventPublisher};
+
+#[cfg(feature = "postgres")]
+pub mod postgres_events;
+#[cfg(feature = "postgres")]
+pub use postgres_events::PostgresEventTransport;
 
 pub mod services;
 pub use services::{

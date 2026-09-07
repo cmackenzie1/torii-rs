@@ -43,7 +43,7 @@ default = ["password", "sqlite"]
 
 # storage backends
 sqlite = ["dep:torii-storage-sqlite", "dep:sqlx", "sqlx/sqlite", "sqlx/runtime-tokio-rustls"]
-postgres = ["dep:torii-storage-postgres", "dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio-rustls"]
+postgres = ["dep:torii-storage-postgres", "dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio-rustls", "torii-services/postgres"]
 
 # seaorm storage backends
 seaorm-sqlite = ["dep:torii-storage-seaorm", "dep:sea-orm", "torii-storage-seaorm/sqlite"]

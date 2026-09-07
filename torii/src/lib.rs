@@ -128,7 +128,7 @@ use torii_core::{
         TokenRepositoryAdapter, UserRepositoryAdapter,
     },
 };
-use torii_services::{BruteForceProtectionService, SessionService, UserService};
+use torii_services::{BruteForceProtectionService, EventBus, SessionService, UserService};
 
 // Re-export builder types
 pub use builder::{NoStorage, ToriiBuilder, ToriiBuilderError, WithStorage};
@@ -162,13 +162,17 @@ use torii_services::EmailVerificationService;
 #[cfg(feature = "mailer")]
 use torii_services::{MailerService, ToriiMailerService};
 
+pub use torii_core::error::EventError;
 /// Re-export core types from torii_core
 ///
 /// These types are commonly used when working with the Torii API.
 pub use torii_core::{
-    JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, LockoutStatus, Session, SessionToken, User,
-    UserId,
+    Event, EventHandler, JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, LockoutStatus, Session,
+    SessionToken, User, UserId,
 };
+#[cfg(feature = "postgres")]
+pub use torii_services::PostgresEventTransport;
+pub use torii_services::{EventEmitter, EventPublisher};
 
 /// Re-export storage types
 pub use torii_core::storage::{SecureToken, TokenPurpose};
@@ -351,6 +355,7 @@ impl SessionConfig {
 /// ```
 pub struct Torii<R: RepositoryProvider> {
     repositories: Arc<R>,
+    event_bus: Arc<EventBus>,
     user_service: Arc<UserService<UserRepositoryAdapter<R>>>,
     session_service: Arc<SessionService<Box<dyn SessionProvider>>>,
     session_provider: Arc<Box<dyn SessionProvider>>,
@@ -394,6 +399,11 @@ pub struct Torii<R: RepositoryProvider> {
 
 // Namespace accessor methods
 impl<R: RepositoryProvider> Torii<R> {
+    /// Register a publisher for local or distributed event delivery.
+    pub async fn register_event_publisher(&self, publisher: Arc<dyn EventPublisher>) {
+        self.event_bus.register_publisher(publisher).await;
+    }
+
     /// Access password-based authentication methods
     #[cfg(feature = "password")]
     pub fn password(&self) -> PasswordAuth<'_, R> {
@@ -435,6 +445,7 @@ impl<R: RepositoryProvider> Torii<R> {
     ///
     /// A new Torii instance with all services configured
     pub fn new(repositories: Arc<R>) -> Self {
+        let event_bus = Arc::new(EventBus::new());
         // Create repository adapters
         let user_repo = Arc::new(UserRepositoryAdapter::new(repositories.clone()));
         let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
@@ -442,75 +453,100 @@ impl<R: RepositoryProvider> Torii<R> {
             repositories.clone(),
         ));
 
-        let user_service = Arc::new(UserService::new(user_repo.clone()));
+        let user_service =
+            Arc::new(UserService::new(user_repo.clone()).with_event_bus(event_bus.clone()));
 
         // Default to opaque session provider
         let session_provider: Arc<Box<dyn SessionProvider>> =
             Arc::new(Box::new(OpaqueSessionProvider::new(session_repo)));
-        let session_service = Arc::new(SessionService::new(session_provider.clone()));
+        let session_service = Arc::new(
+            SessionService::new(session_provider.clone()).with_event_bus(event_bus.clone()),
+        );
 
         // Initialize brute force protection with default config (enabled)
-        let brute_force_service = Arc::new(BruteForceProtectionService::new(
-            brute_force_repo,
-            BruteForceProtectionConfig::default(),
-        ));
+        let brute_force_service = Arc::new(
+            BruteForceProtectionService::new(
+                brute_force_repo,
+                BruteForceProtectionConfig::default(),
+            )
+            .with_event_bus(event_bus.clone()),
+        );
 
         Self {
             repositories: repositories.clone(),
+            event_bus: event_bus.clone(),
             user_service,
             session_service,
             session_provider,
 
             #[cfg(feature = "password")]
-            password_service: Arc::new(PasswordService::new(
-                user_repo.clone(),
-                Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
-            )),
+            password_service: Arc::new(
+                PasswordService::new(
+                    user_repo.clone(),
+                    Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "oauth")]
-            oauth_service: Arc::new(OAuthService::new(
-                user_repo.clone(),
-                Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            oauth_service: Arc::new(
+                OAuthService::new(
+                    user_repo.clone(),
+                    Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "passkey")]
-            passkey_service: Arc::new(PasskeyService::new(
-                user_repo.clone(),
-                Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            passkey_service: Arc::new(
+                PasskeyService::new(
+                    user_repo.clone(),
+                    Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "magic-link")]
-            magic_link_service: Arc::new(MagicLinkService::new(
-                user_repo.clone(),
-                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            magic_link_service: Arc::new(
+                MagicLinkService::new(
+                    user_repo.clone(),
+                    Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(any(feature = "password", feature = "magic-link"))]
-            password_reset_service: Arc::new(PasswordResetService::new(
-                user_repo.clone(),
-                Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
-                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            password_reset_service: Arc::new(
+                PasswordResetService::new(
+                    user_repo.clone(),
+                    Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
+                    Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "mailer")]
             mailer_service: None,
 
             brute_force_service,
 
-            email_verification_service: Arc::new(EmailVerificationService::new(
-                user_repo,
-                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            email_verification_service: Arc::new(
+                EmailVerificationService::new(
+                    user_repo,
+                    Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             session_config: SessionConfig::default(),
         }
@@ -531,6 +567,7 @@ impl<R: RepositoryProvider> Torii<R> {
         brute_force_config: BruteForceProtectionConfig,
         #[cfg(feature = "mailer")] mailer_config: Option<MailerConfig>,
     ) -> Result<Self, ToriiBuilderError> {
+        let event_bus = Arc::new(EventBus::new());
         // Create repository adapters
         let user_repo = Arc::new(UserRepositoryAdapter::new(repositories.clone()));
         let session_repo = Arc::new(SessionRepositoryAdapter::new(repositories.clone()));
@@ -538,7 +575,8 @@ impl<R: RepositoryProvider> Torii<R> {
             repositories.clone(),
         ));
 
-        let user_service = Arc::new(UserService::new(user_repo.clone()));
+        let user_service =
+            Arc::new(UserService::new(user_repo.clone()).with_event_bus(event_bus.clone()));
 
         // Create session provider based on config
         let session_provider: Arc<Box<dyn SessionProvider>> = match &session_config.provider_type {
@@ -549,13 +587,15 @@ impl<R: RepositoryProvider> Torii<R> {
                 Arc::new(Box::new(JwtSessionProvider::new(jwt_config.clone())))
             }
         };
-        let session_service = Arc::new(SessionService::new(session_provider.clone()));
+        let session_service = Arc::new(
+            SessionService::new(session_provider.clone()).with_event_bus(event_bus.clone()),
+        );
 
         // Initialize brute force protection with provided config
-        let brute_force_service = Arc::new(BruteForceProtectionService::new(
-            brute_force_repo,
-            brute_force_config,
-        ));
+        let brute_force_service = Arc::new(
+            BruteForceProtectionService::new(brute_force_repo, brute_force_config)
+                .with_event_bus(event_bus.clone()),
+        );
 
         // Initialize mailer if configured - propagate errors instead of silently ignoring them
         #[cfg(feature = "mailer")]
@@ -569,31 +609,41 @@ impl<R: RepositoryProvider> Torii<R> {
 
         Ok(Self {
             repositories: repositories.clone(),
+            event_bus: event_bus.clone(),
             user_service,
             session_service,
             session_provider,
 
             #[cfg(feature = "password")]
-            password_service: Arc::new(PasswordService::new(
-                user_repo.clone(),
-                Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
-            )),
+            password_service: Arc::new(
+                PasswordService::new(
+                    user_repo.clone(),
+                    Arc::new(PasswordRepositoryAdapter::new(repositories.clone())),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "oauth")]
-            oauth_service: Arc::new(OAuthService::new(
-                user_repo.clone(),
-                Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            oauth_service: Arc::new(
+                OAuthService::new(
+                    user_repo.clone(),
+                    Arc::new(torii_core::repositories::OAuthRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "passkey")]
-            passkey_service: Arc::new(PasskeyService::new(
-                user_repo.clone(),
-                Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            passkey_service: Arc::new(
+                PasskeyService::new(
+                    user_repo.clone(),
+                    Arc::new(torii_core::repositories::PasskeyRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             #[cfg(feature = "magic-link")]
             magic_link_service: Arc::new(MagicLinkService::new(
@@ -617,12 +667,15 @@ impl<R: RepositoryProvider> Torii<R> {
 
             brute_force_service,
 
-            email_verification_service: Arc::new(EmailVerificationService::new(
-                user_repo,
-                Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
-                    repositories.clone(),
-                )),
-            )),
+            email_verification_service: Arc::new(
+                EmailVerificationService::new(
+                    user_repo,
+                    Arc::new(torii_core::repositories::TokenRepositoryAdapter::new(
+                        repositories.clone(),
+                    )),
+                )
+                .with_event_bus(event_bus.clone()),
+            ),
 
             session_config,
         })
@@ -634,6 +687,11 @@ impl<R: RepositoryProvider> Torii<R> {
     /// access to the repositories.
     pub fn repositories(&self) -> &Arc<R> {
         &self.repositories
+    }
+
+    /// Access the event bus shared by this Torii instance.
+    pub fn event_bus(&self) -> &Arc<EventBus> {
+        &self.event_bus
     }
 
     /// Set the session configuration

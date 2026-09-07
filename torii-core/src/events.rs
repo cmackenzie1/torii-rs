@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Session, User, UserId, error::EventError, session::SessionToken};
 
+/// Stable identifier assigned to an emitted event.
+pub type EventId = uuid::Uuid;
+
+/// Identifier for the process or replica that published an event.
+pub type ReplicaId = uuid::Uuid;
+
 /// Reason why an account was unlocked.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum UnlockReason {
@@ -24,7 +30,7 @@ pub enum UnlockReason {
 ///
 /// All events contain the relevant data needed to handle the event, such as
 /// the affected User or Session objects.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
     // User events
     UserCreated(User),
@@ -35,6 +41,40 @@ pub enum Event {
     SessionCreated(UserId, Session),
     SessionDeleted(UserId, SessionToken),
     SessionsCleared(UserId),
+    SessionRefreshed(UserId, Session),
+
+    // Password authentication events
+    PasswordRegistered(UserId),
+    PasswordAuthenticated(UserId),
+    PasswordChanged(UserId),
+    PasswordRemoved(UserId),
+    PasswordResetRequested(UserId),
+    PasswordResetCompleted(UserId),
+
+    // OAuth events
+    OAuthAuthenticated {
+        user_id: UserId,
+        provider: String,
+    },
+    OAuthAccountLinked {
+        user_id: UserId,
+        provider: String,
+    },
+    OAuthAccountUnlinked {
+        user_id: UserId,
+        provider: String,
+    },
+
+    // Passkey events
+    PasskeyRegistered(UserId),
+    PasskeyAuthenticated(UserId),
+    PasskeyRemoved(UserId),
+
+    // Magic-link and email-verification events
+    MagicLinkRequested(UserId),
+    MagicLinkAuthenticated(UserId),
+    EmailVerificationRequested(UserId),
+    EmailVerified(UserId),
 
     // Security events for brute force protection
     /// Emitted when a login attempt fails.
@@ -78,6 +118,31 @@ pub enum Event {
         /// When the unlock occurred
         timestamp: DateTime<Utc>,
     },
+}
+
+/// Event data sent between local and distributed event transports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventEnvelope {
+    /// Unique identifier for this event publication.
+    pub id: EventId,
+    /// Replica that originated the event.
+    pub origin: ReplicaId,
+    /// Time at which the event was created.
+    pub occurred_at: DateTime<Utc>,
+    /// Domain event payload.
+    pub event: Event,
+}
+
+impl EventEnvelope {
+    /// Create an envelope for a newly published event.
+    pub fn new(event: Event, origin: ReplicaId) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            origin,
+            occurred_at: Utc::now(),
+            event,
+        }
+    }
 }
 
 /// A trait for handling events emitted by the event bus

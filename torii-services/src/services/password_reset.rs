@@ -1,9 +1,13 @@
-use crate::services::{PasswordService, UserService};
+use crate::{
+    EventBus, EventEmitter,
+    services::{PasswordService, UserService},
+};
 use chrono::Duration;
 use std::sync::Arc;
 use torii_core::{
     Error, User,
     error::AuthError,
+    events::Event,
     repositories::{PasswordRepository, TokenRepository, UserRepository},
     storage::TokenPurpose,
     validation::validate_password,
@@ -14,6 +18,7 @@ pub struct PasswordResetService<U: UserRepository, P: PasswordRepository, T: Tok
     user_service: Arc<UserService<U>>,
     password_service: Arc<PasswordService<U, P>>,
     token_repository: Arc<T>,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordResetService<U, P, T> {
@@ -30,7 +35,14 @@ impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordReset
             user_service,
             password_service,
             token_repository,
+            event_bus: None,
         }
+    }
+
+    /// Enable password reset event emission.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Request a password reset for the given email address
@@ -61,6 +73,9 @@ impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordReset
                 .token()
                 .expect("Token should be available after creation")
                 .to_string();
+
+            self.emit_event(Event::PasswordResetRequested(user.id.clone()))
+                .await?;
 
             Ok(Some((user, token_value)))
         } else {
@@ -136,12 +151,24 @@ impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> PasswordReset
             .set_password(&user.id, new_password)
             .await?;
 
+        self.emit_event(Event::PasswordResetCompleted(user.id.clone()))
+            .await?;
+
         Ok(user)
     }
 
     /// Clean up expired reset tokens
     pub async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
         self.token_repository.cleanup_expired_tokens().await
+    }
+}
+
+#[async_trait::async_trait]
+impl<U: UserRepository, P: PasswordRepository, T: TokenRepository> EventEmitter
+    for PasswordResetService<U, P, T>
+{
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 }
 

@@ -1,8 +1,9 @@
-use crate::services::UserService;
+use crate::{EventBus, EventEmitter, services::UserService};
 use std::sync::Arc;
 use torii_core::{
     Error, User, UserId,
     error::AuthError,
+    events::Event,
     repositories::{PasswordRepository, UserRepository},
     validation::validate_password,
 };
@@ -11,6 +12,7 @@ use torii_core::{
 pub struct PasswordService<U: UserRepository, P: PasswordRepository> {
     user_service: Arc<UserService<U>>,
     password_repository: Arc<P>,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
@@ -20,7 +22,14 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
         Self {
             user_service,
             password_repository,
+            event_bus: None,
         }
+    }
+
+    /// Enable password event emission for this service.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Register a new user with a password
@@ -58,6 +67,11 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
             .set_password_hash(&user.id, &password_hash)
             .await?;
 
+        self.emit_event(Event::PasswordRegistered(user.id.clone()))
+            .await?;
+
+        self.emit_event(Event::PasswordAuthenticated(user.id.clone()))
+            .await?;
         Ok(user)
     }
 
@@ -115,6 +129,9 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
             .set_password_hash(user_id, &new_hash)
             .await?;
 
+        self.emit_event(Event::PasswordChanged(user_id.clone()))
+            .await?;
+
         Ok(())
     }
 
@@ -126,12 +143,20 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
         let password_hash = Self::hash_password(password)?;
         self.password_repository
             .set_password_hash(user_id, &password_hash)
-            .await
+            .await?;
+        self.emit_event(Event::PasswordChanged(user_id.clone()))
+            .await?;
+        Ok(())
     }
 
     /// Remove a user's password
     pub async fn remove_password(&self, user_id: &UserId) -> Result<(), Error> {
-        self.password_repository.remove_password_hash(user_id).await
+        self.password_repository
+            .remove_password_hash(user_id)
+            .await?;
+        self.emit_event(Event::PasswordRemoved(user_id.clone()))
+            .await?;
+        Ok(())
     }
 
     /// Check if a user has a password set
@@ -154,6 +179,13 @@ impl<U: UserRepository, P: PasswordRepository> PasswordService<U, P> {
     fn verify_password(password: &str, hash: &str) -> Result<bool, Error> {
         use password_auth::verify_password;
         Ok(verify_password(password, hash).is_ok())
+    }
+}
+
+#[async_trait::async_trait]
+impl<U: UserRepository, P: PasswordRepository> EventEmitter for PasswordService<U, P> {
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 }
 

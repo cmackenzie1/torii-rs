@@ -19,7 +19,7 @@ pub mod user;
 pub mod validation;
 
 pub use error::Error;
-pub use events::UnlockReason;
+pub use events::{Event, EventEnvelope, EventHandler, EventId, ReplicaId, UnlockReason};
 pub use repositories::RepositoryProvider;
 #[cfg(feature = "jwt")]
 pub use session::{JwtAlgorithm, JwtClaims, JwtConfig, JwtMetadata, JwtSessionProvider};

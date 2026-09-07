@@ -6,9 +6,12 @@ use chrono::Duration;
 use std::sync::Arc;
 use torii_core::{
     Error, User, UserId,
+    events::Event,
     repositories::{TokenRepository, UserRepository},
     storage::{SecureToken, TokenPurpose},
 };
+
+use crate::{EventBus, EventEmitter};
 
 /// Default expiration time for email verification tokens (24 hours)
 const DEFAULT_TOKEN_EXPIRATION: Duration = Duration::hours(24);
@@ -17,6 +20,14 @@ const DEFAULT_TOKEN_EXPIRATION: Duration = Duration::hours(24);
 pub struct EmailVerificationService<U: UserRepository, T: TokenRepository> {
     user_repository: Arc<U>,
     token_repository: Arc<T>,
+    event_bus: Option<Arc<EventBus>>,
+}
+
+#[async_trait::async_trait]
+impl<U: UserRepository, T: TokenRepository> EventEmitter for EmailVerificationService<U, T> {
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
+    }
 }
 
 impl<U: UserRepository, T: TokenRepository> EmailVerificationService<U, T> {
@@ -25,7 +36,14 @@ impl<U: UserRepository, T: TokenRepository> EmailVerificationService<U, T> {
         Self {
             user_repository,
             token_repository,
+            event_bus: None,
         }
+    }
+
+    /// Enable email verification event emission.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Generate an email verification token for a user
@@ -58,9 +76,13 @@ impl<U: UserRepository, T: TokenRepository> EmailVerificationService<U, T> {
         user_id: &UserId,
         expires_in: Duration,
     ) -> Result<SecureToken, Error> {
-        self.token_repository
+        let token = self
+            .token_repository
             .create_token(user_id, TokenPurpose::EmailVerification, expires_in)
-            .await
+            .await?;
+        self.emit_event(Event::EmailVerificationRequested(user_id.clone()))
+            .await?;
+        Ok(token)
     }
 
     /// Verify an email verification token without consuming it
@@ -110,10 +132,14 @@ impl<U: UserRepository, T: TokenRepository> EmailVerificationService<U, T> {
             .await?;
 
         // Get and return the updated user
-        self.user_repository
+        let user = self
+            .user_repository
             .find_by_id(&secure_token.user_id)
             .await?
-            .ok_or(Error::Storage(torii_core::error::StorageError::NotFound))
+            .ok_or(Error::Storage(torii_core::error::StorageError::NotFound))?;
+        self.emit_event(Event::EmailVerified(user.id.clone()))
+            .await?;
+        Ok(user)
     }
 
     /// Clean up expired email verification tokens

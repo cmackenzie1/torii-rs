@@ -1,8 +1,9 @@
-use crate::services::UserService;
+use crate::{EventBus, EventEmitter, services::UserService};
 use chrono::Duration;
 use std::sync::Arc;
 use torii_core::{
     Error, User,
+    events::Event,
     repositories::{TokenRepository, UserRepository},
     storage::{SecureToken, TokenPurpose},
 };
@@ -11,6 +12,7 @@ use torii_core::{
 pub struct MagicLinkService<U: UserRepository, T: TokenRepository> {
     user_service: Arc<UserService<U>>,
     token_repository: Arc<T>,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
@@ -20,7 +22,14 @@ impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
         Self {
             user_service,
             token_repository,
+            event_bus: None,
         }
+    }
+
+    /// Enable magic-link event emission.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Generate a magic token for a user
@@ -30,9 +39,13 @@ impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
 
         // Generate the token with default expiration (15 minutes)
         let expires_in = Duration::minutes(15);
-        self.token_repository
+        let token = self
+            .token_repository
             .create_token(&user.id, TokenPurpose::MagicLink, expires_in)
-            .await
+            .await?;
+        self.emit_event(Event::MagicLinkRequested(user.id.clone()))
+            .await?;
+        Ok(token)
     }
 
     /// Generate a magic token with custom expiration
@@ -44,9 +57,13 @@ impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
         // Ensure user exists (or create them) - email validation happens in UserService
         let user = self.user_service.get_or_create_user(email).await?;
 
-        self.token_repository
+        let token = self
+            .token_repository
             .create_token(&user.id, TokenPurpose::MagicLink, expires_in)
-            .await
+            .await?;
+        self.emit_event(Event::MagicLinkRequested(user.id.clone()))
+            .await?;
+        Ok(token)
     }
 
     /// Verify a magic token and return the associated user
@@ -60,6 +77,10 @@ impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
         if let Some(secure_token) = secure_token {
             // Get the user by ID
             let user = self.user_service.get_user(&secure_token.user_id).await?;
+            if let Some(user) = &user {
+                self.emit_event(Event::MagicLinkAuthenticated(user.id.clone()))
+                    .await?;
+            }
             Ok(user)
         } else {
             Ok(None)
@@ -69,6 +90,13 @@ impl<U: UserRepository, T: TokenRepository> MagicLinkService<U, T> {
     /// Clean up expired tokens
     pub async fn cleanup_expired_tokens(&self) -> Result<(), Error> {
         self.token_repository.cleanup_expired_tokens().await
+    }
+}
+
+#[async_trait::async_trait]
+impl<U: UserRepository, T: TokenRepository> EventEmitter for MagicLinkService<U, T> {
+    fn event_bus(&self) -> Option<&Arc<EventBus>> {
+        self.event_bus.as_ref()
     }
 }
 
